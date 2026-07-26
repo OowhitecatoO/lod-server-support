@@ -2,10 +2,10 @@ name: Build
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'support/**']
     paths-ignore: ['**.md', 'docs/**', 'LICENSE', '.gitignore']
   pull_request:
-    branches: [main]
+    branches: [main, 'support/**']
     paths-ignore: ['**.md', 'docs/**', 'LICENSE', '.gitignore']
 
 jobs:
@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: 25
+          java-version: 21
 
       - uses: gradle/actions/setup-gradle@v5
 
@@ -115,7 +115,7 @@ jobs:
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: 25
+          java-version: 21
 
       - uses: gradle/actions/setup-gradle@v5
 
