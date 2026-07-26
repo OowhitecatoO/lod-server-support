@@ -56,15 +56,15 @@ Each Minecraft version has its own build; only the latest is listed. Older-MC bu
 
 | Minecraft | LSS Version | Fabric | Paper | Folia | Voxy | Java |
 |---|---|---|---|---|---|---|
-| **26.2** | v0.7.0 | ✅ | ✅ | — | 0.2.16-beta+ | 25+ |
-| **26.1.x** | v0.5.1 | ✅ | ✅ | ✅ | 0.2.16-beta+ | 25+ |
+| **26.2** | v0.7.x | ✅ | ✅ | — | 0.2.16-beta+ | 25+ |
+| **26.1.x** | v0.7.3+mc26.1 | ✅ | ✅ | ✅ | 0.2.16-beta+ | 25+ |
 | **1.21.11** | v0.5.0+mc1.21.11 | ✅ | ✅ | ✅ | 0.2.15-beta+ | 21+ |
 | **1.21.8** | v0.6.1+mc1.21.8 | ✅ | ✅ | ✅ | 0.2.5-alpha+ | 21+ |
 
 Fabric builds are client + server; the Paper plugin is server-only and also runs on Purpur. On the older support lines Folia uses the same plugin JAR (experimental). The 26.2 plugin does **not** declare Folia support — no Folia build exists for MC 26.2, and support returns once Folia ships 26.2 and validation passes.
 
 > [!IMPORTANT]
-> **Update the server first.** LSS versions a networking protocol. A newer client on an older server establishes no LOD session — you see vanilla render distance and no error. A v0.7.0+ server keeps serving v0.6.x clients through a built-in compatibility layer (`enableV16Compat`, default on), so servers can update ahead of their players. Release notes call out which updates carry a protocol bump.
+> **Update the server first.** LSS versions a networking protocol. A newer client on an older server establishes no LOD session — you see vanilla render distance and no error. A v0.7.0+ server keeps serving older protocol-16 clients (v0.4.x–v0.6.x — on the 26.1 line that covers every published release since v0.4.0) through a built-in compatibility layer (`enableV16Compat`, default on), so servers can update ahead of their players. Release notes call out which updates carry a protocol bump.
 
 On 1.21.8 the in-game config screen is unavailable (it requires Sodium 0.8+, and 1.21.8's newest Sodium is 0.7.3); the JSON config files still work as normal.
 
@@ -106,7 +106,7 @@ Server config is generated on first run:
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `enabled` | `true` | Enable LOD distribution |
-| `enableV16Compat` | `true` | Serve legacy v0.6.x (protocol 16) clients through a built-in translation layer at their slower pace. Set `false` to require every client to match the server's protocol (a v0.6.x client then gets no LOD session, like any other version mismatch) |
+| `enableV16Compat` | `true` | Serve legacy protocol-16 clients (v0.4.x–v0.6.x) through a built-in translation layer at their slower pace. Set `false` to require every client to match the server's protocol (a legacy client then gets no LOD session, like any other version mismatch) |
 | `lodDistanceChunks` | `256` | Max LOD distance in chunks |
 | `bytesPerSecondLimitPerPlayer` | `20971520` | Per-player pre-compression bandwidth cap (20 MB/s) |
 | `bytesPerSecondLimitGlobal` | `104857600` | Total pre-compression bandwidth cap (100 MB/s) |

@@ -2,9 +2,23 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **Support branch: `support/mc26.1`.** This is a long-lived backport of the v0.7.3 feature set
+> to **Minecraft 26.1.2** (do NOT merge to `main`), cut fresh from main's v0.7.3 state on
+> 2026-07-26 (the previous 26.1 branch is archived at `archive/mc26.1-pre-0.7.3`). Divergences
+> from the primary 26.2 line: **`folia-supported: true`** (Folia publishes 26.1.2 builds —
+> `PluginYmlContractTest` + `release_check.py` pin PRESENCE here, the inverse of main;
+> `SOAK_PLATFORM=folia` runs against a real downloaded Folia); `IntegratedServerLanHook` uses
+> the bare `publishServer` selector (26.2's `MultiplayerScope` parameter does not exist on
+> 26.1); toolchain pins fabric-api 0.151.0+26.1.2, sodium mc26.1.2-0.8.12, modmenu
+> 18.0.0-beta.1, paperweight dev bundle `26.1.2.build.69-stable` (Java 25 unchanged); the
+> **VSS channel is NOT published** from this line (release.yml carries LSS-only steps with
+> `make_latest: false`; the vssJar tasks + release_check pair gates still run). Releases are
+> tagged `v<x.y.z>+mc26.1`. Sections below that say "26.2" describe the primary line and are
+> not re-verified here; the wire protocol, config files, and feature set are identical.
+
 ## Project
 
-LOD Server Support (LSS) — distributes LOD chunk data from servers to clients over a custom networking protocol. Supports Fabric (client + server) and Paper (server only). The Folia code paths (regionized probing, lifecycle mailbox) exist in the one plugin jar, but **`folia-supported` is deliberately ABSENT on the 26.2 line** (since v0.7.0): no Folia build exists for MC 26.2, so declaring it would auto-load release jars on a future Folia with live-unvalidated paths. Re-add the flag together with the `SOAK_PLATFORM=folia` validation once Folia ships 26.2 (`PluginYmlContractTest` + `release_check.py` pin the absence; the older support lines — 1.21.8/1.21.11/26.1.x — still declare it and remain Folia-experimental: single-player soak validated, concurrent multi-region ingress untested). Clients request distant chunks individually; the server reads them from disk or memory and streams serialized sections back, enabling LOD rendering mods to display terrain beyond vanilla render distance.
+LOD Server Support (LSS) — distributes LOD chunk data from servers to clients over a custom networking protocol. Supports Fabric (client + server) and Paper (server only). On this 26.1 support line **`folia-supported: true` is declared** (Folia publishes MC 26.1.2 builds; support is experimental — single-player soak validated, concurrent multi-region ingress untested), unlike main's 26.2 line where the flag is deliberately absent until Folia ships 26.2. Clients request distant chunks individually; the server reads them from disk or memory and streams serialized sections back, enabling LOD rendering mods to display terrain beyond vanilla render distance.
 
 ## Project Structure
 
