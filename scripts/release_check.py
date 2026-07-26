@@ -155,13 +155,13 @@ def check_paper_jar(jar, problems):
         ymltext = _read(jar, "plugin.yml")
         if _looks_unexpanded(ymltext):
             problems.append(f"{base}: plugin.yml has an unexpanded ${{version}} placeholder")
-        # Inverted 2026-07-19 (was required-true): no Folia build exists for MC 26.2, so the
-        # flag must stay ABSENT — declaring it would auto-load release jars on a future Folia
-        # 26.2 with live-unvalidated Folia paths. Re-invert together with the Folia soak
-        # validation once Folia ships 26.2 (see docs/planning/v0.7.1-candidates.md).
-        if re.search(r"^folia-supported:\s*true\s*$", ymltext, re.MULTILINE):
-            problems.append(f"{base}: plugin.yml declares folia-supported: true — must stay "
-                            "absent until Folia 26.2 exists and the Folia soak passes")
+        # Re-inverted for the 26.1 support line (2026-07-26): Folia publishes MC 26.1.2
+        # builds and this line's Folia paths are soak-validated (SOAK_PLATFORM=folia), so
+        # the flag is REQUIRED here — Folia refuses to load the plugin without it. (Main's
+        # 26.2 line pins the opposite until Folia ships 26.2.)
+        if not re.search(r"^folia-supported:\s*true\s*$", ymltext, re.MULTILINE):
+            problems.append(f"{base}: plugin.yml must declare folia-supported: true "
+                            "(Folia refuses to load the plugin without it)")
     if not any(n.startswith("dev/vox/lss/common/") and n.endswith(".class") for n in names):
         problems.append(f"{base}: shaded jar missing the shared common/ classes")
     if "paperweight-mappings-namespace: mojang" not in _manifest(jar):
@@ -599,7 +599,7 @@ def _selftest():
 
         good_pap = os.path.join(td, "lod-server-support-paper.jar")
         _make_jar(good_pap, {
-            "plugin.yml": "name: LodServerSupport\nversion: 0.4.0\n",
+            "plugin.yml": "name: LodServerSupport\nversion: 0.4.0\nfolia-supported: true\n",
             "dev/vox/lss/paper/LSSPaperPlugin.class": "x",
             "dev/vox/lss/common/PositionUtil.class": "x",
         }, manifest="Manifest-Version: 1.0\npaperweight-mappings-namespace: mojang\n")
@@ -607,18 +607,18 @@ def _selftest():
         check_paper_jar(good_pap, p)
         check(p == [], f"clean paper jar flagged: {p}")
 
-        # a paper jar DECLARING folia-supported must be caught: no Folia build exists for MC
-        # 26.2, and the flag would auto-load release jars on a future Folia with
-        # live-unvalidated paths (inverted 2026-07-19; re-invert with the Folia validation)
-        foliaflag_pap = os.path.join(td, "foliaflag-paper.jar")
-        _make_jar(foliaflag_pap, {
-            "plugin.yml": "name: LodServerSupport\nversion: 0.4.0\nfolia-supported: true\n",
+        # a paper jar without the folia-supported flag must be caught on the 26.1 support
+        # line (Folia publishes 26.1.2 builds and refuses to load the plugin without it;
+        # re-inverted from main's absence pin 2026-07-26)
+        noflag_pap = os.path.join(td, "noflag-paper.jar")
+        _make_jar(noflag_pap, {
+            "plugin.yml": "name: LodServerSupport\nversion: 0.4.0\n",
             "dev/vox/lss/paper/LSSPaperPlugin.class": "x",
             "dev/vox/lss/common/PositionUtil.class": "x",
         }, manifest="Manifest-Version: 1.0\npaperweight-mappings-namespace: mojang\n")
         p = []
-        check_paper_jar(foliaflag_pap, p)
-        check(any("folia-supported" in m for m in p), "declared folia-supported flag not caught")
+        check_paper_jar(noflag_pap, p)
+        check(any("folia-supported" in m for m in p), "missing folia-supported flag not caught")
 
         bad_pap = os.path.join(td, "bad-paper.jar")
         _make_jar(bad_pap, {
@@ -733,7 +733,7 @@ def _selftest():
         # A clean vss Paper jar: name STILL LodServerSupport → passes both gates.
         good_vpap = os.path.join(td, "voxy-server-side-paper.jar")
         _make_jar(good_vpap, {
-            "plugin.yml": ("name: LodServerSupport\nversion: 0.7.0\n"
+            "plugin.yml": ("name: LodServerSupport\nversion: 0.7.0\nfolia-supported: true\n"
                            "description: Server-side backend for Voxy...\n"),
             "dev/vox/lss/paper/LSSPaperPlugin.class": "x",
             "dev/vox/lss/common/PositionUtil.class": "x",
@@ -990,7 +990,8 @@ def _selftest():
         os.makedirs(dfab)
         os.makedirs(dpap)
         PY_LSS = ("name: LodServerSupport\nversion: '0.7.0'\n"
-                  "main: dev.vox.lss.paper.LSSPaperPlugin\napi-version: '26.2'\n"
+                  "main: dev.vox.lss.paper.LSSPaperPlugin\napi-version: '26.1.2'\n"
+                  "folia-supported: true\n"
                   "description: LSS plugin.\n"
                   "website: https://modrinth.com/plugin/lod-server-support\n"
                   "commands:\n  lsslod:\n"
