@@ -624,9 +624,9 @@ public class ServiceLifecycleGameTests {
         // Control player proves a routing cycle ran end-to-end while A was skipped.
         var chunkPos = new ChunkPos(pcx - 152, pcz - 16);
         level.getChunkSource().addTicketWithRadius(TicketType.PLAYER_LOADING, chunkPos, 0);
-        level.getChunk(chunkPos.x(), chunkPos.z());
+        level.getChunk(chunkPos.x, chunkPos.z);
         var stateB = service.registerPlayer(mockB, LSSConstants.CAPABILITY_VOXEL_COLUMNS);
-        GameTestSeeding.seedRequest(stateB, PositionUtil.packPosition(chunkPos.x(), chunkPos.z()), -1L);
+        GameTestSeeding.seedRequest(stateB, PositionUtil.packPosition(chunkPos.x, chunkPos.z), -1L);
 
         helper.succeedWhen(() -> {
             service.tick();
@@ -793,15 +793,15 @@ public class ServiceLifecycleGameTests {
         int pcx = mock.getBlockX() >> 4;
         int pcz = mock.getBlockZ() >> 4;
         var chunkPos = new ChunkPos(pcx - 140, pcz - 4);
-        long packed = PositionUtil.packPosition(chunkPos.x(), chunkPos.z());
+        long packed = PositionUtil.packPosition(chunkPos.x, chunkPos.z);
         var chunkSource = level.getChunkSource();
         chunkSource.addTicketWithRadius(TicketType.PLAYER_LOADING, chunkPos, 0);
-        level.getChunk(chunkPos.x(), chunkPos.z());
+        level.getChunk(chunkPos.x, chunkPos.z);
 
         var service = new RequestProcessingService(server);
         var state = service.registerPlayer(mock, LSSConstants.CAPABILITY_VOXEL_COLUMNS);
         // Stale done-bit + a ts>0 request: only the frozen-queued clear makes it re-serve.
-        state.markDiskReadDone(chunkPos.x(), chunkPos.z());
+        state.markDiskReadDone(chunkPos.x, chunkPos.z);
         GameTestSeeding.seedRequest(state, packed, 5L);
 
         var diag = service.getOffThreadProcessor().getDiagnostics();
@@ -882,8 +882,8 @@ public class ServiceLifecycleGameTests {
         var chunkPos = new ChunkPos(pcx - 144, pcz - 10);
         var chunkSource = level.getChunkSource();
         chunkSource.addTicketWithRadius(TicketType.PLAYER_LOADING, chunkPos, 0);
-        level.getChunk(chunkPos.x(), chunkPos.z());
-        GameTestSeeding.seedRequest(state, PositionUtil.packPosition(chunkPos.x(), chunkPos.z()), -1L);
+        level.getChunk(chunkPos.x, chunkPos.z);
+        GameTestSeeding.seedRequest(state, PositionUtil.packPosition(chunkPos.x, chunkPos.z), -1L);
 
         helper.succeedWhen(() -> {
             service.tick();
@@ -920,8 +920,8 @@ public class ServiceLifecycleGameTests {
         var posK2 = new ChunkPos(pcx - 156, pcz - 21);
         chunkSource.addTicketWithRadius(TicketType.PLAYER_LOADING, posK1, 0);
         chunkSource.addTicketWithRadius(TicketType.PLAYER_LOADING, posK2, 0);
-        level.getChunk(posK1.x(), posK1.z());
-        level.getChunk(posK2.x(), posK2.z());
+        level.getChunk(posK1.x, posK1.z);
+        level.getChunk(posK2.x, posK2.z);
         // The pair must exist on disk: the budget routes them to the disk reader.
         level.save(null, true, false);
 
@@ -937,9 +937,9 @@ public class ServiceLifecycleGameTests {
             packed[i] = PositionUtil.packPosition(1_000_000 + i, 77);
             stamps[i] = 5L;
         }
-        packed[512] = PositionUtil.packPosition(posK1.x(), posK1.z());
+        packed[512] = PositionUtil.packPosition(posK1.x, posK1.z);
         stamps[512] = -1L;
-        packed[513] = PositionUtil.packPosition(posK2.x(), posK2.z());
+        packed[513] = PositionUtil.packPosition(posK2.x, posK2.z);
         stamps[513] = -1L;
         GameTestSeeding.seedRequests(state, packed, stamps);
 
@@ -986,12 +986,12 @@ public class ServiceLifecycleGameTests {
         var posD = new ChunkPos(pcx - 164, pcz - 25);
         chunkSource.addTicketWithRadius(TicketType.PLAYER_LOADING, posC, 0);
         chunkSource.addTicketWithRadius(TicketType.PLAYER_LOADING, posD, 0);
-        level.getChunk(posC.x(), posC.z());
-        level.getChunk(posD.x(), posD.z());
+        level.getChunk(posC.x, posC.z);
+        level.getChunk(posD.x, posD.z);
 
         var service = new RequestProcessingService(server);
         var state = service.registerPlayer(mock, LSSConstants.CAPABILITY_VOXEL_COLUMNS);
-        long packedC = PositionUtil.packPosition(posC.x(), posC.z());
+        long packedC = PositionUtil.packPosition(posC.x, posC.z);
         // ONE declared want-set, in probe order: C, four duplicate re-asks of C, 510 misses,
         // then loaded D. The duplicate re-asks carry ts>0 so their routing outcome
         // (up-to-date off the fresh done-bit) is independent of whether the main-thread flush
@@ -1009,7 +1009,7 @@ public class ServiceLifecycleGameTests {
             packed[5 + i] = PositionUtil.packPosition(1_010_000 + i, 88);
             stamps[5 + i] = 5L;
         }
-        packed[515] = PositionUtil.packPosition(posD.x(), posD.z());
+        packed[515] = PositionUtil.packPosition(posD.x, posD.z);
         stamps[515] = -1L;
         GameTestSeeding.seedRequests(state, packed, stamps);
 
@@ -1045,23 +1045,23 @@ public class ServiceLifecycleGameTests {
         ServerLevel level = helper.getLevel();
         var liveService = LSSServerNetworking.getRequestService();
         helper.assertTrue(liveService != null, "live service required (the save hook feeds it)");
-        var origin = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
+        var origin = new ChunkPos(helper.absolutePos(BlockPos.ZERO));
         var dim = LSSConstants.DIM_STR_OVERWORLD;
         var chunkSource = level.getChunkSource();
 
         // Control: a loaded LevelChunk with an edit must mark in the same save pass.
-        var controlPos = new ChunkPos(origin.x() - 172, origin.z() - 32);
-        long controlPacked = PositionUtil.packPosition(controlPos.x(), controlPos.z());
+        var controlPos = new ChunkPos(origin.x - 172, origin.z - 32);
+        long controlPacked = PositionUtil.packPosition(controlPos.x, controlPos.z);
         chunkSource.addTicketWithRadius(TicketType.PLAYER_LOADING, controlPos, 0);
-        level.getChunk(controlPos.x(), controlPos.z());
-        var editPos = new BlockPos(controlPos.x() * 16 + 4, -61, controlPos.z() * 16 + 4);
+        level.getChunk(controlPos.x, controlPos.z);
+        var editPos = new BlockPos(controlPos.x * 16 + 4, -61, controlPos.z * 16 + 4);
         var edit = level.getBlockState(editPos).is(Blocks.STONE) ? Blocks.COBBLESTONE : Blocks.STONE;
         level.setBlock(editPos, edit.defaultBlockState(), 3);
 
         // Proto: per-run salted coords — a previous run's chunk would load already-generated
         // and not be unsaved, making the save pass skip it and the assertion vacuous.
-        int protoCx = origin.x() - 168;
-        int protoCz = origin.z() + (int) Math.floorMod(System.nanoTime(), 64L);
+        int protoCx = origin.x - 168;
+        int protoCz = origin.z + (int) Math.floorMod(System.nanoTime(), 64L);
         var proto = chunkSource.getChunk(protoCx, protoCz, ChunkStatus.STRUCTURE_STARTS, true);
         helper.assertTrue(proto != null && !(proto instanceof LevelChunk),
                 "premise: a STRUCTURE_STARTS chunk must still be a ProtoChunk");

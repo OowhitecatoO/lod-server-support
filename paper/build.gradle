@@ -17,7 +17,7 @@ repositories {
 
 dependencies {
     implementation project(':common')
-    paperweight.paperDevBundle('26.2.build.48-alpha')
+    paperweight.paperDevBundle('1.21.11-R0.1-SNAPSHOT')
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
     testImplementation 'org.mockito:mockito-core:5.20.0'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
@@ -198,6 +198,6 @@ tasks.register('vssJar') {
 tasks.named('shadowJar') { finalizedBy tasks.named('vssJar') }
 
 tasks.withType(JavaCompile).configureEach {
-    it.options.release = 25
+    it.options.release = 21
 }
 
