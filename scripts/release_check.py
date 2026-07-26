@@ -155,7 +155,7 @@ def check_paper_jar(jar, problems):
         ymltext = _read(jar, "plugin.yml")
         if _looks_unexpanded(ymltext):
             problems.append(f"{base}: plugin.yml has an unexpanded ${{version}} placeholder")
-        # Re-inverted for the 26.1 support line (2026-07-26): Folia publishes MC 26.1.2
+        # Re-inverted for the 1.21.11 support line (2026-07-26): Folia publishes MC 1.21.11
         # builds and this line's Folia paths are soak-validated (SOAK_PLATFORM=folia), so
         # the flag is REQUIRED here — Folia refuses to load the plugin without it. (Main's
         # 26.2 line pins the opposite until Folia ships 26.2.)
@@ -607,8 +607,8 @@ def _selftest():
         check_paper_jar(good_pap, p)
         check(p == [], f"clean paper jar flagged: {p}")
 
-        # a paper jar without the folia-supported flag must be caught on the 26.1 support
-        # line (Folia publishes 26.1.2 builds and refuses to load the plugin without it;
+        # a paper jar without the folia-supported flag must be caught on the 1.21.11 support
+        # line (Folia publishes 1.21.11 builds and refuses to load the plugin without it;
         # re-inverted from main's absence pin 2026-07-26)
         noflag_pap = os.path.join(td, "noflag-paper.jar")
         _make_jar(noflag_pap, {
@@ -990,7 +990,7 @@ def _selftest():
         os.makedirs(dfab)
         os.makedirs(dpap)
         PY_LSS = ("name: LodServerSupport\nversion: '0.7.0'\n"
-                  "main: dev.vox.lss.paper.LSSPaperPlugin\napi-version: '26.1.2'\n"
+                  "main: dev.vox.lss.paper.LSSPaperPlugin\napi-version: '1.21.11'\n"
                   "folia-supported: true\n"
                   "description: LSS plugin.\n"
                   "website: https://modrinth.com/plugin/lod-server-support\n"
