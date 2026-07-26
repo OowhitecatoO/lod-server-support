@@ -2,9 +2,32 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **Support branch: `support/mc1.21.11`.** This is a long-lived backport of the v0.7.3 feature set
+> to **Minecraft 1.21.11** (do NOT merge to `main`), cut fresh from main's v0.7.3 state on
+> 2026-07-26 (the previous v0.5.0-era branch is archived at `archive/mc1.21.11-pre-0.7.3`).
+> Divergences from the primary 26.2 line: **Java 21** everywhere (`options.release = 21`; CI
+> workflows run on 21 — the paperweight dev bundle's codebook cannot parse newer class files);
+> the Fabric toolchain is `fabric-loom-remap` with `loom.officialMojangMappings()` and
+> modImplementation deps; pins are fabric-api 0.141.4+1.21.11, sodium mc1.21.11-0.8.12 (the
+> config screen WORKS on this line, unlike 1.21.8), modmenu 17.0.0, paperweight dev bundle
+> `1.21.11-R0.1-SNAPSHOT`. Source-level API drift vs 26.x (from the archived line's research,
+> re-applied here): `PayloadTypeRegistry.playC2S()/playS2C()` (not serverboundPlay/clientboundPlay),
+> `ClientCommandManager` (not ClientCommands), `ChunkPos.x/.z` public FIELDS (not accessors),
+> `new ChunkPos(BlockPos)` (not ChunkPos.containing), `ChunkPos.asLong` (not ChunkPos.pack),
+> no unnamed `_` variables (Java 22+), and `IntegratedServerLanHook` uses the bare
+> `publishServer` selector (no MultiplayerScope). The NBT golden corpus is regenerated on
+> 1.21.11 and the Paper cross-module parity test exempts each section's nonEmptyBlockCount
+> short (vanilla counts a waterlogged block's fluid, Paper patches that out — upstream MC
+> divergence, palette/data/biomes/light stay byte-exact). **`folia-supported: true`** (Folia
+> publishes 1.21.11 builds; PluginYmlContractTest + release_check.py pin PRESENCE here, the
+> inverse of main). The **VSS channel is NOT published** from this line (LSS-only release.yml,
+> `make_latest: false`; vssJar tasks + release_check pair gates still run). Releases are tagged
+> `v<x.y.z>+mc1.21.11`. Sections below that say "26.2 / Java 25" describe the primary line and
+> are not re-verified here; the wire protocol, config files, and feature set are identical.
+
 ## Project
 
-LOD Server Support (LSS) — distributes LOD chunk data from servers to clients over a custom networking protocol. Supports Fabric (client + server) and Paper (server only). The Folia code paths (regionized probing, lifecycle mailbox) exist in the one plugin jar, but **`folia-supported` is deliberately ABSENT on the 26.2 line** (since v0.7.0): no Folia build exists for MC 26.2, so declaring it would auto-load release jars on a future Folia with live-unvalidated paths. Re-add the flag together with the `SOAK_PLATFORM=folia` validation once Folia ships 26.2 (`PluginYmlContractTest` + `release_check.py` pin the absence; the older support lines — 1.21.8/1.21.11/26.1.x — still declare it and remain Folia-experimental: single-player soak validated, concurrent multi-region ingress untested). Clients request distant chunks individually; the server reads them from disk or memory and streams serialized sections back, enabling LOD rendering mods to display terrain beyond vanilla render distance.
+LOD Server Support (LSS) — distributes LOD chunk data from servers to clients over a custom networking protocol. Supports Fabric (client + server) and Paper (server only). On this 1.21.11 support line **`folia-supported: true` is declared** (Folia publishes MC 1.21.11 builds; support is experimental — single-player soak validated, concurrent multi-region ingress untested), unlike main's 26.2 line where the flag is deliberately absent until Folia ships 26.2. Clients request distant chunks individually; the server reads them from disk or memory and streams serialized sections back, enabling LOD rendering mods to display terrain beyond vanilla render distance.
 
 ## Project Structure
 
