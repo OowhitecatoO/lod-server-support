@@ -18,18 +18,18 @@ FOLIA_DIR="$SCRIPT_DIR/test-server/folia"
 LEGACY_DIR="$SCRIPT_DIR/test-server/fabric-legacy"
 
 # --- Fabric versions ---
-FABRIC_MC_VERSION="26.2"
+FABRIC_MC_VERSION="26.1.2"
 FABRIC_LOADER_VERSION="0.19.3"
 FABRIC_INSTALLER_VERSION="1.1.1"
 
 # --- Paper/Folia versions ---
-PAPER_MC_VERSION="26.2"
-FOLIA_MC_VERSION="26.2"
+PAPER_MC_VERSION="26.1.2"
+FOLIA_MC_VERSION="26.1.2"
 
 # --- Download URLs ---
 FABRIC_SERVER_URL="https://meta.fabricmc.net/v2/versions/loader/${FABRIC_MC_VERSION}/${FABRIC_LOADER_VERSION}/${FABRIC_INSTALLER_VERSION}/server/jar"
-FABRIC_API_URL="https://cdn.modrinth.com/data/P7dR8mSH/versions/Cpy2Px2f/fabric-api-0.154.0%2B26.2.jar"
-C2ME_URL="https://cdn.modrinth.com/data/VSNURh3q/versions/nvOkOiyi/c2me-fabric-mc26.2-0.4.2-alpha.0.9.jar"
+FABRIC_API_URL="https://cdn.modrinth.com/data/P7dR8mSH/versions/yALY9gHM/fabric-api-0.151.0%2B26.1.2.jar"
+C2ME_URL="https://cdn.modrinth.com/data/VSNURh3q/versions/MmyZoUyp/c2me-fabric-mc26.1.2-0.4.0-alpha.0.4.jar"
 # DrexHD AntiXray (Modrinth sml2FMaA), fabric-1.4.16+26.1 — listed compatible with MC 26.2.
 # `run-fabric-antixray` enables it as the live gate for LSS's AntiXray compat
 # (docs/planning/antixray-compat-design.md): a current LSS build must SURVIVE an LSS client
@@ -41,18 +41,19 @@ C2ME_URL="https://cdn.modrinth.com/data/VSNURh3q/versions/nvOkOiyi/c2me-fabric-m
 ANTIXRAY_URL="https://cdn.modrinth.com/data/sml2FMaA/versions/AK313N9m/antixray-fabric-1.4.16%2B26.1.jar"
 
 # --- Legacy (protocol-16) LSS server ---
-# The last pre-v0.7.0 release on this Minecraft line (26.2), pulled straight from GitHub
-# Releases (a real protocol-16 server, not a rebuild). MC 26.2 == the current line, so a
-# current client CAN join it — only the LSS protocol differs (16 vs 18), which is exactly
-# what the v16 client-compat path bridges. Bump this when a newer pre-v0.7.0 tag is preferred.
-LEGACY_LSS_VERSION="0.6.2"
-LEGACY_LSS_MC="26.2"
+# The last pre-v0.7.0 release on this Minecraft line (26.1.2 — mainline v0.5.1, before the
+# 26.2 port), pulled straight from GitHub Releases (a real protocol-16 server, not a rebuild).
+# Same MC version as this branch, so a current client CAN join it — only the LSS protocol
+# differs (16 vs 18), which is exactly what the v16 client-compat path bridges. The reverse
+# smoke (an old v0.5.x CLIENT joining THIS branch's server) exercises the server-side shim.
+LEGACY_LSS_VERSION="0.5.1"
+LEGACY_LSS_MC="26.1.2"
 LEGACY_LSS_FABRIC_URL="https://github.com/VoX/lod-server-support/releases/download/v${LEGACY_LSS_VERSION}/lod-server-support-fabric-${LEGACY_LSS_VERSION}%2B${LEGACY_LSS_MC}.jar"
 
 # --- Java version check ---
 JAVA_MAJOR=$(java -version 2>&1 | head -1 | sed 's/.*"\([0-9]\+\).*/\1/')
 if [ "$JAVA_MAJOR" -lt 25 ] 2>/dev/null; then
-    echo "ERROR: Java 25+ required for MC 26.2. Found: Java $JAVA_MAJOR" >&2
+    echo "ERROR: Java 25+ required for MC 26.1. Found: Java $JAVA_MAJOR" >&2
     echo "  Set JAVA_HOME to a JDK 25+ installation." >&2
     exit 1
 fi
