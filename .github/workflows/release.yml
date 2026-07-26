@@ -93,6 +93,8 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           body: ${{ steps.release_notes.outputs.notes }}
+          # Support-line release: never steal the GitHub "Latest" badge from the main line.
+          make_latest: false
           # Without this, a glob matching nothing publishes an empty release silently;
           # failing here also stops the Modrinth steps from running against missing jars.
           fail_on_unmatched_files: true
