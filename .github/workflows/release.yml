@@ -35,8 +35,10 @@ jobs:
           fi
 
           # Fallback for lightweight tags: commit subjects as bullet list
+          # (v0.5.* keeps PREV_TAG on this support line — a bare v* would pick up the
+          # newer main-line tags and produce a cross-line compare link)
           if [ -z "$NOTES" ]; then
-            PREV_TAG=$(git tag -l 'v*' --sort=-v:refname | grep -v "^${TAG}$" | head -1 || true)
+            PREV_TAG=$(git tag -l 'v0.5.*' --sort=-v:refname | grep -v "^${TAG}$" | head -1 || true)
             if [ -n "$PREV_TAG" ]; then
               NOTES=$(git log --format="- %s" "${PREV_TAG}..${TAG}")
             else
@@ -47,7 +49,7 @@ jobs:
           # Append compare link
           # `|| true`: under `set -euo pipefail`, grep -v exits 1 (aborting the step) when the
           # pushed tag is the only v* tag — i.e. the first-ever release. Tolerate the empty result.
-          PREV_TAG=$(git tag -l 'v*' --sort=-v:refname | grep -v "^${TAG}$" | head -1 || true)
+          PREV_TAG=$(git tag -l 'v0.5.*' --sort=-v:refname | grep -v "^${TAG}$" | head -1 || true)
           if [ -n "$PREV_TAG" ]; then
             COMPARE="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${PREV_TAG}...${TAG}"
           else
@@ -85,6 +87,8 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           body: ${{ steps.release_notes.outputs.notes }}
+          # Support-line release: never steal the GitHub "Latest" badge from the main line.
+          make_latest: false
           # Without this, a glob matching nothing publishes an empty release silently;
           # failing here also stops the Modrinth steps from running against missing jars.
           fail_on_unmatched_files: true
