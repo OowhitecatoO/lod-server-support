@@ -23,8 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * is invisible until a real Paper server refuses to load — or silently mis-loads — the
  * plugin: an unresolvable {@code main} or wrong {@code api-version} aborts plugin load, a
  * renamed plugin moves the {@code plugins/LodServerSupport/} data folder the config and
- * soak staging rely on, and {@code folia-supported} must stay {@code true} on this 26.1
- * support line — Folia publishes MC 26.1.2 builds and removing the flag silently drops
+ * soak staging rely on, and {@code folia-supported} must stay {@code true} on this 1.21.11
+ * support line — Folia publishes MC 1.21.11 builds and removing the flag silently drops
  * Folia support (unlike the 26.2 primary line, where the flag is deliberately absent).
  */
 class PluginYmlContractTest {
@@ -103,19 +103,21 @@ class PluginYmlContractTest {
         var bundle = Pattern.compile("paperweight\\.paperDevBundle\\('([^']+)'\\)")
                 .matcher(Files.readString(locate("paper/build.gradle")));
         assertTrue(bundle.find(), "paper/build.gradle must declare paperweight.paperDevBundle('...')");
-        assertTrue(bundle.group(1).startsWith(apiVersion + "."),
-                "dev bundle " + bundle.group(1) + " must be a build of api-version " + apiVersion);
+        String devBundle = bundle.group(1);
+        assertTrue(devBundle.startsWith(apiVersion + ".") || devBundle.startsWith(apiVersion + "-R"),
+                "dev bundle " + devBundle + " must be a build of api-version " + apiVersion
+                        + " (new '<mc>.build.N' or old '<mc>-R0.1-SNAPSHOT' scheme)");
     }
 
     @Test
     void foliaSupportedIsDeclared() {
-        // Inverted from main's absence pin for the 26.1 support line (2026-07-26): Folia
-        // publishes MC 26.1.2 builds and this line's Folia paths are soak-validated
+        // Inverted from main's absence pin for the 1.21.11 support line (2026-07-26): Folia
+        // publishes MC 1.21.11 builds and this line's Folia paths are soak-validated
         // (SOAK_PLATFORM=folia — the pump runs on GlobalRegionScheduler and lifecycle
         // ingress is mailboxed; FoliaWiringContractTest pins the wiring). Folia refuses to
         // load plugins without this flag, so removing it silently drops Folia support.
         assertTrue(yml.getBoolean("folia-supported"),
-                "folia-supported: true is required for Folia to load the plugin on the 26.1 line");
+                "folia-supported: true is required for Folia to load the plugin on the 1.21.11 line");
     }
 
     @Test
