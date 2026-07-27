@@ -3,6 +3,7 @@
 - **The full v0.8.0 feature set, rebuilt for Minecraft 26.1.x** — This release updates the 26.1 support line straight from v0.5.1 to the current feature set: everything the main line shipped in v0.6.x–v0.8.0 (except the Minecraft 26.2 update itself). v0.8.0 releases for three Minecraft versions at once — this build for MC 26.1.x, plus `v0.8.0` (MC 26.2) and `v0.8.0+mc1.21.11` from their own lines. The Fabric mod runs on MC 26.1–26.1.2 (Java 25+, Fabric API 0.146+); the Paper plugin needs a 26.1.2 server.
 - **Works with older versions — update in any order** — v0.8.0 uses a newer LOD networking protocol than the last published 26.1 builds, but it stays fully compatible both ways with every published 26.1 release back to v0.4.x: a v0.8.0 server keeps serving older clients (the server translates their protocol on the fly, at their old pace), and a v0.8.0 client renders LODs from servers still on v0.4.x–v0.5.1 — including driving generation of new terrain on demand. Update the client, the server, or both — in any order.
 - **Folia support continues (experimental)** — This line keeps `folia-supported`, so the plugin loads on Folia 26.1.2 as before (unlike the 26.2 line, which waits for a Folia 26.2 build to exist). Folia support remains experimental: validated in single-player soak runs; busy multi-region servers are untested.
+- **Future Voxy versions** — The Voxy render-distance detection now tolerates Voxy changing its internal config field type, so a Voxy update can no longer silently break the automatic LOD distance match.
 - **Not published as "Voxy Server Side"** — The separate Voxy Server Side Modrinth listing tracks the Minecraft 26.2 line only. On 26.1, install LOD Server Support (this mod) — the two are wire-compatible, so 26.2 VSS players and 26.1 LSS servers still interoperate where Minecraft versions allow.
 
 ### New Features
@@ -32,5 +33,6 @@
 
 ### Performance
 
+- **Faster LOD disk reads** — Chunk parsing on the disk-read path reuses its serialization setup instead of rebuilding it per chunk read.
 - **Cuts duplicate chunk sends while loading LODs** — The server occasionally re-read and re-sent chunks it had just delivered. It now skips these duplicates, reducing disk and network load while players fill in their LOD view.
 - **Lower server overhead with many players** — Loaded-chunk serialization now skips columns already queued to send, is shared fairly across players each tick, and is capped globally so many players backfilling at once cannot stretch the server tick.
