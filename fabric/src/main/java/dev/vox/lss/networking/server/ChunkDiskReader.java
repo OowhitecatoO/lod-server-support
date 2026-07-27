@@ -27,7 +27,8 @@ public class ChunkDiskReader extends AbstractChunkDiskReader {
 
     // IOWorker$Priority is package-private and cannot be named here (and Fabric's intermediary
     // remapping rules out resolving it reflectively), so the ordinal is pinned. Verified against
-    // the 26.2 jar: FOREGROUND(0), BACKGROUND(1), SHUTDOWN(2) — scheduleWithResult takes the
+    // the 26.1.2 jar (this support line — same ordering as 26.2, re-pinned by the
+    // SerializerParityGameTests byte-parity test): FOREGROUND(0), BACKGROUND(1), SHUTDOWN(2) — scheduleWithResult takes the
     // priority as an int, which is how vanilla passes it too.
     //
     // Where this lands us on the shared per-dimension executor: vanilla's chunk loads
