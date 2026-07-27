@@ -12,6 +12,7 @@
 
 ### Bug Fixes
 
+- **Fixes black faces at chunk borders and treetops** — LOD data now carries the sky light for the air around terrain, so leaves and cliff sides no longer render black from one side at certain distances.
 - **LOD sessions start reliably on Paper and Folia** — The first batch of LOD requests can no longer be lost at join.
 - **Fixes server crash with the AntiXray mod (Fabric)** — The two now work together.
 - **Quieter console under heavy disk load** — Slow-disk warnings are summarized instead of flooding the log; affected chunks retry automatically.
