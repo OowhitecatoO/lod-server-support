@@ -32,12 +32,12 @@ FABRIC_API_URL="https://cdn.modrinth.com/data/P7dR8mSH/versions/5zJNhXV2/fabric-
 C2ME_URL="https://cdn.modrinth.com/data/VSNURh3q/versions/MfQIu1Y0/c2me-fabric-mc1.21.11-0.4.0-alpha.0.18.jar"
 # DrexHD AntiXray (Modrinth sml2FMaA), fabric-1.4.14+1.21.11 — the native 1.21.11 build.
 # `run-fabric-antixray` enables it as the live gate for LSS's AntiXray compat
-# (docs/planning/antixray-compat-design.md): a current LSS build must SURVIVE an LSS client
-# join — the crash shim binds AntiXray's ScopedValue context around LSS serialization, and
-# masking adopts the mod's hidden list (watch for the shim + 'LOD x-ray masking active'
-# lines and the /lsslod diag Xray line). Only a pre-shim LSS build still crashes (unbound
-# ScopedValue NoSuchElementException in the probe serve — the stack-trace source for the
-# upstream issue draft). Every other run command parks the jar as .jar.disabled.
+# (docs/planning/antixray-compat-design.md): a current LSS build must serve LODs cleanly
+# with the mod present. NOTE, 1.21.11 line: the mod threads its obfuscation context through
+# ThreadLocals here (unset get() == null, the benign skip value), so there is NO crash shim
+# on this branch — AntiXrayCompat.callSerializing is a documented pass-through and the gate
+# watches engine adoption instead ('LOD x-ray masking active' + the /lsslod diag Xray line).
+# Every other run command parks the jar as .jar.disabled.
 ANTIXRAY_URL="https://cdn.modrinth.com/data/sml2FMaA/versions/PHC63Epd/antixray-fabric-1.4.14%2B1.21.11.jar"
 
 # --- Legacy (protocol-16) LSS server ---
