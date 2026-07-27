@@ -1,5 +1,11 @@
 # AntiXray Compatibility: Crash Fix + LSS-Native Ore Masking
 
+> **1.21.11 support line:** §2's ScopedValue crash shim does NOT exist on this branch —
+> the mod's 1.21.11 build threads its obfuscation context through ThreadLocals (unset
+> `.get()` returns null, the exact value §2 binds), and ScopedValue is a Java-21 preview
+> API. `AntiXrayCompat.callSerializing` is a documented pass-through here; §3's engine
+> probe applies unchanged. See AntiXrayCompat's class doc on this branch.
+
 Status: Part A (§2) IMPLEMENTED 2026-07-23 — `AntiXrayCompat` shim + probe containment +
 Tier 1 pins (`AntiXrayCompatTest`, `ProbeContainmentTest`); upstream issue drafted in
 `antixray-upstream-issue.md`, not yet filed. Part B CORE (§3, phase 2) IMPLEMENTED

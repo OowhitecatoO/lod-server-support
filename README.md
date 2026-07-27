@@ -14,7 +14,11 @@ All builds are on [Modrinth](https://modrinth.com/plugin/lod-server-support) —
 
 ### Also published as "Voxy Server Side"
 
-Since v0.7.0, every release is additionally published to the
+**Support-line note (this branch):** 1.21.11 releases are published as LOD Server Support
+ONLY — the Voxy Server Side listing tracks the Minecraft 26.2 mainline. The two stay
+wire-compatible, so mixed LSS/VSS setups still interoperate where MC versions allow.
+
+Since v0.7.0, every mainline release is additionally published to the
 [Voxy Server Side](https://modrinth.com/plugin/voxy-server-side) Modrinth page. Both listings
 ship the **same mod** — identical internals and networking protocol; only the display name,
 description, and icon differ. Compatibility is total, you can join LSS servers with a VSS
@@ -57,7 +61,7 @@ Each Minecraft version has its own build; only the latest is listed. Older-MC bu
 | Minecraft | LSS Version | Fabric | Paper | Folia | Voxy | Java |
 |---|---|---|---|---|---|---|
 | **26.2** | v0.7.x | ✅ | ✅ | — | 0.2.16-beta+ | 25+ |
-| **26.1.x** | v0.7.3+mc26.1 | ✅ | ✅ | ✅ | 0.2.16-beta+ | 25+ |
+| **26.1.x** | v0.5.1 | ✅ | ✅ | ✅ | 0.2.16-beta+ | 25+ |
 | **1.21.11** | v0.7.3+mc1.21.11 | ✅ | ✅ | ✅ | 0.2.15-beta+ | 21+ |
 | **1.21.8** | v0.6.1+mc1.21.8 | ✅ | ✅ | ✅ | 0.2.5-alpha+ | 21+ |
 

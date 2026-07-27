@@ -554,6 +554,9 @@ class NbtSectionSerializerTest {
                 if (buf.readBoolean()) buf.skipBytes(2048); // blockLight
                 if (buf.readBoolean()) buf.skipBytes(2048); // skyLight
             }
+            // A normalizer must never desync silently: zeroing wrong offsets would EXEMPT
+            // real cross-module drift at exactly the bytes it wrongly touches.
+            assertEquals(0, buf.readableBytes(), "zeroSectionBlockCounts desynced (trailing bytes)");
         } finally {
             buf.release();
         }
@@ -568,9 +571,13 @@ class NbtSectionSerializerTest {
         // hasOnlyAir() keys off it, so a serializer that started writing 0 for content
         // sections would make clients render those sections as AIR while every byte-golden
         // stayed green (fixtures regenerate from the same bug). This restores the strength
-        // the exemption gave up, minus the platform noise: pin the SIGN of the hint against
-        // ground truth recomputed from the decoded palette — count > 0 iff any non-air
-        // block. (Tolerates the Fabric-4/Paper-3 waterlogged divergence: both are > 0.)
+        // the exemption gave up, minus the platform noise: recompute the REAL non-air cell
+        // count from the decoded data (not the palette — PalettedContainer.maybeHas answers
+        // from palette ENTRIES and is constant-true on a global palette, so it can drift
+        // from the data) and pin exact <= hint <= exact + fluid cells: vanilla 1.21.11
+        // counts a waterlogged block's fluid into the recalc, Paper patches it out, and
+        // both are legal; a zero hint over content (or an inflated hint beyond the fluid
+        // term) fails.
         Path paperDir = goldenPath("probe").getParent();
         Path fabricDir = locateRepoRelative("fabric/src/test/resources/nbt-corpus");
         for (Path dir : java.util.List.of(paperDir, fabricDir)) {
@@ -584,14 +591,25 @@ class NbtSectionSerializerTest {
                         short hint = buf.getShort(buf.readerIndex()); // peek the count short
                         var section = new LevelChunkSection(FACTORY);
                         section.read(buf);
-                        boolean hasNonAir = section.getStates().maybeHas(state -> !state.isAir());
-                        assertEquals(hasNonAir, hint > 0, dir.getFileName() + "/" + entry.getKey()
-                                + " section " + i + ": nonEmptyBlockCount hint (" + hint
-                                + ") disagrees with the decoded palette (non-air present: "
-                                + hasNonAir + ")");
+                        int nonAir = 0;
+                        int fluid = 0;
+                        for (int x = 0; x < 16; x++) for (int y = 0; y < 16; y++) for (int z = 0; z < 16; z++) {
+                            var state = section.getStates().get(x, y, z);
+                            if (!state.isAir()) nonAir++;
+                            if (!state.getFluidState().isEmpty()) fluid++;
+                        }
+                        String at = dir.getFileName() + "/" + entry.getKey() + " section " + i;
+                        assertTrue(hint >= nonAir && hint <= nonAir + fluid,
+                                at + ": nonEmptyBlockCount hint (" + hint + ") outside ["
+                                + nonAir + ", " + (nonAir + fluid) + "] recomputed from the data");
+                        assertEquals(nonAir > 0, hint > 0,
+                                at + ": hint sign disagrees with decoded content");
                         if (buf.readBoolean()) buf.skipBytes(2048);   // blockLight
                         if (buf.readBoolean()) buf.skipBytes(2048);   // skyLight
                     }
+                    assertEquals(0, buf.readableBytes(),
+                            dir.getFileName() + "/" + entry.getKey()
+                            + ": walker desynced from the wire grammar (trailing bytes)");
                 } finally {
                     buf.release();
                 }

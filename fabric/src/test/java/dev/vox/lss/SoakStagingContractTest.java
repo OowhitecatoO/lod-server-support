@@ -59,12 +59,20 @@ class SoakStagingContractTest {
     void staleBaseWorldGuardRunsBeforeTheAutoBackfillCheck() {
         assertTrue(soakSh.contains("WORLD_VERSION_MARKER=\"$BASE_WORLD_DIR/mc-version\""),
                 "the base-world mc-version marker must be defined");
-        assertTrue(soakSh.contains("printf '%s' \"1.21.11\" > \"$WORLD_VERSION_MARKER\""),
+        // The guard and the stamp both use MC_LINE_VERSION read from gradle.properties —
+        // a hardcoded pair can drift on a patch bump and silently clear the base EVERY run.
+        assertTrue(soakSh.contains("MC_LINE_VERSION=$(grep -oP '^minecraft_version=\\K.*' \"$PROJECT_ROOT/gradle.properties\")"),
+                "the marker version must come from gradle.properties");
+        assertTrue(soakSh.contains("printf '%s' \"$MC_LINE_VERSION\" > \"$WORLD_VERSION_MARKER\""),
                 "fresh-backfill must stamp the marker when it saves a base world");
-        int guard = soakSh.indexOf("!= \"1.21.11\"");
+        int guard = soakSh.indexOf("!= \"$MC_LINE_VERSION\"");
         int step1 = soakSh.indexOf("# Step 1: Auto-run fresh-backfill");
         assertTrue(guard >= 0 && step1 >= 0 && guard < step1,
-                "the stale-base clear (a 26.x world will not downgrade) must run BEFORE the "
-                        + "Step-1 auto-backfill existence check, or a stale base is booted as-is");
+                "the stale-base clear (another line's world will not downgrade) must run BEFORE "
+                        + "the Step-1 auto-backfill existence check, or a stale base is booted as-is");
+        int action = soakSh.indexOf("rm -rf \"$BASE_WORLD_DIR\"\n", guard);
+        assertTrue(action >= 0 && action < step1,
+                "the guard must actually CLEAR the stale base (rm -rf of the whole base dir) "
+                        + "before Step 1 — the comparison alone is not the protection");
     }
 }

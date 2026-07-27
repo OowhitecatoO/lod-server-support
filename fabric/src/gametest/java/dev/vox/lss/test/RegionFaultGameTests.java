@@ -20,8 +20,15 @@ import java.util.concurrent.atomic.AtomicInteger;
  * {@code RegionFileStorage}, whose inflate failure is caught upstream and surfaces to the
  * reader as an empty/absent chunk — so in MC 26.1.2 a corrupt chunk resolves as NOT-FOUND,
  * not as a thrown ERROR (errors=0, not_found=1 on 26.1.2; on MC 1.21.11 vanilla propagates
- * the ZipException so the SAME read resolves as ERROR, errors=1, not_found=0 — both paths
- * deliver the identical ChunkReadResult.empty (notFound=true), so containment is unchanged).
+ * the ZipException so the SAME read resolves as ERROR, errors=1, not_found=0). Both paths
+ * land on handleDiskNotFound and containment is unchanged, but the two outcomes are NOT
+ * identical: 26.x's swallow produces ChunkReadResult.notFoundAuthoritative while 1.21.11's
+ * error triage produces notFoundFromError ({@code authoritativeMiss=false}) — so on this
+ * line a corrupt chunk is never miss-memoized (it re-reads each ~1 Hz re-declaration until
+ * generation covers it) and each read logs the UNTHROTTLED "Failed to read chunk NBT" error
+ * with a stack trace. Rare (a corrupt region file), self-healing, but louder than 26.x — and
+ * it means "disk.errors with zero 'Failed to read chunk' lines" is NOT a valid all-timeouts
+ * triage signal for corrupt-region cases on this line.
  * What FP-027 actually
  * guarantees, and what this test pins, is CONTAINMENT: the corrupt read completes through the
  * pool without erroring or going thread-fatal, frees its slot, leaks nothing, and the SAME

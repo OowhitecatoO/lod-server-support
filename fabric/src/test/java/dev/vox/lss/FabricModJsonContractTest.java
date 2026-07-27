@@ -20,9 +20,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * The regression vector is a forward merge from main auto-resolving these files back to the
  * 26.2 shape: the LOWER Minecraft bound is enforced by fabric-loader in every gametest
  * launch, but a loosened UPPER bound is caught by nothing at build time — and this line's
- * jar genuinely breaks on 26.2 (the bare {@code publishServer} mixin selector does not
- * match 26.2's overload set, and the ChunkPos field accessors do not exist post-26.1), so
- * the exact pin is load-bearing, not cosmetic.
+ * jar genuinely breaks on 26.x (its pinned {@code publishServer} mixin descriptor matches
+ * neither 26.2 overload, and the public {@code ChunkPos.x}/{@code .z} FIELDS this branch
+ * compiles against are accessors there), so the exact pin is load-bearing, not cosmetic.
  */
 class FabricModJsonContractTest {
 
@@ -62,7 +62,10 @@ class FabricModJsonContractTest {
     @Test
     void gradlePropertiesTargetsTheSameLine() {
         String mc = gradleProps.getProperty("minecraft_version", "");
-        assertTrue(mc.startsWith(EXPECTED_MINECRAFT_VERSION_PREFIX),
+        // equals-or-dot: a bare prefix match would also accept e.g. 26.10, which the
+        // depends range above would exclude — the two must move in lockstep.
+        assertTrue(mc.equals(EXPECTED_MINECRAFT_VERSION_PREFIX)
+                        || mc.startsWith(EXPECTED_MINECRAFT_VERSION_PREFIX + "."),
                 "gradle.properties minecraft_version (" + mc + ") must stay on the "
                         + EXPECTED_MINECRAFT_VERSION_PREFIX + " line");
     }
