@@ -2,7 +2,6 @@
 
 - **The full v0.8.0 feature set for Minecraft 26.1.x** — Updates this line straight from v0.5.1 with everything since. Fabric: MC 26.1–26.1.2, Java 25+, Fabric API 0.146+. Paper/Purpur: 26.1.2. Folia: 26.1.2 (experimental). Also released: `v0.8.0` (MC 26.2) and `v0.8.0+mc1.21.11`.
 - **Works with v0.4.x–v0.5.1 both ways** — Update the client, the server, or both, in any order. A v0.8.0 server keeps serving older clients; a v0.8.0 client still gets LODs (including newly generated terrain) from older servers.
-- **Not published as "Voxy Server Side"** — On 26.1, install LOD Server Support (this mod).
 
 ### New Features
 
