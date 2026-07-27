@@ -10,7 +10,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(IntegratedServer.class)
 public class IntegratedServerLanHook {
-    @Inject(method = "publishServer", at = @At("RETURN"))
+    // This line's IntegratedServer declares exactly one publishServer overload, so the bare
+    // selector would also work — the full descriptor is pinned anyway so a future overload
+    // (26.2 added one) fails loudly at apply time instead of matching ambiguously.
+    @Inject(method = "publishServer(Lnet/minecraft/world/level/GameType;ZI)Z", at = @At("RETURN"))
     private void lss$onLanPublished(GameType gameType, boolean allowCheats, int port,
                                      CallbackInfoReturnable<Boolean> cir) {
         if (cir.getReturnValue()) {

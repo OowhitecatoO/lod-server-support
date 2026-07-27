@@ -25,6 +25,12 @@ dependencies {
 
 test {
     useJUnitPlatform()
+    // ReleaseWorkflowContractTest reads the workflow YAMLs from the source tree; without
+    // declaring them as inputs, a workflow-only edit leaves :paper:test UP-TO-DATE locally
+    // and the contract never re-checks (same pattern as fabric's gametest-listing inputs).
+    inputs.files(rootProject.file('.github/workflows/release.yml'),
+                 rootProject.file('.github/workflows/build.yml'))
+            .withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
 processResources {
@@ -146,7 +152,7 @@ tasks.register('vssJar') {
                         def text = zf.getInputStream(e).getText('UTF-8')
                         // Rewrite the top-level description/website AND the LOCAL command +
                         // permission branding. name/main/version/api-version and the
-                        // folia-supported ABSENCE are all preserved — those are the
+                        // folia-supported: true line are all preserved — those are the
                         // interchangeability/identity contract. The command name and
                         // permission node are LOCAL (an admin types /vsslod on their own
                         // server), never on the wire, so LSS and VSS stay wire-compatible.

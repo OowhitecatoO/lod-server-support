@@ -93,6 +93,9 @@ case "$SOAK_PLATFORM" in
 esac
 
 # Base worlds are MC-version-specific; fresh-backfill stamps this marker when it saves one.
+# The version comes from gradle.properties so the guard and the stamp can never drift
+# apart (a drifted pair silently clears the base world on EVERY run).
+MC_LINE_VERSION=$(grep -oP '^minecraft_version=\K.*' "$PROJECT_ROOT/gradle.properties")
 WORLD_VERSION_MARKER="$BASE_WORLD_DIR/mc-version"
 
 source "$PROJECT_ROOT/scripts/lib/mc-run.sh"
@@ -225,11 +228,11 @@ echo "========================================="
 echo " LSS Soak: platform=$SOAK_PLATFORM, scenario=$SCENARIO, client runs=$CLIENT_RUNS, budget=${RUNTIME_BUDGET}s"
 echo "========================================="
 
-# Base worlds are MC-version-specific; a 26.2 world will not downgrade to 26.1.2 (MC refuses
+# Base worlds are MC-version-specific; another line's world will not downgrade (MC refuses
 # newer-DataVersion worlds). Clear a stale base BEFORE Step 1 so its '! -d .../world' check
 # regenerates naturally. Unstamped pre-marker bases also clear once and regenerate.
-if [[ -d "$BASE_WORLD_DIR" && "$(cat "$WORLD_VERSION_MARKER" 2>/dev/null)" != "26.1.2" ]]; then
-    echo "[soak] Base world at $BASE_WORLD_DIR is not for MC 26.1.2 — clearing (will re-run fresh-backfill)"
+if [[ -d "$BASE_WORLD_DIR" && "$(cat "$WORLD_VERSION_MARKER" 2>/dev/null)" != "$MC_LINE_VERSION" ]]; then
+    echo "[soak] Base world at $BASE_WORLD_DIR is not for MC $MC_LINE_VERSION — clearing (will re-run fresh-backfill)"
     rm -rf "$BASE_WORLD_DIR"
 fi
 
@@ -433,7 +436,7 @@ if [[ "$SCENARIO" == "fresh-backfill" && -d "$SERVER_RUN_DIR/world" ]]; then
     mkdir -p "$BASE_WORLD_DIR"
     rm -rf "$BASE_WORLD_DIR/world"
     cp -r "$SERVER_RUN_DIR/world" "$BASE_WORLD_DIR/world"
-    printf '%s' "26.1.2" > "$WORLD_VERSION_MARKER"
+    printf '%s' "$MC_LINE_VERSION" > "$WORLD_VERSION_MARKER"
     if [[ -d "$CLIENT_RUN_DIR/config/lss/cache" ]]; then
         echo "[soak] Saving client column cache snapshot to $BASE_WORLD_DIR/client-cache"
         rm -rf "$BASE_WORLD_DIR/client-cache"

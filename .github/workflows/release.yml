@@ -2,7 +2,10 @@ name: Release
 
 on:
   push:
-    tags: ['v*']
+    # Scoped to THIS line's tags: a bare v* tag accidentally pushed from this branch must
+    # not publish (it would ship this line's jars under a mainline-shaped version). The
+    # mainline release.yml keeps the broad v* trigger; each support line owns its suffix.
+    tags: ['v*+mc26.1*']
 
 jobs:
   release:
@@ -35,13 +38,19 @@ jobs:
           fi
 
           # Fallback for lightweight tags: commit subjects as bullet list
-          # (support line: only this line's tags are meaningful ancestors)
+          # (support line: only this line's tags are meaningful ancestors; the FIRST tag of
+          # the line anchors to the mainline tag the branch was cut from, so the fallback
+          # can never dump the repo's full history into the release body + Modrinth
+          # changelogs. The -n bound is the last-resort cap if even that anchor is missing.)
           if [ -z "$NOTES" ]; then
             PREV_TAG=$(git tag -l 'v*+mc26.1*' --sort=-v:refname | grep -v "^${TAG}$" | head -1 || true)
+            if [ -z "$PREV_TAG" ]; then
+              PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*' --exclude 'v*+mc*' "${TAG}^" 2>/dev/null || true)
+            fi
             if [ -n "$PREV_TAG" ]; then
               NOTES=$(git log --format="- %s" "${PREV_TAG}..${TAG}")
             else
-              NOTES=$(git log --format="- %s" "${TAG}")
+              NOTES=$(git log -n 50 --format="- %s" "${TAG}")
             fi
           fi
 
@@ -49,6 +58,12 @@ jobs:
           # `|| true`: under `set -euo pipefail`, grep -v exits 1 (aborting the step) when the
           # pushed tag is the only v* tag — i.e. the first-ever release. Tolerate the empty result.
           PREV_TAG=$(git tag -l 'v*+mc26.1*' --sort=-v:refname | grep -v "^${TAG}$" | head -1 || true)
+          # First tag of the line: compare against the mainline tag this branch was cut
+          # from (e.g. v0.7.3), so the Full Changelog link shows the backport delta rather
+          # than degrading to a full-history commit listing.
+          if [ -z "$PREV_TAG" ]; then
+            PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*' --exclude 'v*+mc*' "${TAG}^" 2>/dev/null || true)
+          fi
           if [ -n "$PREV_TAG" ]; then
             COMPARE="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${PREV_TAG}...${TAG}"
           else
