@@ -35,7 +35,11 @@ class ReleaseWorkflowContractTest {
     // ---- the line's expected values (differ between support branches, plus ciRunsJava21
     // on the Java-21 lines; everything else in this file is branch-invariant) ----
     private static final String LINE_TAG_GLOB = "v*+mc26.1*";
-    private static final String TRIGGER_LINE = "tags: ['v*+mc26.1*']";
+    // NOTE: GitHub's filter-pattern language treats '+' as a quantifier, so a pattern
+    // containing '*+' is INVALID — it phantom-fails every push and a real tag triggers
+    // NOTHING. The glob swallows the literal '+' with '*'; the exact-suffix check is the
+    // shell guard step, where '+' is plain text.
+    private static final String TRIGGER_LINE = "tags: ['v*mc26.1*']";
     private static final String FABRIC_MODRINTH_VERSION = "version: v${{ env.MOD_VERSION }}+fabric+mc26.1";
     private static final String PAPER_MODRINTH_VERSION = "version: v${{ env.MOD_VERSION }}+paper+mc26.1.2";
     private static final String[] FABRIC_GAME_VERSIONS = {"26.1", "26.1.1", "26.1.2"};
@@ -83,6 +87,21 @@ class ReleaseWorkflowContractTest {
                 "release.yml must trigger only on this line's tags (" + TRIGGER_LINE + ")");
         assertFalse(releaseYml.contains("tags: ['v*']"),
                 "main's broad v* trigger must not come back on a support line");
+        assertFalse(Pattern.compile("tags:.*\\*\\+").matcher(releaseYml).find(),
+                "no tag filter may contain '*+' — GitHub treats '+' as a quantifier, the "
+                        + "pattern is invalid, and a real tag push would trigger NOTHING");
+    }
+
+    @Test
+    void guardStepRefusesWrongLineTags() {
+        // The trigger glob cannot express the literal '+', so the exact-suffix scoping is
+        // a first-step shell guard: only v*+mc26.1* tags may publish from this workflow.
+        String guard = stepBlock("- name: Refuse wrong-line tags");
+        assertTrue(guard.contains("v*+mc26.1*)") && guard.contains("exit 1"),
+                "the guard step must pass only this line's +mc26.1 tags and fail the rest");
+        assertTrue(releaseYml.indexOf("- name: Refuse wrong-line tags")
+                        < releaseYml.indexOf("- uses: actions/checkout"),
+                "the guard must be the FIRST step — before checkout, builds, or any publish");
     }
 
     @Test

@@ -5,7 +5,11 @@ on:
     # Scoped to THIS line's tags: a bare v* tag accidentally pushed from this branch must
     # not publish (it would ship this line's jars under a mainline-shaped version). The
     # mainline release.yml keeps the broad v* trigger; each support line owns its suffix.
-    tags: ['v*+mc26.1*']
+    # The glob deliberately has NO '+': GitHub's filter-pattern language treats '+' as a
+    # quantifier, so the old 'v*+mc26.1*' form was INVALID — it phantom-failed every push
+    # and a real tag push would have triggered NOTHING. The '*' swallows the literal '+';
+    # the exact-suffix check lives in the guard step below, where '+' is plain shell text.
+    tags: ['v*mc26.1*']
 
 jobs:
   release:
@@ -13,6 +17,15 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Exact-suffix guard (the trigger glob above cannot express the literal '+'): only
+      # this line's tags may publish from this branch's workflow.
+      - name: Refuse wrong-line tags
+        run: |
+          case "${GITHUB_REF_NAME}" in
+            v*+mc26.1*) ;;
+            *) echo "::error::${GITHUB_REF_NAME} is not a +mc26.1 tag — this support-line release.yml must not publish it"; exit 1 ;;
+          esac
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
