@@ -26,7 +26,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class FabricModJsonContractTest {
 
     // ---- the line's expected constants (the ONLY block that differs between support branches) ----
-    private static final String EXPECTED_MINECRAFT_DEPENDS = ">=26.1 <26.2";
+    // The trailing '-' makes the upper bound prerelease-EXCLUSIVE: Fabric semver sorts
+    // 26.2-rc below 26.2, so a bare '<26.2' admitted 26.2 prereleases — where the pinned
+    // publishServer mixin descriptor hard-crashes at apply (final compat review 2026-07-27).
+    private static final String EXPECTED_MINECRAFT_DEPENDS = ">=26.1 <26.2-";
     private static final String EXPECTED_MINECRAFT_VERSION_PREFIX = "26.1";
 
     private static JsonObject modJson;
