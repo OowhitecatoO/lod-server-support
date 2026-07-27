@@ -2,9 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **Support branch: `support/mc1.21.11`.** This is a long-lived backport of the v0.7.3 feature set
-> to **Minecraft 1.21.11** (do NOT merge to `main`), cut fresh from main's v0.7.3 state on
-> 2026-07-26 (the previous v0.5.0-era branch is archived at `archive/mc1.21.11-pre-0.7.3`).
+> **Support branch: `support/mc1.21.11`.** This is a long-lived backport of the main-line
+> feature set (currently v0.8.0 — releases tag `v<x.y.z>+mc1.21.11` in lock-step with main
+> where feasible) to **Minecraft 1.21.11** (do NOT merge to `main`), cut fresh from main's
+> v0.7.3 state on 2026-07-26 and since kept current by main→branch merges (the previous
+> v0.5.0-era branch is archived at `archive/mc1.21.11-pre-0.7.3`).
 > Divergences from the primary 26.2 line: **Java 21** everywhere (`options.release = 21`; CI
 > workflows run on 21 — the paperweight dev bundle's codebook cannot parse newer class files);
 > the Fabric toolchain is `fabric-loom-remap` with `loom.officialMojangMappings()` and
