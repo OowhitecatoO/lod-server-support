@@ -560,6 +560,45 @@ class NbtSectionSerializerTest {
         return copy;
     }
 
+    @Test
+    void sectionBlockCountHintStaysSane() throws IOException {
+        // goldenCorpusIsByteIdenticalToTheFabricTwin deliberately EXEMPTS each section's
+        // leading nonEmptyBlockCount short (platform-divergent on 1.21.11 — see above). That
+        // hint is not inert on the read side: LevelChunkSection.read stores it and
+        // hasOnlyAir() keys off it, so a serializer that started writing 0 for content
+        // sections would make clients render those sections as AIR while every byte-golden
+        // stayed green (fixtures regenerate from the same bug). This restores the strength
+        // the exemption gave up, minus the platform noise: pin the SIGN of the hint against
+        // ground truth recomputed from the decoded palette — count > 0 iff any non-air
+        // block. (Tolerates the Fabric-4/Paper-3 waterlogged divergence: both are > 0.)
+        Path paperDir = goldenPath("probe").getParent();
+        Path fabricDir = locateRepoRelative("fabric/src/test/resources/nbt-corpus");
+        for (Path dir : java.util.List.of(paperDir, fabricDir)) {
+            for (var entry : corpusFiles(dir).entrySet()) {
+                byte[] wire = Files.readAllBytes(entry.getValue());
+                var buf = new FriendlyByteBuf(Unpooled.wrappedBuffer(wire));
+                try {
+                    int count = buf.readVarInt();
+                    for (int i = 0; i < count; i++) {
+                        buf.readByte();                               // sectionY
+                        short hint = buf.getShort(buf.readerIndex()); // peek the count short
+                        var section = new LevelChunkSection(FACTORY);
+                        section.read(buf);
+                        boolean hasNonAir = section.getStates().maybeHas(state -> !state.isAir());
+                        assertEquals(hasNonAir, hint > 0, dir.getFileName() + "/" + entry.getKey()
+                                + " section " + i + ": nonEmptyBlockCount hint (" + hint
+                                + ") disagrees with the decoded palette (non-air present: "
+                                + hasNonAir + ")");
+                        if (buf.readBoolean()) buf.skipBytes(2048);   // blockLight
+                        if (buf.readBoolean()) buf.skipBytes(2048);   // skyLight
+                    }
+                } finally {
+                    buf.release();
+                }
+            }
+        }
+    }
+
     private static Path locateRepoRelative(String repoRelative) {
         Path dir = Path.of("").toAbsolutePath();
         for (int i = 0; i < 6 && dir != null; i++, dir = dir.getParent()) {

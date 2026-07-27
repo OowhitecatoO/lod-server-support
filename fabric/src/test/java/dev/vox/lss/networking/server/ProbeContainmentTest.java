@@ -22,7 +22,9 @@ class ProbeContainmentTest {
 
     @Test
     void throwingSerializerIsContainedAsNoProbe() {
-        // The exact production shape: unbound ScopedValue.get() in an AntiXray mixin.
+        // The 26.x lines' production shape (unbound ScopedValue.get() in an AntiXray mixin);
+        // on 1.21.11 AntiXray uses ThreadLocals and cannot throw this — the test stays as the
+        // GENERIC probe-containment floor for any third-party serialize-path throwable.
         assertNull(RequestProcessingService.serializeProbeContained(
                 (level, chunk, cx, cz) -> { throw new NoSuchElementException("ScopedValue not bound"); },
                 null, null, 3, -7, throttle));

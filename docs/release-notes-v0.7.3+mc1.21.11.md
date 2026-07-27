@@ -15,7 +15,6 @@
 
 ### Bug Fixes
 
-- **Fixes server crash with the AntiXray mod (Fabric)** — Running DrexHD's AntiXray alongside LSS crashed the server as soon as LOD data was served. The two now work together.
 - **Flying no longer pauses LOD loading** — Crossing chunk borders faster than once per second used to silently stop all LOD requests until you stood still. Terrain now streams in along your flight path.
 - **Heavy building no longer stalls LOD loading** — A steady stream of world edits could previously delay LOD requests indefinitely on busy servers; change notifications no longer affect the request cadence.
 - **Quieter console under heavy disk load** — A slow disk no longer floods the server console: LOD read timeouts are summarized in one throttled warning line per minute, saturation warnings are rate-limited, and the routine cache-save message is demoted to debug. (All remain harmless — affected chunks retry automatically.)

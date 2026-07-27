@@ -49,7 +49,10 @@ ANTIXRAY_URL="https://cdn.modrinth.com/data/sml2FMaA/versions/PHC63Epd/antixray-
 # shim.
 LEGACY_LSS_VERSION="0.5.0"
 LEGACY_LSS_MC="1.21.11"
-LEGACY_LSS_FABRIC_URL="https://github.com/VoX/lod-server-support/releases/download/v${LEGACY_LSS_VERSION}/lod-server-support-fabric-${LEGACY_LSS_VERSION}%2B${LEGACY_LSS_MC}.jar"
+# NOTE: this line's legacy release lives under the DUAL-LINE tag v0.5.0+mc1.21.11 (not the
+# bare v0.5.0, which is the 26.1.2 mainline release) — the tag path needs the %2B suffix.
+LEGACY_LSS_TAG="v${LEGACY_LSS_VERSION}%2Bmc${LEGACY_LSS_MC}"
+LEGACY_LSS_FABRIC_URL="https://github.com/VoX/lod-server-support/releases/download/${LEGACY_LSS_TAG}/lod-server-support-fabric-${LEGACY_LSS_VERSION}%2B${LEGACY_LSS_MC}.jar"
 
 # --- Java version check ---
 JAVA_MAJOR=$(java -version 2>&1 | head -1 | sed 's/.*"\([0-9]\+\).*/\1/')
@@ -407,7 +410,8 @@ setup_legacy() {
     local mods_dir="$LEGACY_DIR/mods"
     mkdir -p "$LEGACY_DIR" "$mods_dir"
 
-    # Same MC 26.2 Fabric server launcher + Fabric API as the current Fabric server — only the
+    # Same Fabric server launcher + Fabric API as the current Fabric server (this line's own
+    # MC version) — only the
     # LSS jar differs (an old release instead of the local build). No C2ME: keep the legacy
     # server a clean vanilla-IO protocol-16 baseline so nothing confounds the compat eyeball.
     download "$FABRIC_SERVER_URL" "$LEGACY_DIR/fabric-server-launch.jar"
