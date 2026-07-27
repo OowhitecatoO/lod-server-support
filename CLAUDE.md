@@ -2,9 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **Support branch: `support/mc26.1`.** This is a long-lived backport of the v0.7.3 feature set
+> **Support branch: `support/mc26.1`.** This is a long-lived backport of the main-line feature
+> set (currently v0.8.0 — releases tag `v<x.y.z>+mc26.1` in lock-step with main where feasible)
 > to **Minecraft 26.1.2** (do NOT merge to `main`), cut fresh from main's v0.7.3 state on
-> 2026-07-26 (the previous 26.1 branch is archived at `archive/mc26.1-pre-0.7.3`). Divergences
+> 2026-07-26 and since kept current by main→branch merges (the previous 26.1 branch is
+> archived at `archive/mc26.1-pre-0.7.3`). Divergences
 > from the primary 26.2 line: **`folia-supported: true`** (Folia publishes 26.1.2 builds —
 > `PluginYmlContractTest` + `release_check.py` pin PRESENCE here, the inverse of main;
 > `SOAK_PLATFORM=folia` runs against a real downloaded Folia); `IntegratedServerLanHook` uses
