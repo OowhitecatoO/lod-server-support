@@ -423,11 +423,15 @@ def discover(problems, expected_version=None, root=ROOT):
         if not jars:
             problems.append(f"no {what} jar found in build/libs — {hint}")
     if expected_version:
-        # A release ships all four; each must exist at the tag version.
-        fab = _require_version(fab, "lod-server-support-fabric", expected_version, problems)
-        pap = _require_version(pap, "lod-server-support-paper", expected_version, problems)
-        vfab = _require_version(vfab, "voxy-server-side-fabric", expected_version, problems)
-        vpap = _require_version(vpap, "voxy-server-side-paper", expected_version, problems)
+        # A release ships all four; each must exist at the tag version — pinned to THIS
+        # line's minecraft_version when known: on a multi-line repo the same mod_version
+        # legitimately exists per release line, so version pinning alone could select a
+        # stale other-line jar (0.7.3+26.2 beside 0.7.3+26.1.2) and green-light shipping it.
+        mc = _minecraft_version(root)
+        fab = _require_version(fab, "lod-server-support-fabric", expected_version, problems, mc=mc)
+        pap = _require_version(pap, "lod-server-support-paper", expected_version, problems, mc=mc)
+        vfab = _require_version(vfab, "voxy-server-side-fabric", expected_version, problems, mc=mc)
+        vpap = _require_version(vpap, "voxy-server-side-paper", expected_version, problems, mc=mc)
     else:
         _flag_ambiguous(fab, "lod-server-support-fabric", problems)
         _flag_ambiguous(pap, "lod-server-support-paper", problems)
@@ -478,18 +482,40 @@ def _jars_in(d, prefix):
             if n.startswith(prefix) and n.endswith(".jar")]
 
 
-def _require_version(jars, prefix, version, problems):
+def _minecraft_version(root=ROOT):
+    """The line's minecraft_version from gradle.properties, or None if unreadable. Used to
+    pin --version matching to the FULL CI jar name: support branches make the same
+    mod_version exist on several MC lines at once, so `-{version}+` alone is ambiguous."""
+    try:
+        with open(os.path.join(root, "gradle.properties"), encoding="utf-8") as fh:
+            for line in fh:
+                if line.strip().startswith("minecraft_version="):
+                    return line.split("=", 1)[1].strip()
+    except OSError:
+        pass
+    return None
+
+
+def _require_version(jars, prefix, version, problems, mc=None):
     """Restrict checking to the exact release jar for `version`; a missing jar is a failure
     — otherwise a stale jar from an earlier build gets validated in its place and the
     pre-flight green-lights code that was never built. `prefix` is the full jar base name
-    (e.g. `lod-server-support-fabric` or `voxy-server-side-paper`)."""
-    want_prefix = f"{prefix}-{version}+"
+    (e.g. `lod-server-support-fabric` or `voxy-server-side-paper`). When `mc` is known the
+    match requires the full `-{version}+{mc}.jar` CI name, so a stale jar of the SAME
+    version from ANOTHER release line (0.7.3+26.2 vs 0.7.3+26.1.2) can never be selected;
+    mc=None keeps the legacy any-suffix behavior (single-line repos, selftest fixtures)."""
     want_exact = f"{prefix}-{version}.jar"
-    matched = [j for j in jars
-               if os.path.basename(j).startswith(want_prefix)
-               or os.path.basename(j) == want_exact]
+    if mc:
+        want_versioned = f"{prefix}-{version}+{mc}.jar"
+        matched = [j for j in jars if os.path.basename(j) in (want_versioned, want_exact)]
+    else:
+        want_prefix = f"{prefix}-{version}+"
+        matched = [j for j in jars
+                   if os.path.basename(j).startswith(want_prefix)
+                   or os.path.basename(j) == want_exact]
     if not matched:
-        problems.append(f"{prefix}: no jar for version {version} in build/libs "
+        problems.append(f"{prefix}: no jar for version {version}"
+                        + (f" on MC {mc}" if mc else "") + " in build/libs "
                         f"(found: {[os.path.basename(j) for j in jars] or 'none'}) — "
                         f"build with CI=true and -Pmod_version={version} first")
     return matched
@@ -674,6 +700,22 @@ def _selftest():
         check(p == [] and [os.path.basename(j) for j in got]
               == ["voxy-server-side-fabric-0.7.0+26.2.jar"],
               f"vss --version did not select the vss jar: {got} {p}")
+
+        # mc-pinned matching (support lines): the SAME mod_version exists on multiple
+        # release lines, so a stale other-line jar of the right version must be rejected
+        # when gradle.properties' minecraft_version is known.
+        p = []
+        got = _require_version(["a/lod-server-support-fabric-0.7.3+26.2.jar",
+                                "a/lod-server-support-fabric-0.7.3+26.1.2.jar"],
+                               "lod-server-support-fabric", "0.7.3", p, mc="26.1.2")
+        check(p == [] and [os.path.basename(j) for j in got]
+              == ["lod-server-support-fabric-0.7.3+26.1.2.jar"],
+              f"mc-pinned selection did not pick exactly this line's jar: {got} {p}")
+        p = []
+        got = _require_version(["a/lod-server-support-fabric-0.7.3+26.2.jar"],
+                               "lod-server-support-fabric", "0.7.3", p, mc="26.1.2")
+        check(got == [] and any("no jar for version 0.7.3 on MC 26.1.2" in m for m in p),
+              f"wrong-line stale jar passed the mc-pinned version gate: {got} {p}")
 
         # ---- Voxy Server Side branded jars: full LSS gate + identity guardrail ----
         # A clean vss Fabric jar: rebranded name, but mod id STILL `lss` → passes both gates.
