@@ -33,6 +33,11 @@ import java.util.function.Supplier;
  * surface ({@code Util.getBlockController}, {@code ChunkPacketBlockControllerAntiXray}'s
  * {@code obfuscateGlobal}/{@code maxBlockHeight}) exists identically in the 1.21.11 jar.
  * Zero compile-time dependency, mirroring {@code VoxyCompat}.
+  * <p>Caveat for future changes: AntiXray 1.4.x's one NON-null-safe mixin path is the
+ * {@code LevelChunkSection(ValueInput)} constructor wrap (raw ThreadLocal read, NPE if
+ * reached outside AntiXray's own scope). LSS never constructs sections through it —
+ * every LSS construction uses the (states, biomes) or (factory) ctor. Deserializing
+ * sections via ValueInput would silently turn this pass-through into a crash path.
  */
 public final class AntiXrayCompat {
     private AntiXrayCompat() {}

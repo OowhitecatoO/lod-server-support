@@ -68,7 +68,7 @@ Each Minecraft version has its own build; only the latest is listed. Older-MC bu
 Fabric builds are client + server; the Paper plugin is server-only and also runs on Purpur. On the older support lines Folia uses the same plugin JAR (experimental). The 26.2 plugin does **not** declare Folia support — no Folia build exists for MC 26.2, and support returns once Folia ships 26.2 and validation passes.
 
 > [!IMPORTANT]
-> **Update the server first.** LSS versions a networking protocol. A newer client on an older server establishes no LOD session — you see vanilla render distance and no error. A v0.7.0+ server keeps serving older protocol-16 clients (v0.4.x–v0.6.x — on the 1.21.11 line that includes the previous v0.5.0+mc1.21.11 release) through a built-in compatibility layer (`enableV16Compat`, default on), so servers can update ahead of their players. Release notes call out which updates carry a protocol bump.
+> **Mixed versions are fine back to v0.4.x.** LSS versions a networking protocol with compatibility layers in BOTH directions: a v0.7.0+ server keeps serving older protocol-16 clients (v0.4.x–v0.6.x) via `enableV16Compat` (default on), and a v0.7.0+ client still gets LODs — including on-demand terrain generation — from v0.4.x–v0.6.x servers via `enableV16ServerCompat` (default on). Only against pre-v0.4 peers (or with the layers disabled) does no LOD session form: vanilla render distance, no error. Release notes call out which updates carry a protocol bump.
 
 On 1.21.8 the in-game config screen is unavailable (it requires Sodium 0.8+, and 1.21.8's newest Sodium is 0.7.3); the JSON config files still work as normal.
 
@@ -128,7 +128,7 @@ Server config is generated on first run:
 | `xrayHiddenBlocks` | Paper's default ore list | Fallback hidden-block list, used only when no engine settings can be adopted (mode `"on"` with no engine, or a detection failure). Unknown ids are skipped with a warning |
 | `xrayMaxBlockHeight` | `64` | Fallback masking cutoff: only blocks below this world Y are masked. Blocks at or above it already ship unobfuscated in vanilla chunk packets, so masking them would hide nothing |
 
-**Anti-xray masking notes:** masking applies to columns served after it activates — columns already in client caches are not recalled (true of any anti-xray retrofit). Cave shapes and light data are not hidden (same as the packet-level anti-xray systems), and the `/lsslod diag` command shows an `Xray:` status line (active source + masked section count). On Fabric, LSS also ships a compatibility shim so the AntiXray mod no longer crashes servers running LSS.
+**Anti-xray masking notes:** masking applies to columns served after it activates — columns already in client caches are not recalled (true of any anti-xray retrofit). Cave shapes and light data are not hidden (same as the packet-level anti-xray systems), and the `/lsslod diag` command shows an `Xray:` status line (active source + masked section count). On this 1.21.11 line the AntiXray mod needs no crash shim (its 1.21.x builds are already safe alongside LSS), so LSS's shim is a deliberate pass-through here; the automatic engine detection above still applies.
 
 **Paper-specific:** The config also includes an `updateEvents` list of Bukkit event class names used for dirty chunk detection.
 
