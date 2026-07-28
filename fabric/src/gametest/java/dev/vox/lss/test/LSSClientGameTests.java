@@ -331,11 +331,11 @@ public class LSSClientGameTests implements FabricClientGameTest {
                 throw new AssertionError("publishServer must succeed (LAN port bind failed?)");
             }
 
-            // IntegratedServerLanHook injects at publishServer RETURN, so the service start is
-            // synchronous with the publish call.
-            if (LSSServerNetworking.getRequestService() == null) {
-                throw new AssertionError("LAN publish must start the request processing service");
-            }
+            // The hook fires at publishServer RETURN but defers construction to the server
+            // thread (startServiceForLan's hop — the publish call runs on the render thread),
+            // so the service appears within a tick, not synchronously.
+            waitForOrFail(context, () -> LSSServerNetworking.getRequestService() != null, 100,
+                    "LAN publish must start the request processing service");
 
             // Host handshake: triggerHostHandshake -> C2S handshake -> SessionConfig -> manager.
             waitForOrFail(context, LSSClientNetworking::isServerEnabled, 400,
