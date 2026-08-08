@@ -39,10 +39,14 @@ import java.util.concurrent.atomic.AtomicLong;
  * Used by {@link PaperChunkDiskReader} for async disk reads.
  *
  * <p>Headless serve path (2026-07-29 profile — mirrors the Fabric twin exactly): the
- * UNMASKED path never constructs a {@link LevelChunkSection}. The two wire count headers
- * come from {@link #countNonEmptyAndFluid}'s palette histogram instead of the ctor's
- * per-cell recount (on Paper the ctor is even costlier — Moonrise's recalc also builds
- * per-state coordinate lists the wire never needs), and the containers write themselves.
+ * UNMASKED path never constructs a {@link LevelChunkSection}. The wire count header
+ * (1.21.11-LINE FLAVOR: one short, and Paper's Moonrise block-counting recalc counts
+ * ONLY non-air cells — no fluid term, unlike this line's vanilla whose single short sums
+ * both, so the header here is {@code nonEmpty} alone and the cross-module corpus parity
+ * exempts this short) comes from {@link #countNonEmptyAndFluid}'s palette histogram
+ * instead of the ctor's per-cell recount (on Paper the ctor is even costlier —
+ * Moonrise's recalc also builds per-state coordinate lists the wire never needs), and
+ * the containers write themselves.
  * Palette-entry block-state decode goes through {@link PaperMemoizedNbtCodec}. The MASKED
  * path still constructs real sections: mask semantics rely on the counting ctor for the
  * masked headers (see PaperXrayMaskFilter).
@@ -330,11 +334,13 @@ final class PaperNbtSectionSerializer {
         for (int i = 0; i < parsed.size(); i++) {
             var p = parsed.get(i);
             size += 1 // sectionY byte
+                    // 1.21.11 line: ONE count short (2 bytes) — getSerializedSize's own
+                    // leading iconst_2 already matches on the masked branch.
                     + (p.transcoded() != null
-                            ? 4 + p.transcoded().serializedSize()
+                            ? 2 + p.transcoded().serializedSize()
                             : maskedSections != null
                                     ? maskedSections[i].getSerializedSize()
-                                    : 4 + p.states().getSerializedSize() + p.biomes().getSerializedSize())
+                                    : 2 + p.states().getSerializedSize() + p.biomes().getSerializedSize())
                     + 1 + (p.litByBlock() ? 2048 : 0)
                     + 1 + (p.litBySky() ? 2048 : 0);
         }
@@ -348,16 +354,19 @@ final class PaperNbtSectionSerializer {
                 if (p.transcoded() != null) {
                     // Headless transcoded write — LevelChunkSection.write's shape with the
                     // container bytes emitted straight from the disk descriptors.
+                    // 1.21.11 line: ONE count short. Paper's Moonrise block-counting patch
+                    // counts ONLY non-air cells (no fluid term — unlike this line's vanilla,
+                    // whose recalc sums both), so the disk header is nonEmpty alone for
+                    // disk/live byte parity within Paper. The cross-module corpus parity
+                    // test exempts this short (Fabric's vanilla semantics include fluid).
                     buf.writeShort(p.nonEmptyCount());
-                    buf.writeShort(p.fluidCount());
                     p.transcoded().write(buf);
                 } else if (maskedSections != null) {
                     maskedSections[i].write(buf);
                 } else {
                     // Headless section write — exactly LevelChunkSection.write's shape:
-                    // the two count shorts, then the two containers.
+                    // the one 1.21.11 count short (Paper semantics), then the two containers.
                     buf.writeShort(p.nonEmptyCount());
-                    buf.writeShort(p.fluidCount());
                     p.states().write(buf);
                     p.biomes().write(buf);
                 }
@@ -811,7 +820,10 @@ final class PaperNbtSectionSerializer {
             sections.add(new dev.vox.lss.common.wire.WireSectionCursor.WireSection(
                     // (byte) cast — see the Fabric twin: the native route's writeByte
                     // truncates out-of-range sectionY; the direct route must match.
-                    (byte) p.sectionY(), p.nonEmptyCount(), p.fluidCount(),
+                    // 1.21.11 line: v20's neutral count pair carries this line's single
+                    // native count (Paper semantics: nonEmpty only) with fluid 0 —
+                    // byte-identical to the translate route's NATIVE parse (count, 0).
+                    (byte) p.sectionY(), p.nonEmptyCount(), 0,
                     dev.vox.lss.common.wire.NativeToV20Translator.convertIndexed(
                             t.blockBits(), t.blockIds(), t.blockData(), true, dict, blockIdentity),
                     dev.vox.lss.common.wire.NativeToV20Translator.convertIndexed(

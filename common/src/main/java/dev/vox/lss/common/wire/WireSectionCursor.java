@@ -11,10 +11,20 @@ import java.util.List;
  * migration walk all share one parser/emitter instead of three.
  *
  * <p><b>NATIVE layout</b> (protocol ≤19 section bytes, what `SectionSerializer` /
- * `NbtSectionSerializer` emit today):
+ * `NbtSectionSerializer` emit today — <b>1.21.11-LINE FLAVOR: ONE count short</b>.
+ * This line's {@code LevelChunkSection.write} emits a single {@code nonEmptyBlockCount}
+ * short whose vanilla recalc counts non-air cells PLUS non-empty-fluid cells — i.e. the
+ * SUM of the two shorts 26.2 split it into. The V20 layout below keeps BOTH shorts
+ * verbatim (XVER §2.1 pins them as version-neutral wire fields in the 26.2 shape), so:
+ * NATIVE parse reads one short into {@code nonEmptyBlockCount} with {@code fluidCount=0},
+ * and NATIVE emit writes {@code nonEmptyBlockCount + fluidCount} as the one short — the
+ * v20→native client direction thereby reconstructs this line's exact vanilla count from
+ * a 26.2 peer's split pair, and native→v20 frames from this line carry the single count
+ * in the nonEmpty slot with fluid 0 (a 26.2 peer splices that into a display-only LOD
+ * section, where the count fields are inert). Round-trips stay byte-identity.):
  * <pre>
  * VarInt sectionCount
- * repeat: byte sectionY; short nonEmptyBlockCount; short fluidCount;
+ * repeat: byte sectionY; short nonEmptyBlockCount;   // one short on this line
  *         blocks container(4096 entries); biomes container(64 entries);
  *         bool hasBlockLight [+2048 B]; bool hasSkyLight [+2048 B]
  * container: byte bits;
@@ -156,8 +166,10 @@ public final class WireSectionCursor {
         var sections = new ArrayList<WireSection>();
         for (int i = 0; i < sectionCount; i++) {
             int sectionY = in.readByte();
+            // 1.21.11 line: NATIVE sections carry ONE count short (see class doc); V20
+            // keeps the version-neutral split pair.
             int nonEmpty = in.readShort();
-            int fluid = in.readShort();
+            int fluid = layout == Layout.V20 ? in.readShort() : 0;
             WireContainer blocks = readContainer(in, layout, BLOCK_ENTRIES, true, dictSize);
             WireContainer biomes = readContainer(in, layout, BIOME_ENTRIES, false, dictSize);
             byte[] blockLight = in.readByte() != 0 ? in.readBytes(LIGHT_BYTES) : null;
@@ -255,8 +267,16 @@ public final class WireSectionCursor {
             checkShortRange(s.nonEmptyBlockCount(), "nonEmptyBlockCount");
             checkShortRange(s.fluidCount(), "fluidCount");
             out.writeByte(s.sectionY());
-            out.writeShort(s.nonEmptyBlockCount());
-            out.writeShort(s.fluidCount());
+            if (layout == Layout.V20) {
+                out.writeShort(s.nonEmptyBlockCount());
+                out.writeShort(s.fluidCount());
+            } else {
+                // 1.21.11 line: the one native count short is the SUM of the neutral pair
+                // (this line's vanilla recalc counts fluid cells into nonEmptyBlockCount).
+                int oneShort = s.nonEmptyBlockCount() + s.fluidCount();
+                checkShortRange(oneShort, "nonEmptyBlockCount+fluidCount");
+                out.writeShort(oneShort);
+            }
             writeContainer(out, s.blocks(), layout, BLOCK_ENTRIES, true, dictSize);
             writeContainer(out, s.biomes(), layout, BIOME_ENTRIES, false, dictSize);
             writeLight(out, s.blockLight());

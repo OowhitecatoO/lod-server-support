@@ -42,10 +42,13 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * <p>Headless serve path (2026-07-29 profile — the recount + palette-decode chains were
  * ~45% of all server CPU during saturated backfill): the UNMASKED path never constructs a
- * {@link LevelChunkSection}. The two wire count headers ({@code nonEmptyBlockCount} and
- * {@code fluidCount} — 26.2 writes both) are computed by {@link #countNonEmptyAndFluid}'s
- * palette histogram instead of the ctor's per-cell hashmap recount, and the containers
- * write themselves ({@code section.write} is exactly the two shorts + the two container
+ * {@link LevelChunkSection}. The wire count header (1.21.11-LINE FLAVOR: this line's
+ * {@code section.write} emits ONE {@code nonEmptyBlockCount} short whose vanilla recalc
+ * counts non-air cells PLUS fluid cells — the sum of the two shorts 26.2 splits it into)
+ * is computed by {@link #countNonEmptyAndFluid}'s palette histogram instead of the
+ * ctor's per-cell hashmap recount — the header write sites emit
+ * {@code nonEmpty + fluid} to match this line's vanilla semantics — and the containers
+ * write themselves ({@code section.write} is exactly the one short + the two container
  * writes — pinned by the headless-vs-section fuzz test). Palette-entry block-state decode
  * goes through {@link MemoizedNbtCodec}. The MASKED path still constructs real sections:
  * mask semantics deliberately rely on the counting ctor for the masked headers
@@ -494,11 +497,13 @@ final class NbtSectionSerializer {
         for (int i = 0; i < parsed.size(); i++) {
             var p = parsed.get(i);
             size += 1 // sectionY byte
+                    // 1.21.11 line: ONE count short (2 bytes) — getSerializedSize's own
+                    // leading iconst_2 already matches on the masked branch.
                     + (p.transcoded() != null
-                            ? 4 + p.transcoded().serializedSize()
+                            ? 2 + p.transcoded().serializedSize()
                             : maskedSections != null
                                     ? maskedSections[i].getSerializedSize()
-                                    : 4 + p.states().getSerializedSize() + p.biomes().getSerializedSize())
+                                    : 2 + p.states().getSerializedSize() + p.biomes().getSerializedSize())
                     + 1 + (p.litByBlock() ? 2048 : 0)
                     + 1 + (p.litBySky() ? 2048 : 0);
         }
@@ -512,16 +517,16 @@ final class NbtSectionSerializer {
                 if (p.transcoded() != null) {
                     // Headless transcoded write — LevelChunkSection.write's shape with the
                     // container bytes emitted straight from the disk descriptors.
-                    buf.writeShort(p.nonEmptyCount());
-                    buf.writeShort(p.fluidCount());
+                    // 1.21.11 line: ONE count short = nonEmpty + fluid (this line's vanilla
+                    // recalc counts fluid cells into nonEmptyBlockCount — disk/live parity).
+                    buf.writeShort(p.nonEmptyCount() + p.fluidCount());
                     p.transcoded().write(buf);
                 } else if (maskedSections != null) {
                     maskedSections[i].write(buf);
                 } else {
                     // Headless section write — exactly LevelChunkSection.write's shape:
-                    // the two count shorts, then the two containers.
-                    buf.writeShort(p.nonEmptyCount());
-                    buf.writeShort(p.fluidCount());
+                    // the one 1.21.11 count short, then the two containers.
+                    buf.writeShort(p.nonEmptyCount() + p.fluidCount());
                     p.states().write(buf);
                     p.biomes().write(buf);
                 }
@@ -980,7 +985,10 @@ final class NbtSectionSerializer {
                     // production gates Y to the world range, but the range-free corpus/
                     // tool overload serializes garbage Y and the byte-identity claim
                     // must hold there too (review finding 2).
-                    (byte) p.sectionY(), p.nonEmptyCount(), p.fluidCount(),
+                    // 1.21.11 line: v20's neutral count pair carries this line's single
+                    // native count in the nonEmpty slot with fluid 0 — byte-identical to
+                    // the translate route, whose NATIVE parse reads (sum, 0).
+                    (byte) p.sectionY(), p.nonEmptyCount() + p.fluidCount(), 0,
                     dev.vox.lss.common.wire.NativeToV20Translator.convertIndexed(
                             t.blockBits(), t.blockIds(), t.blockData(), true, dict, blockIdentity),
                     dev.vox.lss.common.wire.NativeToV20Translator.convertIndexed(

@@ -604,6 +604,19 @@ class NbtSectionSerializerTest {
         // MC bump that makes the two serializers drift lets a developer regenerate both
         // fixture sets and commit the divergence green; Fabric clients would then
         // mis-decode Paper servers' disk-read columns.
+        //
+        // 1.21.11-LINE FLAVOR — the count-short exemption (the old support branch's
+        // design, re-derived for the v20 layout): the section count is the ONE field
+        // that legitimately differs across platforms on this line. Vanilla 1.21.11's
+        // recalc folds fluid cells into nonEmptyBlockCount; Paper's Moonrise
+        // block-counting patch drops the fluid term — both are that platform's live
+        // section.write value, and each module's disk path must match ITS OWN live
+        // path (intra-platform disk/live parity outranks cross-module fixture
+        // identity). Everything that governs a cross-module decode — dictionary,
+        // palettes, packed data, light — is still compared byte-for-byte via the
+        // cursor with counts normalized; a bounded count pin below restores the
+        // strength the normalization gives up (a zeroed-for-content or inflated
+        // count would ship sections that decode as air).
         Path paperDir = goldenPath("probe").getParent();
         Path fabricDir = locateRepoRelative("fabric/src/test/resources/v20-corpus");
         java.util.Map<String, Path> paper = corpusFiles(paperDir);
@@ -612,11 +625,49 @@ class NbtSectionSerializerTest {
                 "both modules must carry the same corpus cases");
         assertFalse(paper.isEmpty(), "corpus must not be empty");
         for (var entry : paper.entrySet()) {
-            long mismatch = Files.mismatch(entry.getValue(), fabric.get(entry.getKey()));
-            assertEquals(-1L, mismatch, () -> entry.getKey()
-                    + ": fabric and paper fixtures diverge at byte " + mismatch
-                    + " — the two serializers no longer produce identical wire bytes;"
-                    + " regenerate on BOTH modules from the same code state and fix the drift");
+            String name = entry.getKey();
+            var p = dev.vox.lss.common.wire.WireSectionCursor.parse(
+                    Files.readAllBytes(entry.getValue()),
+                    dev.vox.lss.common.wire.WireSectionCursor.Layout.V20);
+            var f = dev.vox.lss.common.wire.WireSectionCursor.parse(
+                    Files.readAllBytes(fabric.get(name)),
+                    dev.vox.lss.common.wire.WireSectionCursor.Layout.V20);
+            assertEquals(f.sections().size(), p.sections().size(),
+                    name + ": section structure must match across modules");
+            var pNorm = new java.util.ArrayList<dev.vox.lss.common.wire.WireSectionCursor.WireSection>();
+            var fNorm = new java.util.ArrayList<dev.vox.lss.common.wire.WireSectionCursor.WireSection>();
+            for (int i = 0; i < p.sections().size(); i++) {
+                var ps = p.sections().get(i);
+                var fs = f.sections().get(i);
+                // The bounded count pin: fabric = paper + fluid cells (0..4096), the
+                // fluid slot is 0 on both (this line's v20 carries the folded single
+                // count — see WireSectionCursor's NATIVE flavor), and a content
+                // section may never read zero on either side.
+                assertEquals(0, ps.fluidCount(), name + "[" + i + "]: paper fluid slot");
+                assertEquals(0, fs.fluidCount(), name + "[" + i + "]: fabric fluid slot");
+                int delta = fs.nonEmptyBlockCount() - ps.nonEmptyBlockCount();
+                assertTrue(delta >= 0 && delta <= 4096, name + "[" + i
+                        + "]: fabric count must be paper count + fluid cells (0..4096), got "
+                        + fs.nonEmptyBlockCount() + " vs " + ps.nonEmptyBlockCount());
+                assertEquals(ps.nonEmptyBlockCount() == 0, fs.nonEmptyBlockCount() == 0,
+                        name + "[" + i + "]: zero-for-content must agree across modules");
+                pNorm.add(new dev.vox.lss.common.wire.WireSectionCursor.WireSection(
+                        ps.sectionY(), 0, 0, ps.blocks(), ps.biomes(), ps.blockLight(), ps.skyLight()));
+                fNorm.add(new dev.vox.lss.common.wire.WireSectionCursor.WireSection(
+                        fs.sectionY(), 0, 0, fs.blocks(), fs.biomes(), fs.blockLight(), fs.skyLight()));
+            }
+            byte[] pBytes = dev.vox.lss.common.wire.WireSectionCursor.emit(
+                    new dev.vox.lss.common.wire.WireSectionCursor.WireColumn(p.dictionary(), pNorm),
+                    dev.vox.lss.common.wire.WireSectionCursor.Layout.V20);
+            byte[] fBytes = dev.vox.lss.common.wire.WireSectionCursor.emit(
+                    new dev.vox.lss.common.wire.WireSectionCursor.WireColumn(f.dictionary(), fNorm),
+                    dev.vox.lss.common.wire.WireSectionCursor.Layout.V20);
+            int mismatch = java.util.Arrays.mismatch(pBytes, fBytes);
+            assertEquals(-1, mismatch, () -> name
+                    + ": fabric and paper fixtures diverge at normalized byte " + mismatch
+                    + " (outside the exempt count short) — the two serializers no longer"
+                    + " produce identical wire bytes; regenerate on BOTH modules from the"
+                    + " same code state and fix the drift");
         }
     }
 

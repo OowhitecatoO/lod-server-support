@@ -24,11 +24,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * is invisible until a real Paper server refuses to load — or silently mis-loads — the
  * plugin: an unresolvable {@code main} or wrong {@code api-version} aborts plugin load, a
  * renamed plugin moves the {@code plugins/LodServerSupport/} data folder the config and
- * soak staging rely on, and {@code folia-supported} must stay DECLARED on the 26.2 line —
- * Folia ships a real 26.2 build (26.2-1, 2026-07-28) and all four Folia soak scenarios
- * passed against it (2026-08-01), so the guarded failure is now a jar that silently
- * STOPS loading on Folia. (The flag was absent while no Folia 26.2 existed; that
- * direction inverts on fresh re-ports to lines Folia does not publish for.)
+ * soak staging rely on, and {@code folia-supported} must stay DECLARED on the 1.21.11
+ * line — Folia publishes real MC 1.21.11 builds (this line always had them; the frozen
+ * v0.8.0-era support branch carried the same presence pin), so the guarded failure is a
+ * jar that silently STOPS loading on Folia. (R-7 direction-flip note for future re-ports:
+ * a fresh cut inherits main's PRESENCE pin and must actively re-derive the per-line
+ * flavor — presence is only correct on lines Folia actually publishes for.)
  */
 class PluginYmlContractTest {
 
@@ -106,20 +107,25 @@ class PluginYmlContractTest {
         var bundle = Pattern.compile("paperweight\\.paperDevBundle\\('([^']+)'\\)")
                 .matcher(Files.readString(locate("paper/build.gradle")));
         assertTrue(bundle.find(), "paper/build.gradle must declare paperweight.paperDevBundle('...')");
-        assertTrue(bundle.group(1).startsWith(apiVersion + "."),
-                "dev bundle " + bundle.group(1) + " must be a build of api-version " + apiVersion);
+        String devBundle = bundle.group(1);
+        // 1.21.11-line flavor (the old support branch's bundle-scheme pin): this line's
+        // bundles use the old '<mc>-R0.1-SNAPSHOT' Maven scheme, not 26.x's '<mc>.build.N'.
+        assertTrue(devBundle.startsWith(apiVersion + ".") || devBundle.startsWith(apiVersion + "-R"),
+                "dev bundle " + devBundle + " must be a build of api-version " + apiVersion
+                        + " (new '<mc>.build.N' or old '<mc>-R0.1-SNAPSHOT' scheme)");
     }
 
     @Test
-    void foliaSupportedIsDeclaredNowThatFolia262Exists() {
-        // Third flip. Absent 2026-07-19..2026-08-01 because Folia had no MC 26.2 build at
-        // all, so declaring it would have auto-loaded release jars onto a platform that did
-        // not exist yet. Folia published 26.2-1 (channel BETA) on 2026-07-28, so the flag is
-        // back — putting this line on the same experimental footing as 1.21.8/1.21.11/26.1.x
-        // rather than ahead of them. FoliaWiringContractTest still pins the wiring
-        // (no legacy scheduler, lifecycle through the mailbox).
+    void foliaSupportedIsDeclaredBecauseFoliaPublishes12111() {
+        // 1.21.11-LINE FLAVOR (D3 fresh re-port, R-7 direction-flip check applied): Folia
+        // publishes real MC 1.21.11 builds, so declaring the flag is correct on THIS line —
+        // the guarded failure is a jar that silently stops loading on Folia (the frozen
+        // v0.8.0-era support/mc1.21.11 branch carried the same presence pin). The pin was
+        // inherited from main (26.2) and re-derived rather than assumed: presence would be
+        // WRONG on a line Folia does not publish for. FoliaWiringContractTest still pins
+        // the wiring (no legacy scheduler, lifecycle through the mailbox).
         assertTrue(yml.contains("folia-supported"),
-                "folia-supported must be declared now that Folia ships a 26.2 build — the"
+                "folia-supported must be declared — Folia ships 1.21.11 builds and the"
                         + " single jar serves Paper and Folia");
         assertTrue(yml.getBoolean("folia-supported"),
                 "...and it must be true; a false/absent flag makes Folia refuse the jar");

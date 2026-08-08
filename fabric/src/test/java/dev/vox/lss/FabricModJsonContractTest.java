@@ -14,23 +14,25 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Main-line contract for {@code fabric.mod.json} + {@code gradle.properties}, read from
+ * 1.21.11-LINE contract for {@code fabric.mod.json} + {@code gradle.properties}, read from
  * the SOURCE tree (the fabric mirror of paper's
  * {@code PluginYmlContractTest.apiVersionMatchesTheDevBundleMinecraftVersion} lockstep pin).
  * The regression vector: the LOWER Minecraft bound is enforced by fabric-loader in every
  * gametest launch, but the UPPER bound is caught by nothing at build time — and the mixins
- * here are required:true over MC internals, so an unbounded range turns a future 26.3 into
+ * here are required:true over MC internals, so an unbounded pin turns a foreign line into
  * a hard mixin-apply crash instead of Loader's clean refusal (the v0.8.0 compat review's
- * MAJOR). The support branches carry their own flavors of this test.
+ * MAJOR). On THIS line the pin is the EXACT version "1.21.11" (the old support branch's
+ * per-line choice, kept): the LAN-hook descriptor, the save-hook target, and the
+ * one-count-short section layout are all 1.21.11-specific, so neither a newer nor an
+ * older 1.21.x is safe. Main and each support branch carry their own flavors of this test.
  */
 class FabricModJsonContractTest {
 
     // ---- the line's expected constants (each branch carries its own values) ----
-    // The trailing '-' makes the upper bound prerelease-EXCLUSIVE: Fabric semver sorts
-    // 26.3-rc below 26.3, so a bare '<26.3' would admit 26.3 prereleases — where the required
-    // mixins over MC internals hard-crash at apply (final compat review 2026-07-27).
-    private static final String EXPECTED_MINECRAFT_DEPENDS = ">=26.2 <26.3-";
-    private static final String EXPECTED_MINECRAFT_VERSION_PREFIX = "26.2";
+    // Exact-version pin (no range): see the class doc — every neighboring 1.21.x differs
+    // in at least one required-mixin surface, so the jar declares exactly this version.
+    private static final String EXPECTED_MINECRAFT_DEPENDS = "1.21.11";
+    private static final String EXPECTED_MINECRAFT_VERSION_PREFIX = "1.21.11";
 
     private static JsonObject modJson;
     private static Properties gradleProps;
@@ -64,8 +66,8 @@ class FabricModJsonContractTest {
     @Test
     void gradlePropertiesTargetsTheSameLine() {
         String mc = gradleProps.getProperty("minecraft_version", "");
-        // equals-or-dot: a bare prefix match would also accept e.g. 26.10, which the
-        // depends range above would exclude — the two must move in lockstep.
+        // equals-or-dot: a bare prefix match would also accept e.g. 1.21.110, which the
+        // exact depends pin above would exclude — the two must move in lockstep.
         assertTrue(mc.equals(EXPECTED_MINECRAFT_VERSION_PREFIX)
                         || mc.startsWith(EXPECTED_MINECRAFT_VERSION_PREFIX + "."),
                 "gradle.properties minecraft_version (" + mc + ") must stay on the "
