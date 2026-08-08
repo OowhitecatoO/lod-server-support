@@ -109,9 +109,9 @@ public class SerializerParityGameTests {
     @GameTest(structure = "fabric-gametest-api-v1:empty", maxTicks = 1200)
     public void diskReadBytesMatchLiveBytesForDiskLoadedColumn(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
-        var origin = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
-        int cx = origin.x() + PARITY_CHUNK_OFFSET;
-        int cz = origin.z() + 7;
+        var origin = new ChunkPos(helper.absolutePos(BlockPos.ZERO));
+        int cx = origin.x + PARITY_CHUNK_OFFSET;
+        int cz = origin.z + 7;
         var chunkPos = new ChunkPos(cx, cz);
         var chunkSource = level.getChunkSource();
         // Superflat surface: bedrock -64, dirt -63/-62, grass -61; first air block is -60.
@@ -195,9 +195,9 @@ public class SerializerParityGameTests {
     @GameTest(structure = "fabric-gametest-api-v1:empty", maxTicks = 1200)
     public void xrayMaskedDiskReadBytesMatchMaskedLiveBytes(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
-        var origin = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
-        int cx = origin.x() + XRAY_PARITY_CHUNK_OFFSET;
-        int cz = origin.z() + 7;
+        var origin = new ChunkPos(helper.absolutePos(BlockPos.ZERO));
+        int cx = origin.x + XRAY_PARITY_CHUNK_OFFSET;
+        int cz = origin.z + 7;
         var chunkPos = new ChunkPos(cx, cz);
         var chunkSource = level.getChunkSource();
 
@@ -296,9 +296,9 @@ public class SerializerParityGameTests {
     @GameTest(structure = "fabric-gametest-api-v1:empty", maxTicks = 1200)
     public void backgroundPriorityReadMatchesForegroundReadForDiskLoadedColumn(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
-        var origin = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
-        int cx = origin.x() + BACKGROUND_READ_CHUNK_OFFSET;
-        int cz = origin.z() + 5;
+        var origin = new ChunkPos(helper.absolutePos(BlockPos.ZERO));
+        int cx = origin.x + BACKGROUND_READ_CHUNK_OFFSET;
+        int cz = origin.z + 5;
         var chunkPos = new ChunkPos(cx, cz);
         var chunkSource = level.getChunkSource();
 
@@ -381,9 +381,9 @@ public class SerializerParityGameTests {
     @GameTest(structure = "fabric-gametest-api-v1:empty", maxTicks = 200)
     public void dirtyContentFilterSuppressesIdenticalResavesAndCatchesEdits(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
-        var origin = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
-        int cx = origin.x() + DIRTY_FILTER_CHUNK_OFFSET;
-        int cz = origin.z() + 13;
+        var origin = new ChunkPos(helper.absolutePos(BlockPos.ZERO));
+        int cx = origin.x + DIRTY_FILTER_CHUNK_OFFSET;
+        int cz = origin.z + 13;
         var chunkPos = new ChunkPos(cx, cz);
         var chunkSource = level.getChunkSource();
         var dim = LSSConstants.DIM_STR_OVERWORLD;
@@ -443,8 +443,8 @@ public class SerializerParityGameTests {
         // chunk from the per-run random batch position (cx 28..43, cz -16..-9: inside the void
         // guarantee band, disjoint from the disk-read test's chunk) and scan down-z past any
         // column a previous run already built in.
-        var origin = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
-        int salt = Math.floorMod(origin.x() * 31 + origin.z(), 256);
+        var origin = new ChunkPos(helper.absolutePos(BlockPos.ZERO));
+        int salt = Math.floorMod(origin.x * 31 + origin.z, 256);
         int cx = 28 + (salt & 15);
         int baseCz = -16 + ((salt >> 4) & 7);
         int cz = baseCz;
@@ -539,9 +539,9 @@ public class SerializerParityGameTests {
     @GameTest(structure = "fabric-gametest-api-v1:empty", maxTicks = 400)
     public void readAfterSaveWithoutUnloadSeesTheLatestBytes(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
-        var origin = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
-        int cx = origin.x() + READ_AFTER_SAVE_CHUNK_OFFSET;
-        int cz = origin.z() + 3;
+        var origin = new ChunkPos(helper.absolutePos(BlockPos.ZERO));
+        int cx = origin.x + READ_AFTER_SAVE_CHUNK_OFFSET;
+        int cz = origin.z + 3;
         var chunkPos = new ChunkPos(cx, cz);
         var chunkSource = level.getChunkSource();
         var editPos = new BlockPos(cx * 16 + 4, -61, cz * 16 + 4);
@@ -612,9 +612,9 @@ public class SerializerParityGameTests {
         ServerLevel level = helper.getLevel();
         var server = level.getServer();
         var playerList = server.getPlayerList();
-        var origin = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
-        int cx = origin.x() + DISK_SEED_CHUNK_OFFSET;
-        int cz = origin.z() + 9;
+        var origin = new ChunkPos(helper.absolutePos(BlockPos.ZERO));
+        int cx = origin.x + DISK_SEED_CHUNK_OFFSET;
+        int cz = origin.z + 9;
         var chunkPos = new ChunkPos(cx, cz);
         var chunkSource = level.getChunkSource();
         var dim = LSSConstants.DIM_STR_OVERWORLD;
@@ -691,9 +691,9 @@ public class SerializerParityGameTests {
         ServerLevel level = helper.getLevel();
         var server = level.getServer();
         var playerList = server.getPlayerList();
-        var origin = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
-        int cx = origin.x() + ALL_AIR_TRANSITION_CHUNK_OFFSET;
-        int cz = origin.z() + 11;
+        var origin = new ChunkPos(helper.absolutePos(BlockPos.ZERO));
+        int cx = origin.x + ALL_AIR_TRANSITION_CHUNK_OFFSET;
+        int cz = origin.z + 11;
         var chunkPos = new ChunkPos(cx, cz);
         var chunkSource = level.getChunkSource();
         var dim = LSSConstants.DIM_STR_OVERWORLD;
@@ -826,9 +826,9 @@ public class SerializerParityGameTests {
     @GameTest(structure = "fabric-gametest-api-v1:empty", maxTicks = 1200)
     public void storeHitBytesMatchNbtServedBytesThroughTheReaderPath(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
-        var origin = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
-        int cx = origin.x() + STORE_PARITY_CHUNK_OFFSET;
-        int cz = origin.z() + 7;
+        var origin = new ChunkPos(helper.absolutePos(BlockPos.ZERO));
+        int cx = origin.x + STORE_PARITY_CHUNK_OFFSET;
+        int cz = origin.z + 7;
         var chunkPos = new ChunkPos(cx, cz);
         var chunkSource = level.getChunkSource();
         var torchPos = new BlockPos(cx * 16 + 8, -60, cz * 16 + 8);

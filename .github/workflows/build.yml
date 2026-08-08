@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: 25
+          java-version: 21
 
       - uses: gradle/actions/setup-gradle@v5
 
@@ -117,12 +117,12 @@ jobs:
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: 25
+          java-version: 21
 
       - uses: gradle/actions/setup-gradle@v5
 
       # Retry-once for the same reason as Tier 2 above — this tier additionally sees the
-      # vanilla 26.2 TicketStorage purge crash under ticket churn (CLAUDE.md flake catalog).
+      # vanilla TicketStorage purge crash seen on 26.x under ticket churn (CLAUDE.md flake catalog; re-verify relevance on 1.21.11).
       - name: Tier 3 client gametests (retry once on flake)
         run: |
           ./gradlew :fabric:runClientGameTest || {

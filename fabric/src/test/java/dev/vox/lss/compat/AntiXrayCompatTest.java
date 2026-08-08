@@ -2,101 +2,36 @@ package dev.vox.lss.compat;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Pins the AntiXray crash-shim activation ladder (docs/planning/antixray-compat-design.md
- * §2 A1) via the injected resolver seam: mod-absent stays inactive without touching the
- * resolver, any resolution throwable (AntiXray refactoring its Arguments class) degrades to
- * inactive instead of propagating, and the active path genuinely binds every resolved
- * ScopedValue to null for exactly the duration of the carrier call — the null routing
- * AntiXray's own mixins treat as "no packet context".
+ * AntiXray compat pins for the 1.21.11 support line. The 26.x crash-shim ladder tests are
+ * deliberately gone with the shim itself: on 1.21.11 AntiXray threads its obfuscation
+ * context through ThreadLocals (unset get() == null, the benign skip value), so
+ * {@code callSerializing} is a documented pass-through — pinned here — and the engine
+ * probe (unchanged from the 26.2 primary line, incl. the mode-2/3 ReplacementNoise
+ * discrimination and the transient-null re-probe rung) keeps its full ladder below.
  */
 class AntiXrayCompatTest {
 
     @Test
-    void modAbsentIsInactiveWithoutResolving() {
-        var resolved = new AtomicBoolean();
-        assertNull(AntiXrayCompat.buildCarrier(false, () -> {
-            resolved.set(true);
-            return List.of();
-        }));
-        assertFalse(resolved.get(), "mod-absent must not touch the resolver");
+    void callSerializingIsAPassThrough() {
+        // The 1.21.11 contract: no binding, no wrapping, the body's value returned as-is
+        // (see AntiXrayCompat's class doc for why no shim exists on this line).
+        assertEquals("through", AntiXrayCompat.callSerializing(() -> "through"));
     }
 
     @Test
-    void resolverExceptionDegradesToInactive() {
-        assertNull(AntiXrayCompat.buildCarrier(true, () -> {
-            throw new NoSuchFieldException("PACKET_INFO");
-        }));
-    }
-
-    @Test
-    void resolverLinkageErrorDegradesToInactive() {
-        assertNull(AntiXrayCompat.buildCarrier(true, () -> {
-            throw new NoClassDefFoundError("me/drex/antixray/common/util/Arguments");
-        }), "LinkageErrors from a broken AntiXray install must degrade, not propagate");
-    }
-
-    @Test
-    void emptyResolutionIsInactive() {
-        assertNull(AntiXrayCompat.buildCarrier(true, List::of),
-                "zero resolved values would build a carrier that binds nothing — must refuse");
-    }
-
-    @Test
-    void productionResolverWithoutAntiXrayDegradesToInactive() {
-        // The real resolver in a JVM without the mod on the classpath: Class.forName throws
-        // and the ladder lands on the inactive rung — the mod-loaded-but-unresolvable shape.
-        assertNull(AntiXrayCompat.buildCarrier(true,
-                AntiXrayCompat::resolveArgumentsScopedValues));
-    }
-
-    @Test
-    void activeCarrierBindsEveryValueToNullForTheCallOnly() {
-        ScopedValue<Object> a = ScopedValue.newInstance();
-        ScopedValue<Object> b = ScopedValue.newInstance();
-        var carrier = AntiXrayCompat.buildCarrier(true, () -> List.of(a, b));
-        assertNotNull(carrier);
-
-        assertFalse(a.isBound(), "no binding may leak outside the carrier call");
-        String result = carrier.<String, RuntimeException>call(() -> {
-            assertTrue(a.isBound(), "every resolved value must be bound inside the call");
-            assertTrue(b.isBound(), "every resolved value must be bound inside the call");
-            assertNull(a.get(), "the binding must be null — AntiXray's own benign skip value");
-            assertNull(b.get(), "the binding must be null — AntiXray's own benign skip value");
-            return "ran";
-        });
-        assertEquals("ran", result, "the body's return value must pass through");
-        assertFalse(a.isBound(), "the binding must end with the call");
-        assertFalse(b.isBound(), "the binding must end with the call");
-    }
-
-    @Test
-    void activeCarrierIsExceptionTransparentAndUnwinds() {
-        // The path production relies on when a serialize throws for any non-AntiXray reason
-        // while the shim is active: the exception must reach the probe containment OUTSIDE
-        // the carrier scope, unchanged, with the bindings unwound.
-        ScopedValue<Object> a = ScopedValue.newInstance();
-        var carrier = AntiXrayCompat.buildCarrier(true, () -> List.of(a));
-        assertNotNull(carrier);
+    void callSerializingIsExceptionTransparent() {
+        // A serialize that throws for any reason must reach the probe containment
+        // unchanged — same transparency the 26.x carrier guaranteed.
         var thrown = assertThrows(IllegalStateException.class,
-                () -> carrier.<String, RuntimeException>call(() -> {
+                () -> AntiXrayCompat.callSerializing(() -> {
                     throw new IllegalStateException("serialize failed");
                 }));
         assertEquals("serialize failed", thrown.getMessage());
-        assertFalse(a.isBound(), "a throwing body must still unwind the binding");
-    }
-
-    @Test
-    void callSerializingPassesThroughWhenInactive() {
-        // This JVM has no antixray mod, so the production static is inactive by
-        // construction — pins the zero-overhead pass-through every test/production
-        // environment without the mod runs on.
-        assertEquals("through", AntiXrayCompat.callSerializing(() -> "through"));
     }
 
     // ---- engine probe (design §3 Detection) ----

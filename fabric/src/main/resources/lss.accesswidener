@@ -1,4 +1,4 @@
-accessWidener v2 official
+accessWidener v2 named
 # Headless section serialization (disk-read serve path, 2026-07-29 profile): the palette
 # histogram that replaces LevelChunkSection's recalcBlockCounts needs the container's
 # palette + storage pair. Vanilla keeps them behind a private volatile field on a private

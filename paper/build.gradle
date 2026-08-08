@@ -23,7 +23,7 @@ dependencies {
     // matrix by the exclude closure on the shadow tasks below.
     implementation 'org.xerial:sqlite-jdbc:3.49.1.0'
     implementation 'com.github.luben:zstd-jni:1.5.7-3'
-    paperweight.paperDevBundle('26.2.build.84-stable')
+    paperweight.paperDevBundle('1.21.11-R0.1-SNAPSHOT')
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
     testImplementation 'org.mockito:mockito-core:5.20.0'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
@@ -240,6 +240,8 @@ tasks.register('vssJar') {
 tasks.named('shadowJar') { finalizedBy tasks.named('vssJar') }
 
 tasks.withType(JavaCompile).configureEach {
-    it.options.release = 25
+    // 1.21.11 line: MC 1.21.x targets Java 21, and the dev bundle's codebook cannot parse
+    // Java 25 class files — build this line on a Java 21 JVM (build.yml pins java-version 21).
+    it.options.release = 21
 }
 

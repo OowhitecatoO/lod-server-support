@@ -11,7 +11,7 @@ import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.level.GameType;
 import net.minecraft.util.HttpUtil;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biomes;
@@ -78,7 +78,7 @@ public class LSSClientGameTests implements FabricClientGameTest {
     private static void runMainFlowTest(ClientGameTestContext context, RecordingColumnConsumer recorder,
                                         FirstColumnRejectingConsumer rejector,
                                         FirstColumnThrowingConsumer thrower) {
-        try (TestSingleplayerContext _ = context.worldBuilder().create()) {
+        try (TestSingleplayerContext ignored = context.worldBuilder().create()) {
             // Wait for join -> handshake -> session config -> LodRequestManager creation
             context.waitTicks(40);
 
@@ -427,7 +427,7 @@ public class LSSClientGameTests implements FabricClientGameTest {
      */
     private static void runLanPublishActivationTest(ClientGameTestContext context) {
         String override = System.clearProperty("lss.test.integratedServer");
-        try (TestSingleplayerContext _ = context.worldBuilder().create()) {
+        try (TestSingleplayerContext ignored = context.worldBuilder().create()) {
             // A (buggy) join-time handshake + session config roundtrip would land well within
             // this window, so the negative assertions below are meaningful.
             context.waitTicks(40);
@@ -442,14 +442,14 @@ public class LSSClientGameTests implements FabricClientGameTest {
                 throw new AssertionError("No LodRequestManager may exist before LAN publish");
             }
 
-            // Publish from the client thread via the 2-arg overload — exactly like the real
-            // LAN screen (MultiplayerOptionsScreen.changeMultiplayerScope) does on 26.2. The
-            // 4-arg overload is a delegating wrapper only /publish uses; the shipped
-            // v0.6.0–v0.8.0 hook targeted THAT wrapper and never fired for the GUI (M2 of
-            // the 2026-07-28 review round), which this call would have caught.
+            // Publish from the client thread, exactly like ShareToLanScreen does on this
+            // line. 1.21.11 FLAVOR: this line has the single (GameType, boolean, int)
+            // publishServer overload — 26.2's MultiplayerScope split (whose 2-arg overload
+            // the M2 retarget chased) does not exist here, so the hook and this call both
+            // use the one real entry point.
             boolean published = context.computeOnClient(client ->
                     client.getSingleplayerServer().publishServer(
-                            MinecraftServer.MultiplayerScope.LAN, HttpUtil.getAvailablePort()));
+                            GameType.SURVIVAL, false, HttpUtil.getAvailablePort()));
             if (!published) {
                 throw new AssertionError("publishServer must succeed (LAN port bind failed?)");
             }

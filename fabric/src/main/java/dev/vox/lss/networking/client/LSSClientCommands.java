@@ -4,7 +4,7 @@ import com.mojang.brigadier.Command;
 import dev.vox.lss.common.Brand;
 import dev.vox.lss.common.DiagnosticsFormatter;
 import dev.vox.lss.config.LSSClientConfig;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.ChatFormatting;
@@ -15,8 +15,8 @@ public class LSSClientCommands {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
             // Command literal is branded (lss / vss); it is a LOCAL client command and
             // never crosses the wire, so it does not affect LSS<->VSS compatibility.
-            dispatcher.register(ClientCommands.literal(Brand.clientCommand())
-                    .then(ClientCommands.literal("clearcache")
+            dispatcher.register(ClientCommandManager.literal(Brand.clientCommand())
+                    .then(ClientCommandManager.literal("clearcache")
                             .executes(context -> {
                                 var manager = LSSClientNetworking.getRequestManager();
                                 if (manager != null) {
@@ -31,13 +31,13 @@ public class LSSClientCommands {
                                 return Command.SINGLE_SUCCESS;
                             })
                     )
-                    .then(ClientCommands.literal("diag")
+                    .then(ClientCommandManager.literal("diag")
                             .executes(context -> {
                                 showDiagnostics(context.getSource());
                                 return Command.SINGLE_SUCCESS;
                             })
                     )
-                    .then(ClientCommands.literal("trace")
+                    .then(ClientCommandManager.literal("trace")
                             .executes(context -> {
                                 var result = ClientTraceLog.toggle();
                                 if (result.path() != null) {

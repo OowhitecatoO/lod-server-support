@@ -1,5 +1,7 @@
 plugins {
-    id 'net.fabricmc.fabric-loom' version "${loom_version}"
+    // 1.21.11 line: the classic remap toolchain — the 26.x fabric-loom consumes
+    // mojang-mapped jars directly, but 1.21.x needs loom-remap + officialMojangMappings.
+    id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
 }
 
 version = project.mod_version
@@ -40,8 +42,11 @@ configurations {
 
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
-    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    // 1.21.11 line: loom-remap needs explicit mappings + mod-aware dependency scopes
+    // (the 26.x fabric-loom consumes mojang-mapped jars directly with plain scopes).
+    mappings loom.officialMojangMappings()
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
     testImplementation "net.fabricmc:fabric-loader-junit:${project.loader_version}"
     // LOD-store Phase 0 experiment deps (docs/planning/lod-store-implementation-plan.md):
     // the codec/schema decision tool (LodStoreExperimentTool, gated on
@@ -61,8 +66,8 @@ dependencies {
     storeDeps "com.github.luben:zstd-jni:1.5.7-3"
     localRuntime "org.xerial:sqlite-jdbc:3.49.1.0"
     localRuntime "com.github.luben:zstd-jni:1.5.7-3"
-    compileOnly "maven.modrinth:sodium:mc26.2-0.9.1-beta.3-fabric"
-    compileOnly "maven.modrinth:modmenu:20.0.0-beta.4"
+    modCompileOnly "maven.modrinth:sodium:mc1.21.11-0.8.12-fabric"
+    modCompileOnly "maven.modrinth:modmenu:17.0.0"
     // Compat validation arm: -Pbenchmark.moonrise=true puts Moonrise on the dev runtime
     // (the same Modrinth version issue #69 was reported against), so the soak harness can
     // drive the full dirty pipeline — the SerializableChunkData.copyOf hook, broadcast,
@@ -193,7 +198,8 @@ processResources {
 }
 
 tasks.withType(JavaCompile).configureEach {
-    it.options.release = 25
+    // 1.21.11 line: MC 1.21.x targets Java 21 (the 26.x lines target 25).
+    it.options.release = 21
 }
 
 // ---- LOD store nested dependency jars (plan §3 packaging) -----------------------------
@@ -312,10 +318,11 @@ def lssFabricJarName = "lod-server-support-fabric" + (ciArchiveVersion ? "-${ciA
 
 tasks.register('vssJar') {
     description = 'Repackages the LSS Fabric jar under the Voxy Server Side branding.'
-    // This Loom version (1.17) has no separate remapJar — the `jar` task produces the final
-    // remapped release jar directly (with the nested common JiJ + Fabric-Mapping-Namespace).
+    // Under fabric-loom-remap (this 1.21.11 line) the final remapped release jar is produced
+    // by `remapJar` into build/libs/ (plain `jar` emits the -dev intermediate) — unlike the
+    // 26.x fabric-loom, where `jar` itself is the release jar. Same output NAME either way.
     // String dependency so it resolves at graph-build time, not config time.
-    dependsOn 'jar'
+    dependsOn 'remapJar'
     def iconFile = rootProject.file('branding/vss/icon.png')
     def srcJar = layout.buildDirectory.file("libs/${lssFabricJarName}")
     def outFile = layout.buildDirectory.file("libs/${vssFabricJarName}")
