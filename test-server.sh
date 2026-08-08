@@ -608,7 +608,8 @@ setup_legacy() {
     local mods_dir="$LEGACY_DIR/mods"
     mkdir -p "$LEGACY_DIR" "$mods_dir"
 
-    # Same MC 26.2 Fabric server launcher + Fabric API as the current Fabric server — only the
+    # Same Fabric server launcher + Fabric API as the current Fabric server (this line's own
+    # MC version) — only the
     # LSS jar differs (an old release instead of the local build). No C2ME: keep the legacy
     # server a clean vanilla-IO protocol-16 baseline so nothing confounds the compat eyeball.
     download "$FABRIC_SERVER_URL" "$LEGACY_DIR/fabric-server-launch.jar"

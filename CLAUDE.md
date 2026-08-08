@@ -2,6 +2,25 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **Support branch: `support/mc26.1-v0.10`.** The FRESH v0.10.0 re-port of the full main
+> tree (protocol 20, tile cache, perf round, tracer, yield) to **Minecraft 26.1.2** (do NOT
+> merge to `main`), cut from main at the v0.10.0 feature level on 2026-08-08 per the XVER
+> plan §11.2 / mega-plan R-7. It SUPERSEDES the frozen v0.8.0-era `support/mc26.1` branch
+> (kept only as the per-line-flavor reference). Releases tag `v<x.y.z>+mc26.1`.
+> Divergences from the primary 26.2 line: `IntegratedServerLanHook` uses the single
+> `publishServer(GameType,boolean,int)` overload (26.2's `MultiplayerScope` split does not
+> exist here — `LanHookContractTest` carries the per-line pin); toolchain pins fabric-api
+> 0.151.0+26.1.2, sodium mc26.1.2-0.8.12, modmenu 18.0.0-beta.1, paperweight dev bundle
+> `26.1.2.build.69-stable` (Java 25 unchanged); fabric.mod.json pins `>=26.1 <26.2-`;
+> `folia-supported: true` stays correct here because Folia publishes 26.1.2 builds (the
+> R-7 direction-flip check was applied, not assumed); the `xray-masked` golden pair is
+> regenerated on this line (one registry id differs from 26.2 — the v20-corpus twin and
+> the other 13 nbt-corpus goldens are line-invariant, verified byte-identical); the
+> 26.2-captured `xver-live-corpus` decodes STRICTLY on this line (zero fallbacks — the
+> automated issue-#85 cross-line proof); release.yml/ReleaseWorkflowContractTest carry the
+> line-scoped flavors; soak.sh guards base worlds with an mc-version marker. Sections
+> below that say "26.2" describe the primary line and apply here with those substitutions.
+
 ## Project
 
 LOD Server Support (LSS) — distributes LOD chunk data from servers to clients over a custom networking protocol. Supports Fabric (client + server) and Paper (server only). The Folia code paths (regionized probing, lifecycle mailbox) exist in the one plugin jar. **`folia-supported` is declared on every line again as of 2026-08-01**: Folia published its first MC 26.2 build (`26.2-1`, channel **BETA**, 2026-07-28), removing the reason it was dropped at v0.7.0 (the flag would have auto-loaded release jars onto a platform that did not exist). `PluginYmlContractTest` + `release_check.py` now pin the flag's PRESENCE — the guarded failure is a jar that silently stops loading on Folia. Folia stays **experimental on every line** (26.2 included): single-player soak validated, concurrent multi-region ingress untested. `SOAK_PLATFORM=folia` finally has something to download on 26.2, and **all four Folia scenarios passed on 2026-08-01** against real Folia 26.2-1 — fresh-backfill (41 windows), warm-rejoin (55), dimension-trip (55), paper-dirty-falling-block (27), 0 violations and 0 warnings throughout. The regionized probe (`in_memory` serves), Moonrise generation (2121 submitted/completed, 0 timeouts) and the protocol-19 zstd column path all ran. **This does NOT retire the experimental label**: every one of those scenarios is single-player, and the stated exit criterion is concurrent MULTI-REGION ingress, which no scenario in the harness produces. Clients request distant chunks individually; the server reads them from disk or memory and streams serialized sections back, enabling LOD rendering mods to display terrain beyond vanilla render distance.
