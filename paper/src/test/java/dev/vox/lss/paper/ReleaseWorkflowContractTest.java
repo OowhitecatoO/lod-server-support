@@ -5,6 +5,9 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -13,38 +16,38 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Contract test for the MAIN-line workflow files ({@code .github/workflows/}), read from the
- * source tree like {@link PluginYmlContractTest} — the mirror of the support branches'
- * flavor of this test. Since the v0.8.0 tri-line release the repo carries three release.yml
- * variants (main + two support lines) that publish under the SAME version number, so the
- * dominant regression vector is a merge auto-resolving one line's scoping into another:
- * compilation catches none of that, and release.yml gates an IRREVERSIBLE publish. This
- * lives in {@code :paper:test} because both build.yml and release.yml run {@code :paper:test}
- * BEFORE any publish step, so a regression here physically blocks the tag run that would
- * have shipped it.
+ * Contract test for the SUPPORT-LINE workflow files ({@code .github/workflows/}), read from
+ * the source tree like {@link PluginYmlContractTest} — this is the 1.21.11 line's flavor
+ * (fresh v0.10.0 re-port branch {@code support/mc1.21.11-v0.10}; the frozen v0.8.0-era
+ * {@code support/mc1.21.11} carried the same shape). The dominant regression vector on a
+ * support branch is a forward merge from main auto-resolving these YAML files back to their
+ * 26.2 shape: compilation catches none of that, and release.yml gates an IRREVERSIBLE
+ * publish (GitHub release + Modrinth uploads). This lives in {@code :paper:test} because
+ * both build.yml and release.yml run {@code :paper:test} BEFORE any publish step, so a
+ * regression here physically blocks the tag run that would have shipped it.
  *
  * <p>Assertions are scoped to their STEP block wherever a value could be satisfied by the
- * wrong step. FULL-LINE comments are stripped before asserting; trailing inline comments are
+ * wrong step (review finding: a half-merge that dropped the Paper jar from the gh-release
+ * assets, or moved {@code make_latest} into a Modrinth step, passed the earlier file-global
+ * checks). FULL-LINE comments are stripped before asserting; trailing inline comments are
  * not, so avoid other-line tokens in those.
  */
 class ReleaseWorkflowContractTest {
 
-    // ---- the line's expected values (the support branches carry their own flavors) ----
+    // ---- the line's expected values (differ between support branches; everything else
+    // in this file is branch-invariant) ----
+    private static final String LINE_TAG_GLOB = "v*+mc1.21.11*";
     // NOTE: GitHub's filter-pattern language treats '+' as a quantifier, so a pattern
     // containing '*+' is INVALID — it phantom-fails every push and a real tag triggers
-    // NOTHING. The literal-'+' scoping must stay in shell (the guard step), never the glob.
-    private static final String TRIGGER_LINE = "tags: ['v*']";
-    private static final String GUARD_CASE_LINE = "*+mc*)";
-    private static final String PREV_TAG_PIPELINE =
-            "git tag -l 'v*' --sort=-v:refname | grep -v \"^${TAG}$\" | grep -v '+mc' | head -1 || true";
-    private static final String LSS_MODRINTH_ID = "lKiXKLvv";
-    private static final String VSS_MODRINTH_ID = "84zcagOb";
-    private static final String[] MODRINTH_VERSION_IDS = {
-            "version: ${{ github.ref_name }}+fabric+mc26.2",
-            "version: ${{ github.ref_name }}+paper+mc26.2",
-    };
-    /** Support-line MC tokens: must not appear outside comments anywhere in release.yml. */
-    private static final String[] FORBIDDEN_LINE_TOKENS = {"26.1", "1.21.11"};
+    // NOTHING. The glob swallows the literal '+' with '*'; the exact-suffix check is the
+    // shell guard step, where '+' is plain text.
+    private static final String TRIGGER_LINE = "tags: ['v*mc1.21.11*']";
+    private static final String FABRIC_MODRINTH_VERSION = "version: v${{ env.MOD_VERSION }}+fabric+mc1.21.11";
+    private static final String PAPER_MODRINTH_VERSION = "version: v${{ env.MOD_VERSION }}+paper+mc1.21.11";
+    private static final String[] FABRIC_GAME_VERSIONS = {"1.21.11"};
+    private static final String[] PAPER_GAME_VERSIONS = {"1.21.11"};
+    /** The other lines' MC tokens: must not appear outside comments anywhere in release.yml. */
+    private static final String[] FORBIDDEN_LINE_TOKENS = {"26.2", "26.1"};
 
     private static String releaseYml;   // comment-stripped
     private static String buildYml;     // comment-stripped
@@ -79,112 +82,127 @@ class ReleaseWorkflowContractTest {
     }
 
     @Test
-    void triggerIsTheBroadGlobWithNoQuantifierConstruct() {
+    void triggerIsScopedToThisLine() {
+        // A bare v* tag accidentally pushed from this branch must not publish: the workflow
+        // at the tag's commit decides, so the trigger itself carries the line suffix.
         assertTrue(releaseYml.contains(TRIGGER_LINE),
-                "release.yml must trigger on the plain v* glob (" + TRIGGER_LINE + ")");
+                "release.yml must trigger only on this line's tags (" + TRIGGER_LINE + ")");
+        assertFalse(releaseYml.contains("tags: ['v*']"),
+                "main's broad v* trigger must not come back on a support line");
         assertFalse(Pattern.compile("tags:.*\\*\\+").matcher(releaseYml).find(),
                 "no tag filter may contain '*+' — GitHub treats '+' as a quantifier, the "
                         + "pattern is invalid, and a real tag push would trigger NOTHING");
     }
 
     @Test
-    void guardStepRefusesSupportLineTags() {
-        // A support-line tag (v0.8.0+mc26.1 etc.) mistakenly pushed onto a main commit must
-        // not publish: it would ship 26.2 jars under a support-line name, and
-        // ${GITHUB_REF_NAME#v} would feed the +mc suffix into -Pmod_version. This lives in
-        // a shell guard because the on.push.tags filter cannot express a literal '+'.
-        String guard = stepBlock("- name: Refuse support-line tags");
-        assertTrue(guard.contains(GUARD_CASE_LINE) && guard.contains("exit 1"),
-                "the guard step must fail the run on any *+mc* tag");
-        assertTrue(releaseYml.indexOf("- name: Refuse support-line tags")
+    void guardStepRefusesWrongLineTags() {
+        // The trigger glob cannot express the literal '+', so the exact-suffix scoping is
+        // a first-step shell guard: only v*+mc1.21.11* tags may publish from this workflow.
+        String guard = stepBlock("- name: Refuse wrong-line tags");
+        assertTrue(guard.contains("v*+mc1.21.11*)") && guard.contains("exit 1"),
+                "the guard step must pass only this line's +mc1.21.11 tags and fail the rest");
+        assertTrue(releaseYml.indexOf("- name: Refuse wrong-line tags")
                         < releaseYml.indexOf("- uses: actions/checkout"),
                 "the guard must be the FIRST step — before checkout, builds, or any publish");
     }
 
     @Test
-    void prevTagLookupsExcludeSupportLineTags() {
-        // Both PREV_TAG computations (lightweight-tag notes fallback + compare link) must
-        // filter '+mc' tags, or version-sort slots a support tag adjacent to this line's
-        // and the notes/compare span across release lines.
-        long hits = Pattern.compile(Pattern.quote(PREV_TAG_PIPELINE)).matcher(releaseYml)
-                .results().count();
-        assertEquals(2, hits,
-                "release.yml must keep BOTH mainline-scoped PREV_TAG pipelines: " + PREV_TAG_PIPELINE);
+    void vssChannelIsNotPublishedFromThisSupportLine() {
+        // The VSS Modrinth project (84zcagOb) stopped receiving versions at v0.8.0 on every
+        // line. Restoring upload steps here would irreversibly resume the retired channel —
+        // with wrong-line jars, at that.
+        assertFalse(releaseYml.contains("84zcagOb"),
+                "release.yml must not reference the VSS Modrinth project on a support line");
+        assertFalse(releaseYml.contains("voxy-server-side-"),
+                "release.yml must not upload/attach VSS jars on a support line "
+                        + "(the vssJar tasks still BUILD them — only publishing is out)");
     }
 
     @Test
     void githubReleaseStepShipsExactlyTheLssPair() {
-        // VSS publishing is disabled as of v0.8.0 (user decision at the tri-release): the
-        // vssJar tasks still build the branded byte-copies and release_check still gates the
-        // pair, but no VSS jar may be distributed — from ANY line now.
         String gh = stepBlock("- uses: softprops/action-gh-release");
-        for (String glob : new String[]{
-                "fabric/build/libs/lod-server-support-fabric-*.jar",
-                "paper/build/libs/lod-server-support-paper-*.jar"}) {
-            assertTrue(gh.contains(glob), "the gh-release assets must include " + glob);
-        }
-        assertFalse(gh.contains("voxy-server-side-"),
-                "no VSS jar may be attached to the GitHub release");
+        // POSITIVE pins first (review finding: asserting only VSS absence let a half-merge
+        // drop the Paper glob and ship a Fabric-only release, green).
+        assertTrue(gh.contains("fabric/build/libs/lod-server-support-fabric-*.jar"),
+                "the gh-release assets must include the LSS Fabric jar");
+        assertTrue(gh.contains("paper/build/libs/lod-server-support-paper-*.jar"),
+                "the gh-release assets must include the LSS Paper jar");
+        assertTrue(gh.contains("make_latest: false"),
+                "make_latest: false must sit on the gh-release step itself — a support-line "
+                        + "release must never steal the Latest badge from main");
         assertTrue(gh.contains("fail_on_unmatched_files: true"),
                 "fail_on_unmatched_files guards against publishing an empty release");
-        assertFalse(gh.contains("make_latest: false"),
-                "main-line releases carry the Latest badge — make_latest: false is the "
-                        + "support-branch flavor of this step");
+        assertFalse(gh.contains("voxy-server-side-"),
+                "no VSS jar may be attached to the GitHub release");
     }
 
     @Test
-    void onlyTheLssModrinthStepsExist() {
-        // Two LSS steps, and NO VSS channel anywhere: restoring the 84zcagOb steps would
-        // irreversibly resume publishing to the retired second distribution channel.
-        assertEquals(2, Pattern.compile(Pattern.quote("modrinth-id: " + LSS_MODRINTH_ID))
-                        .matcher(releaseYml).results().count(),
-                "both LSS Modrinth steps must target " + LSS_MODRINTH_ID);
-        assertFalse(releaseYml.contains(VSS_MODRINTH_ID),
-                "release.yml must not reference the VSS Modrinth project " + VSS_MODRINTH_ID);
-        assertFalse(releaseYml.contains("voxy-server-side-"),
-                "release.yml must not upload/attach VSS jars (the vssJar tasks still BUILD "
-                        + "them — only publishing is out)");
-        for (String id : MODRINTH_VERSION_IDS) {
-            assertEquals(1, Pattern.compile(Pattern.quote(id)).matcher(releaseYml).results().count(),
-                    "exactly one (LSS) step per version id form '" + id + "'");
+    void modVersionStripsTheTagBuildMetadata() {
+        // Tags here carry +mc build metadata; without the strip, Gradle's mod_version keeps
+        // the '+suffix' and corrupts jar names, release_check --version, and Modrinth ids.
+        assertTrue(releaseYml.contains("MOD_VERSION=\"${MOD_VERSION%%+*}\""),
+                "release.yml must derive MOD_VERSION by stripping the tag's +mc suffix");
+        assertFalse(releaseYml.contains("-Pmod_version=${GITHUB_REF_NAME#v}"),
+                "main's tag-derived mod_version form must not come back on a support line");
+    }
+
+    @Test
+    void prevTagLookupIsScopedToThisLine() {
+        Matcher m = Pattern.compile("git tag -l '([^']+)'").matcher(releaseYml);
+        List<String> globs = new ArrayList<>();
+        while (m.find()) globs.add(m.group(1));
+        assertTrue(globs.size() >= 2, "expected both PREV_TAG lookups, found: " + globs);
+        for (String glob : globs) {
+            assertEquals(LINE_TAG_GLOB, glob, "every tag lookup must be scoped to this line");
         }
     }
 
     @Test
-    void paperStepAdvertisesFolia() {
-        // INVERTED for v0.9.0. This used to pin the folia loader's ABSENCE, on the premise
-        // that no Folia 26.2 build existed and the loader would surface an unloadable jar.
-        // Folia published 26.2-1 on 2026-07-28, plugin.yml declares folia-supported again
-        // (PluginYmlContractTest pins that PRESENCE), and all four SOAK_PLATFORM=folia
-        // scenarios passed — so the guarded failure inverted too: it is now a Paper jar
-        // that Folia CAN load but that Modrinth's loader filter hides from Folia admins,
-        // while the README's compatibility table claims the platform is supported.
-        assertTrue(Pattern.compile("(?m)^\\s+folia\\s*$").matcher(releaseYml).find(),
-                "the Paper Modrinth step must advertise the folia loader now that the jar "
-                        + "declares folia-supported and the Folia soaks pass");
+    void fabricModrinthStepTargetsThisLine() {
+        String step = stepBlock("- name: Upload Fabric to Modrinth");
+        assertTrue(step.contains(FABRIC_MODRINTH_VERSION),
+                "the fabric Modrinth version id must be built from the bare MOD_VERSION "
+                        + "(main's github.ref_name form would publish a malformed id)");
+        assertTrue(step.contains("loaders: fabric"), "fabric step must advertise the fabric loader");
+        for (String v : FABRIC_GAME_VERSIONS) {
+            assertTrue(Pattern.compile("(?m)^\\s+" + Pattern.quote(v) + "\\s*$").matcher(step).find(),
+                    "fabric step must list game version " + v + " on its own line");
+        }
+    }
+
+    @Test
+    void paperModrinthStepTargetsThisLine() {
+        String step = stepBlock("- name: Upload Paper to Modrinth");
+        assertTrue(step.contains(PAPER_MODRINTH_VERSION),
+                "the paper Modrinth version id must be built from the bare MOD_VERSION");
+        // Folia stays advertised on this line: Folia publishes real 1.21.11 builds and
+        // plugin.yml declares folia-supported (PluginYmlContractTest pins the presence).
+        assertTrue(Pattern.compile("loaders:\\s*\\|\\s*paper\\s+purpur\\s+folia").matcher(step).find(),
+                "the paper step must advertise paper, purpur AND folia on this line");
+        for (String v : PAPER_GAME_VERSIONS) {
+            assertTrue(Pattern.compile("(?m)^\\s+" + Pattern.quote(v) + "\\s*$").matcher(step).find(),
+                    "paper step must list game version " + v + " on its own line");
+        }
     }
 
     @Test
     void otherLineTokensAbsentOutsideComments() {
         for (String token : FORBIDDEN_LINE_TOKENS) {
             assertFalse(releaseYml.contains(token),
-                    "release.yml must not reference MC " + token + " outside comments on main");
+                    "release.yml must not reference MC " + token
+                            + " outside comments on this line");
         }
     }
 
     @Test
     void buildWorkflowRunsOnSupportBranches() {
-        // build.yml is shared in spirit across lines; keeping the branches filter identical
-        // on main makes the recurring main→support merges conflict-free and ensures a
-        // support branch pushed before its own build.yml edit still gets CI. (The
-        // v0.10.0 'feat/protocol-20' integration-branch entry was dropped with the C6
-        // merge, together with its pin — the support lines already pin this 2-entry
-        // form, so a D3 re-port taking main's build.yml stays contract-clean.)
-        long hits = Pattern.compile(
-                        Pattern.quote("branches: [main, 'support/**']"))
+        // Main's build.yml and the support lines share the identical 2-entry filter, which
+        // keeps the recurring main→support merges conflict-free and means a support branch
+        // pushed before its own build.yml edit still gets CI. Pin the exact lists, not a
+        // floating token count.
+        long hits = Pattern.compile(Pattern.quote("branches: [main, 'support/**']"))
                 .matcher(buildYml).results().count();
         assertEquals(2, hits,
-                "build.yml must keep branches: [main, 'support/**']"
-                        + " on push AND pull_request");
+                "build.yml must keep branches: [main, 'support/**'] on push AND pull_request");
     }
 }

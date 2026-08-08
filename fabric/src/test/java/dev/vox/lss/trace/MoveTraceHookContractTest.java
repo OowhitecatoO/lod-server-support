@@ -39,6 +39,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * exactly one {@code warn(String,Object)}, exactly three {@code teleport(DDDFF)V}, and
  * the relative order (the wrongly-warn between teleports #2 and #3) — the slice-anchor's
  * tripwire against a vanilla reorder.
+ *
+ * <p>1.21.11-LINE NOTE (D3 re-port, R-7 catalogue item 1): the census and order above are
+ * per-MC-version by construction and were RE-VERIFIED against 1.21.11's
+ * {@code handleMovePlayer} bytecode at the fresh re-port — identical to 26.2 despite this
+ * line predating the 26.2 movement-rejection rework, so the counts stand unchanged and
+ * the tracer ships FULLY FUNCTIONAL here (Tier 2's MoveTraceGameTests exercise the
+ * applied hooks live: too_quickly, the silent creative rejection, the survival
+ * wrongly+rejected pair). If a future 1.21.11-line bump reds this, adjust THIS line's
+ * counts against its own bytecode; the non-required mixins json keeps a drifted server
+ * safe meanwhile.
  */
 class MoveTraceHookContractTest {
 

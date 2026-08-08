@@ -20,7 +20,9 @@ import java.util.Optional;
  *
  * <p>This mirrors vanilla's {@code RegionFile.getChunkDataInputStream} record-resolution
  * shapes exactly (26.2 bytecode, decompiled and verified — the shape census is in the
- * v0.10.0 progress doc's B3 recon entry): offset-0, truncated header, missing stream,
+ * v0.10.0 progress doc's B3 recon entry; 1.21.11-line note: the R-7 re-port check found
+ * the shadowed members and all three branches identical on 1.21.11 — Tier 2 byte parity
+ * re-pins them per-line): offset-0, truncated header, missing stream,
  * truncated/negative stream all resolve {@code Optional.empty()} = authoritative
  * not-found, matching the {@code null} vanilla's read returns for them today. External
  * ({@code .mcc}) chunks are read into the buffer HERE, on the executor — file IO stays
