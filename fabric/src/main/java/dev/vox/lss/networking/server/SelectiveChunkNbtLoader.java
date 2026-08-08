@@ -22,7 +22,9 @@ import java.util.Set;
  * stretch follow-up.
  *
  * <p>The root protocol mirrors {@code NbtIo.readUnnamedTag} exactly (26.2 decompiled —
- * the B4 recon entry in the progress doc): root type byte (non-compound throws
+ * the B4 recon entry in the progress doc; 26.1-line note: the R-7 re-port check found
+ * the root shape and the serializer-consumed key set identical on 26.1.2, so the
+ * whitelist pin stands unchanged): root type byte (non-compound throws
  * vanilla's own message), {@code StringTag.skipString} for the root name, then the
  * compound load loop ({@code readByte type / readUTF key / load-or-skip}) inside
  * {@code pushDepth/popDepth} on the same {@code NbtAccounter.unlimitedHeap()} the full
