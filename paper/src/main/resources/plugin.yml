@@ -1,12 +1,13 @@
 name: LodServerSupport
 version: '${version}'
 main: dev.vox.lss.paper.LSSPaperPlugin
-api-version: '26.2'
-# Re-declared 2026-08-01: Folia published its first MC 26.2 build (26.2-1, channel BETA,
-# 2026-07-28), so the flag no longer auto-loads onto a nonexistent platform. Folia support
-# remains EXPERIMENTAL on this line exactly as on 1.21.8/1.21.11/26.1.x — single-player soak
-# validated; concurrent multi-region ingress untested. Do NOT treat the flag's presence as a
-# claim that SOAK_PLATFORM=folia has passed on 26.2.
+api-version: '26.1.2'
+# 26.1 support line (fresh v0.10.0 re-port): Folia publishes real MC 26.1.2 builds, so the
+# flag is correct HERE for the same reason it is correct on the 26.2 primary line — the
+# guarded failure is a jar that silently stops loading on Folia (PluginYmlContractTest +
+# release_check.py pin its PRESENCE). Folia support remains EXPERIMENTAL on every line —
+# single-player soak validated; concurrent multi-region ingress untested. Do NOT treat the
+# flag's presence as a claim that SOAK_PLATFORM=folia has passed on 26.1.2.
 folia-supported: true
 # C5 (XVER §7): the Via mismatch guard reflectively reads ViaVersion's API when the
 # plugin is present. softdepend keeps Spigot's classloader from logging the one-time

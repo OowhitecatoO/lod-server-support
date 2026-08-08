@@ -61,8 +61,8 @@ dependencies {
     storeDeps "com.github.luben:zstd-jni:1.5.7-3"
     localRuntime "org.xerial:sqlite-jdbc:3.49.1.0"
     localRuntime "com.github.luben:zstd-jni:1.5.7-3"
-    compileOnly "maven.modrinth:sodium:mc26.2-0.9.1-beta.3-fabric"
-    compileOnly "maven.modrinth:modmenu:20.0.0-beta.4"
+    compileOnly "maven.modrinth:sodium:mc26.1.2-0.8.12-fabric"
+    compileOnly "maven.modrinth:modmenu:18.0.0-beta.1"
     // Compat validation arm: -Pbenchmark.moonrise=true puts Moonrise on the dev runtime
     // (the same Modrinth version issue #69 was reported against), so the soak harness can
     // drive the full dirty pipeline — the SerializableChunkData.copyOf hook, broadcast,

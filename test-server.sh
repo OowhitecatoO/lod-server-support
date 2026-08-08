@@ -17,20 +17,20 @@ FOLIA_DIR="$SCRIPT_DIR/test-server/folia"
 # See docs/planning/v16-client-compat-design.md.
 LEGACY_DIR="$SCRIPT_DIR/test-server/fabric-legacy"
 
-# --- Fabric versions ---
-FABRIC_MC_VERSION="26.2"
+# --- Fabric versions (26.1 support line) ---
+FABRIC_MC_VERSION="26.1.2"
 FABRIC_LOADER_VERSION="0.19.3"
 FABRIC_INSTALLER_VERSION="1.1.1"
 
 # --- Paper/Folia versions ---
-PAPER_MC_VERSION="26.2"
-FOLIA_MC_VERSION="26.2"
+PAPER_MC_VERSION="26.1.2"
+FOLIA_MC_VERSION="26.1.2"
 
 # --- Download URLs ---
 FABRIC_SERVER_URL="https://meta.fabricmc.net/v2/versions/loader/${FABRIC_MC_VERSION}/${FABRIC_LOADER_VERSION}/${FABRIC_INSTALLER_VERSION}/server/jar"
-FABRIC_API_URL="https://cdn.modrinth.com/data/P7dR8mSH/versions/Cpy2Px2f/fabric-api-0.154.0%2B26.2.jar"
-C2ME_URL="https://cdn.modrinth.com/data/VSNURh3q/versions/nvOkOiyi/c2me-fabric-mc26.2-0.4.2-alpha.0.9.jar"
-# DrexHD AntiXray (Modrinth sml2FMaA), fabric-1.4.16+26.1 — listed compatible with MC 26.2.
+FABRIC_API_URL="https://cdn.modrinth.com/data/P7dR8mSH/versions/yALY9gHM/fabric-api-0.151.0%2B26.1.2.jar"
+C2ME_URL="https://cdn.modrinth.com/data/VSNURh3q/versions/MmyZoUyp/c2me-fabric-mc26.1.2-0.4.0-alpha.0.4.jar"
+# DrexHD AntiXray (Modrinth sml2FMaA), fabric-1.4.16+26.1 — this line's native build.
 # `run-fabric-antixray` enables it as the live gate for LSS's AntiXray compat
 # (docs/planning/antixray-compat-design.md): a current LSS build must SURVIVE an LSS client
 # join — the crash shim binds AntiXray's ScopedValue context around LSS serialization, and
@@ -41,18 +41,19 @@ C2ME_URL="https://cdn.modrinth.com/data/VSNURh3q/versions/nvOkOiyi/c2me-fabric-m
 ANTIXRAY_URL="https://cdn.modrinth.com/data/sml2FMaA/versions/AK313N9m/antixray-fabric-1.4.16%2B26.1.jar"
 
 # --- Legacy (protocol-16) LSS server ---
-# The last pre-v0.7.0 release on this Minecraft line (26.2), pulled straight from GitHub
-# Releases (a real protocol-16 server, not a rebuild). MC 26.2 == the current line, so a
-# current client CAN join it — only the LSS protocol differs (16 vs 18), which is exactly
-# what the v16 client-compat path bridges. Bump this when a newer pre-v0.7.0 tag is preferred.
-LEGACY_LSS_VERSION="0.6.2"
-LEGACY_LSS_MC="26.2"
+# The last pre-v0.7.0 release on this Minecraft line (26.1.2 — mainline v0.5.1, before the
+# v0.6.0 bump moved main to 26.2), pulled straight from GitHub Releases (a real
+# protocol-16 server, not a rebuild). MC matches this line, so a current client CAN join
+# it — only the LSS protocol differs (16 vs current), which is exactly what the v16
+# client-compat path bridges. Bump this when a newer pre-v0.7.0 tag is preferred.
+LEGACY_LSS_VERSION="0.5.1"
+LEGACY_LSS_MC="26.1.2"
 LEGACY_LSS_FABRIC_URL="https://github.com/VoX/lod-server-support/releases/download/v${LEGACY_LSS_VERSION}/lod-server-support-fabric-${LEGACY_LSS_VERSION}%2B${LEGACY_LSS_MC}.jar"
 
 # --- Java version check ---
 JAVA_MAJOR=$(java -version 2>&1 | head -1 | sed 's/.*"\([0-9]\+\).*/\1/')
 if [ "$JAVA_MAJOR" -lt 25 ] 2>/dev/null; then
-    echo "ERROR: Java 25+ required for MC 26.2. Found: Java $JAVA_MAJOR" >&2
+    echo "ERROR: Java 25+ required for MC 26.1. Found: Java $JAVA_MAJOR" >&2
     echo "  Set JAVA_HOME to a JDK 25+ installation." >&2
     exit 1
 fi
@@ -560,9 +561,9 @@ setup_folia() {
     # Folia lags Paper when a new Minecraft version lands — it may not have a build for
     # FOLIA_MC_VERSION yet. Skip the local Folia server gracefully (the Paper plugin jar already
     # carries Folia support) instead of aborting the whole script under `set -e`.
-    # 26.2 status: Folia published its first build (26.2-1) on 2026-07-28, channel BETA.
-    # download_papermc_jar falls back from STABLE to whatever exists, so this resolves the
-    # BETA build — deliberate, since BETA is the only channel Folia 26.2 has.
+    # 26.1 line: Folia publishes real 26.1.2 builds (the reason this line's plugin.yml
+    # kept folia-supported through the period 26.2 dropped it). download_papermc_jar
+    # falls back from STABLE to whatever channel exists.
     if ! curl -fsSL -A "lod-server-support/test-server" -o /dev/null \
             "https://fill.papermc.io/v3/projects/folia/versions/${FOLIA_MC_VERSION}/builds" 2>/dev/null; then
         echo "  NOTE: Folia has no MC ${FOLIA_MC_VERSION} build published upstream yet — skipping the local Folia server."
@@ -581,7 +582,7 @@ setup_folia() {
     write_lss_config "$FOLIA_DIR/plugins/LodServerSupport"
 
     echo "=== Installing Folia plugins ==="
-    echo "  Installing LSS (same jar as Paper — folia-supported: true, EXPERIMENTAL on 26.2)..."
+    echo "  Installing LSS (same jar as Paper — folia-supported: true, EXPERIMENTAL on 26.1)..."
     local lss_jar
     lss_jar=$(build_paper_jar)
     rm -f "$plugins_dir"/lod-server-support-paper*.jar
