@@ -122,7 +122,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
 
       # Retry-once for the same reason as Tier 2 above — this tier additionally sees the
-      # vanilla 26.2 TicketStorage purge crash under ticket churn (CLAUDE.md flake catalog).
+      # vanilla 26.x TicketStorage purge crash (bytecode-identical on 26.1.2) under ticket churn (CLAUDE.md flake catalog).
       - name: Tier 3 client gametests (retry once on flake)
         run: |
           ./gradlew :fabric:runClientGameTest || {
