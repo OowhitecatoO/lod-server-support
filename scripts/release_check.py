@@ -56,7 +56,8 @@ CI_NAME_SUFFIX = "0.4.0+26.1.2.jar"  # a representative CI filename for glob rou
 # jars; 1.21.x fabric-loom-remap ships intermediary. A forward merge swapping the loom
 # plugin produces a right-named, gate-green jar in the WRONG namespace — unloadable on any
 # real server of this line — so the manifest attribute is pinned like Paper's namespace.
-FABRIC_MAPPING_NAMESPACE = "official"
+# 1.21.11-line value (the old support branch's pin): loom-remap ships intermediary.
+FABRIC_MAPPING_NAMESPACE = "intermediary"
 SOAK_JAR_PREFIX = "lss-paper-soak"
 
 
@@ -769,7 +770,7 @@ def _selftest():
         return out
 
     with tempfile.TemporaryDirectory() as td:
-        fab_manifest = "Manifest-Version: 1.0\nFabric-Mapping-Namespace: official\n"
+        fab_manifest = "Manifest-Version: 1.0\nFabric-Mapping-Namespace: intermediary\n"
         good_fab = os.path.join(td, "lod-server-support-fabric.jar")
         _make_jar(good_fab, {
             "fabric.mod.json": json.dumps({"version": "0.4.0"}),
