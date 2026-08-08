@@ -19,14 +19,18 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The 26.2 side of §9's cross-line fixture corpus (C6): every checked-in
- * {@code xver-live-corpus/} fixture — v20 bodies captured from REAL played terrain by
- * {@link XverLiveCorpusCaptureTool} — must decode STRICTLY against this line's own
- * registries: every dictionary identity resolves (zero fallbacks on the same line),
- * and the translated native body re-parses with identical section structure. The
- * 26.1 / 1.21.11 backport suites (D3 phase 7) run the same fixtures against THEIR
- * registries with per-line fallback expectations — the only automated coverage the
- * actual issue-#85 scenario (cross-MC v20 serving) has anywhere.
+ * 26.1-LINE FLAVOR — the D3 phase-7 CROSS-LINE arm of §9's fixture corpus (C6): every
+ * checked-in {@code xver-live-corpus/} fixture is a v20 body captured from REAL played
+ * terrain ON MC 26.2 by {@link XverLiveCorpusCaptureTool}, decoded here against THIS
+ * line's (26.1.2) registries — the only automated coverage the actual issue-#85
+ * scenario (cross-MC v20 serving) has anywhere. Verified at the D3 re-port
+ * (2026-08-08): every 26.2-captured identity resolves STRICTLY on 26.1.2 — zero
+ * fallbacks — so this arm keeps the strict resolvers and the voxel-level identity
+ * comparison unchanged from main's same-line flavor. If a future corpus re-capture
+ * (on a newer 26.2.x registry) introduces identities unknown here, that is legitimate
+ * CROSS-LINE drift, not a broken capture: switch the affected identities to the
+ * documented client fallback expectations ({@code unknownBlockFallback} /
+ * ladder containment) rather than widening the strict resolvers silently.
  */
 class XverLiveCorpusDecodeTest {
 
@@ -104,15 +108,18 @@ class XverLiveCorpusDecodeTest {
             var column = WireSectionCursor.parse(v20, WireSectionCursor.Layout.V20);
             assertTrue(column.dictionary().size() > 0, fixture + ": empty dictionary");
 
-            // Strict resolvers: on the SAME line every captured identity must be known
-            // — a miss here means the capture and the registry drifted (an MC bump
-            // without a corpus re-capture), never a legitimate fallback.
+            // Strict resolvers, CROSS-LINE (26.1 flavor): the corpus was captured on
+            // 26.2 and every identity is verified to resolve on 26.1.2 too (the D3
+            // re-port measurement) — so a miss here is either registry drift on a
+            // future 26.1.x bump or a re-captured corpus introducing genuinely new
+            // 26.2 identities; only the latter may move to fallback expectations
+            // (see the class javadoc), never a silent widening.
             byte[] nativeBody = V20ToNativeTranslator.translate(v20,
                     identity -> {
                         Integer id = blockIds.get(identity);
                         if (id == null) {
                             throw new AssertionError(fixture + ": block identity '"
-                                    + identity + "' unknown on its OWN line");
+                                    + identity + "' (captured on 26.2) unknown on the 26.1 line");
                         }
                         return id;
                     },
@@ -120,7 +127,7 @@ class XverLiveCorpusDecodeTest {
                         Integer id = biomeIds.get(identity);
                         if (id == null) {
                             throw new AssertionError(fixture + ": biome identity '"
-                                    + identity + "' unknown on its OWN line");
+                                    + identity + "' (captured on 26.2) unknown on the 26.1 line");
                         }
                         return id;
                     },

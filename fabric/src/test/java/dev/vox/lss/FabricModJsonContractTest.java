@@ -14,23 +14,26 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Main-line contract for {@code fabric.mod.json} + {@code gradle.properties}, read from
+ * 26.1-LINE contract for {@code fabric.mod.json} + {@code gradle.properties}, read from
  * the SOURCE tree (the fabric mirror of paper's
  * {@code PluginYmlContractTest.apiVersionMatchesTheDevBundleMinecraftVersion} lockstep pin).
  * The regression vector: the LOWER Minecraft bound is enforced by fabric-loader in every
  * gametest launch, but the UPPER bound is caught by nothing at build time — and the mixins
- * here are required:true over MC internals, so an unbounded range turns a future 26.3 into
+ * here are required:true over MC internals, so an unbounded range turns a foreign line into
  * a hard mixin-apply crash instead of Loader's clean refusal (the v0.8.0 compat review's
- * MAJOR). The support branches carry their own flavors of this test.
+ * MAJOR). On THIS line the upper bound additionally excludes 26.2, whose
+ * publishServer overload split makes the two lines' LAN-hook mixin descriptors mutually
+ * incompatible. Main and each support branch carry their own flavors of this test.
  */
 class FabricModJsonContractTest {
 
     // ---- the line's expected constants (each branch carries its own values) ----
     // The trailing '-' makes the upper bound prerelease-EXCLUSIVE: Fabric semver sorts
-    // 26.3-rc below 26.3, so a bare '<26.3' would admit 26.3 prereleases — where the required
-    // mixins over MC internals hard-crash at apply (final compat review 2026-07-27).
-    private static final String EXPECTED_MINECRAFT_DEPENDS = ">=26.2 <26.3-";
-    private static final String EXPECTED_MINECRAFT_VERSION_PREFIX = "26.2";
+    // 26.2-rc below 26.2, so a bare '<26.2' would admit 26.2 prereleases — where this
+    // line's required mixins over MC internals hard-crash at apply (the compat-review
+    // rationale that added the same guard to the 26.2 line's '<26.3-' bound).
+    private static final String EXPECTED_MINECRAFT_DEPENDS = ">=26.1 <26.2-";
+    private static final String EXPECTED_MINECRAFT_VERSION_PREFIX = "26.1";
 
     private static JsonObject modJson;
     private static Properties gradleProps;
