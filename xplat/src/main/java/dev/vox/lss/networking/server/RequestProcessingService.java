@@ -231,7 +231,7 @@ public class RequestProcessingService {
             var regionDirs = new HashMap<String, java.nio.file.Path>();
             var maskFingerprints = new HashMap<String, String>();
             for (ServerLevel level : server.getAllLevels()) {
-                String dim = level.dimension().identifier().toString();
+                String dim = level.dimension().location().toString();
                 regionDirs.put(dim, net.minecraft.world.level.dimension.DimensionType
                         .getStorageFolder(level.dimension(), worldRoot)
                         .resolve("region").normalize());
@@ -276,7 +276,7 @@ public class RequestProcessingService {
             if (this.lodStore instanceof dev.vox.lss.common.store.SqliteLodStore sqlite) {
                 var levelByDim = new HashMap<String, ServerLevel>();
                 for (ServerLevel level : server.getAllLevels()) {
-                    levelByDim.put(level.dimension().identifier().toString(), level);
+                    levelByDim.put(level.dimension().location().toString(), level);
                 }
                 this.storeBackfill = new dev.vox.lss.common.store.StoreBackfill(
                         sqlite, regionDirs::get,
@@ -289,8 +289,9 @@ public class RequestProcessingService {
                         dim -> {
                             try {
                                 var level = levelByDim.get(dim);
+                                // 1.21.1 line: the shared spawn accessor of this MC.
                                 var pos = level == null ? null
-                                        : level.getRespawnData().pos();
+                                        : level.getSharedSpawnPos();
                                 return pos == null ? new long[]{0, 0}
                                         : new long[]{pos.getX() >> 4, pos.getZ() >> 4};
                             } catch (Throwable t) {
@@ -353,7 +354,7 @@ public class RequestProcessingService {
                     config.generationConcurrencyLimitPerPlayer);
             // Session identity for the router's stale-snapshot guard (set before the map
             // publish so the processing thread never sees it null on a live state).
-            s.setRegisteredDimension(player.level().dimension().identifier().toString());
+            s.setRegisteredDimension(player.level().dimension().location().toString());
             // Transport-pressure gauge (elytra-wall §8.3). The probe re-reads the player's
             // channel on every call, so a reconnect on the SAME ServerPlayer is picked up;
             // a player-object swap that keeps this state degrades to isActive()==false =>
@@ -569,7 +570,7 @@ public class RequestProcessingService {
                     config.lodDistanceChunks,
                     config.enableChunkGeneration,
                     net.minecraft.SharedConstants.getCurrentVersion()
-                            .dataVersion().version());
+                            .getDataVersion().getVersion());
             try {
                 dev.vox.lss.platform.LoaderServices.get().sendToPlayer(state.getPlayer(), payload);
                 pushed++;
@@ -669,13 +670,13 @@ public class RequestProcessingService {
             }
 
             var player = state.getPlayer();
-            var level = player.level();
+            var level = player.serverLevel(); // 1.21.1 line: level() returns plain Level here
             // Ring origin for the generation order-spread gate — must be the REAL player
             // chunk (the want-set's first entry sits at ~viewDistance on a ring perimeter,
             // which wedged the gate — see AbstractPlayerRequestState.updatePlayerChunk).
-            state.updatePlayerChunk(player.chunkPosition().x(), player.chunkPosition().z());
+            state.updatePlayerChunk(player.chunkPosition().x, player.chunkPosition().z);
             String dimension = this.dimensionStringCache.computeIfAbsent(level.dimension(),
-                    k -> k.identifier().toString());
+                    k -> k.location().toString());
 
             this.offThreadProcessor.updateDimensionContext(dimension, level);
 
@@ -703,7 +704,7 @@ public class RequestProcessingService {
             if (!state.hasCompletedHandshake()) continue;
             var player = state.getPlayer();
             this.v16Compat.tickPlayer(player.getUUID(), state,
-                    player.chunkPosition().x(), player.chunkPosition().z(), maxDist);
+                    player.chunkPosition().x, player.chunkPosition().z, maxDist);
         }
     }
 
@@ -1095,9 +1096,9 @@ public class RequestProcessingService {
             if (state == null || !state.hasCompletedHandshake()) continue;
 
             var player = state.getPlayer();
-            var level = player.level();
+            var level = player.serverLevel(); // 1.21.1 line: level() returns plain Level here
             String dimension = this.dimensionStringCache.computeIfAbsent(level.dimension(),
-                    k -> k.identifier().toString());
+                    k -> k.location().toString());
             // Ticket queued before a dimension change targets the old dimension's coordinates.
             // Dropping it leaks nothing: the admitting state was discarded by
             // removePlayer+registerPlayer (its slot dies with it), AND that same removePlayer
@@ -1181,7 +1182,7 @@ public class RequestProcessingService {
         }
         var biomeKeys = new java.util.ArrayList<String>();
         var biomes = server.registryAccess()
-                .lookupOrThrow(net.minecraft.core.registries.Registries.BIOME);
+                .registryOrThrow(net.minecraft.core.registries.Registries.BIOME);
         for (var biome : biomes) {
             var key = biomes.getKey(biome);
             biomeKeys.add(key == null ? "?" : key.toString());

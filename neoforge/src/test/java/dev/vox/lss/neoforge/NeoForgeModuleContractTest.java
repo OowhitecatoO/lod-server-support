@@ -152,13 +152,14 @@ class NeoForgeModuleContractTest {
     // ---- the save-hook twin (the fabric SaveHookContractTest's sibling) ----
 
     @Test
-    void saveHookTwinTargetsCopyOfWithSoftFail() throws IOException {
+    void saveHookTwinTargetsChunkSerializerWriteWithSoftFail() throws IOException {
         String src = read("neoforge/src/main/java/dev/vox/lss/mixin/ChunkSaveDataHook.java");
-        assertTrue(src.contains("@Mixin(SerializableChunkData.class)"),
-                "the dirty hook must target SerializableChunkData (issue #69 — the choke"
-                        + " point every chunk system funnels through)");
-        assertTrue(src.contains("method = \"copyOf\"") && src.contains("require = 0"),
-                "copyOf @ RETURN with require = 0 — a missing target degrades dirty"
+        assertTrue(src.contains("@Mixin(ChunkSerializer.class)"),
+                "the dirty hook must target ChunkSerializer (1.21.1 line: no"
+                        + " SerializableChunkData here — write() is this line's issue-#69"
+                        + " choke point, the copyOf ancestor)");
+        assertTrue(src.contains("method = \"write\"") && src.contains("require = 0"),
+                "write @ RETURN with require = 0 — a missing target degrades dirty"
                         + " detection, never crashes the server");
         assertTrue(src.contains("LSSServerNetworking.onChunkSaveData(level, chunk)"),
                 "the body must delegate to this loader's holder -> the shared glue");

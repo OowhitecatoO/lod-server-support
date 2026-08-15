@@ -8,13 +8,12 @@ import dev.vox.lss.networking.server.ChunkGenerationService;
 import dev.vox.lss.networking.server.DirtyContentFilter;
 import dev.vox.lss.networking.server.LSSServerNetworking;
 import dev.vox.lss.networking.server.RequestProcessingService;
-import net.fabricmc.fabric.api.gametest.v1.GameTest;
+import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.TicketStorage;
 
 import java.util.HashMap;
 import java.util.List;
@@ -91,9 +90,22 @@ public class GenerationLifecycleGameTests {
         return new ChunkGenerationService(config);
     }
 
-    private static TicketStorage ticketStorage(ServerLevel level) {
-        // Same instance the chunk source uses: SavedDataStorage caches per SavedDataType.
-        return level.getDataStorage().computeIfAbsent(TicketStorage.TYPE);
+    /**
+     * 1.21.1 line: tickets live inside DistanceManager (TicketStorage is a 26.x SavedData).
+     * The map field is package-private, so reflect it — gametests run in the mojmap dev
+     * runtime, where the field name is stable. (The 1.20.1 support branch's recorded form.)
+     */
+    private static it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<net.minecraft.util.SortedArraySet<net.minecraft.server.level.Ticket<?>>> ticketStorage(ServerLevel level) {
+        try {
+            var dm = level.getChunkSource().chunkMap.getDistanceManager();
+            var f = net.minecraft.server.level.DistanceManager.class.getDeclaredField("tickets");
+            f.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            var map = (it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<net.minecraft.util.SortedArraySet<net.minecraft.server.level.Ticket<?>>>) f.get(dm);
+            return map;
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException("cannot reflect DistanceManager.tickets", e);
+        }
     }
 
     /**
@@ -103,22 +115,29 @@ public class GenerationLifecycleGameTests {
      * no-timeout load ticket source exists (player_loading needs a nearby player, forced needs
      * /forceload), so this count is exactly the LSS generation ticket count.
      */
-    private static int lssTicketCount(TicketStorage tickets, int cx, int cz) {
+    private static int lssTicketCount(
+            it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<net.minecraft.util.SortedArraySet<net.minecraft.server.level.Ticket<?>>> tickets,
+            int cx, int cz) {
+        var set = tickets.get(ChunkPos.asLong(cx, cz));
+        if (set == null) return 0;
         int count = 0;
-        for (var ticket : tickets.getTickets(ChunkPos.pack(cx, cz))) {
-            if (ticket.getType().doesLoad() && !ticket.getType().hasTimeout()) count++;
+        for (var ticket : set) {
+            // Exact type-identity by name — sharper than 26.x's doesLoad/hasTimeout
+            // heuristic (TicketType.toString() returns the registered name on 1.21.1,
+            // javap-verified at the port).
+            if ("lss_gen".equals(ticket.getType().toString())) count++;
         }
         return count;
     }
 
     // maxTicks 1200 (not 600): waits on real cold chunk generation, which can exceed 600 ticks
     // on a first run on starved (2-core CI) machines — same budget as FP-033's precedent below.
-    @GameTest(structure = "fabric-gametest-api-v1:empty", maxTicks = 1200)
+    @GameTest(template = "fabric-gametest-api-v1:empty", timeoutTicks = 1200)
     public void piggybackedGenerationSharesOneTicketAndCompletesEveryCallback(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
-        var origin = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
-        int cx = origin.x() + PIGGYBACK_CHUNK_OFFSET;
-        int cz = origin.z() + 3;
+        var origin = new ChunkPos(helper.absolutePos(BlockPos.ZERO));
+        int cx = origin.x + PIGGYBACK_CHUNK_OFFSET;
+        int cz = origin.z + 3;
         var tickets = ticketStorage(level);
         var gen = newGenService(3, 2, 60);
         var playerA = UUID.randomUUID();
@@ -202,12 +221,12 @@ public class GenerationLifecycleGameTests {
         });
     }
 
-    @GameTest(structure = "fabric-gametest-api-v1:empty")
+    @GameTest(template = "fabric-gametest-api-v1:empty")
     public void generationCapBoundariesRejectExactlyAtCapWithoutLeakingTickets(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
-        var origin = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
-        int bx = origin.x() + CAP_CHUNK_OFFSET;
-        int z = origin.z() + 5;
+        var origin = new ChunkPos(helper.absolutePos(BlockPos.ZERO));
+        int bx = origin.x + CAP_CHUNK_OFFSET;
+        int z = origin.z + 5;
         var tickets = ticketStorage(level);
         var gen = newGenService(4, 2, 60);
         var playerA = UUID.randomUUID();
@@ -262,12 +281,12 @@ public class GenerationLifecycleGameTests {
         helper.succeed();
     }
 
-    @GameTest(structure = "fabric-gametest-api-v1:empty")
+    @GameTest(template = "fabric-gametest-api-v1:empty")
     public void removePlayerKeepsSharedEntriesAliveReleasesOrphanedTicketsAndBalancesBooks(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
-        var origin = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
-        int bx = origin.x() + REMOVAL_CHUNK_OFFSET;
-        int z = origin.z() + 9;
+        var origin = new ChunkPos(helper.absolutePos(BlockPos.ZERO));
+        int bx = origin.x + REMOVAL_CHUNK_OFFSET;
+        int z = origin.z + 9;
         var tickets = ticketStorage(level);
         var gen = newGenService(4, 2, 60);
         var playerA = UUID.randomUUID();
@@ -338,12 +357,12 @@ public class GenerationLifecycleGameTests {
         helper.succeed();
     }
 
-    @GameTest(structure = "fabric-gametest-api-v1:empty")
+    @GameTest(template = "fabric-gametest-api-v1:empty")
     public void generationTimeoutFailsEveryCallbackAtExactBoundaryAndReleasesTicket(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
-        var origin = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
-        int cx = origin.x() + TIMEOUT_CHUNK_OFFSET;
-        int cz = origin.z() + 7;
+        var origin = new ChunkPos(helper.absolutePos(BlockPos.ZERO));
+        int cx = origin.x + TIMEOUT_CHUNK_OFFSET;
+        int cz = origin.z + 7;
         var tickets = ticketStorage(level);
         // timeout 1s = 20 ticks; chunk promotion needs main-thread task pumping, which cannot
         // happen while this callback spins tick() — the chunk deterministically never loads.
@@ -406,16 +425,16 @@ public class GenerationLifecycleGameTests {
         helper.succeed();
     }
 
-    @GameTest(structure = "fabric-gametest-api-v1:empty")
+    @GameTest(template = "fabric-gametest-api-v1:empty")
     public void dimensionChangeReplacesStatePreservesCapabilitiesAndDropsStaleWork(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         var server = level.getServer();
         var playerList = server.getPlayerList();
         ServerLevel endLevel = server.getLevel(Level.END);
         helper.assertTrue(endLevel != null, "the End dimension must exist on the gametest server");
-        var origin = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
-        int gx = origin.x() + DIMENSION_CHUNK_OFFSET;
-        int gz = origin.z() + 11;
+        var origin = new ChunkPos(helper.absolutePos(BlockPos.ZERO));
+        int gx = origin.x + DIMENSION_CHUNK_OFFSET;
+        int gz = origin.z + 11;
         var overworldTickets = ticketStorage(level);
         var mock = placeMockServerPlayer(helper);
         var uuid = mock.getUUID();
@@ -514,18 +533,18 @@ public class GenerationLifecycleGameTests {
      * manual snapshots (no {@code service.tick()}) drive the processing thread until then, so no
      * drain can run between the conversion and the dimension flip.
      */
-    @GameTest(structure = "fabric-gametest-api-v1:empty", maxTicks = 400)
+    @GameTest(template = "fabric-gametest-api-v1:empty", timeoutTicks = 400)
     public void dimensionChangeDropsStaleGenerationTicketRequestsViaDrainGuard(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         var server = level.getServer();
         ServerLevel endLevel = server.getLevel(Level.END);
         helper.assertTrue(endLevel != null, "the End dimension must exist on the gametest server");
-        var origin = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
-        int cx = origin.x() + STALE_TICKET_CHUNK_OFFSET;
+        var origin = new ChunkPos(helper.absolutePos(BlockPos.ZERO));
+        int cx = origin.x + STALE_TICKET_CHUNK_OFFSET;
         // This chunk must not exist on disk (a found disk read never converts to generation).
         // No run ever generates it — the guard drops it pre-generation — and the per-run salt
         // keeps even pathological cross-run coordinate collisions away.
-        int cz = origin.z() + (int) Math.floorMod(System.nanoTime(), 64L);
+        int cz = origin.z + (int) Math.floorMod(System.nanoTime(), 64L);
         var mock = placeMockServerPlayer(helper);
         var uuid = mock.getUUID();
         var service = new RequestProcessingService(server);
@@ -595,16 +614,16 @@ public class GenerationLifecycleGameTests {
      * ColumnNotGenerated, instead of force-loading a chunk for an entity that cannot
      * receive it.
      */
-    @GameTest(structure = "fabric-gametest-api-v1:empty", maxTicks = 400)
+    @GameTest(template = "fabric-gametest-api-v1:empty", timeoutTicks = 400)
     public void removedButListedPlayerAtDrainFeedsFailureWithoutCreatingTicket(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         var server = level.getServer();
         var playerList = server.getPlayerList();
-        var origin = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
-        int cx = origin.x() + REMOVED_DRAIN_CHUNK_OFFSET;
+        var origin = new ChunkPos(helper.absolutePos(BlockPos.ZERO));
+        int cx = origin.x + REMOVED_DRAIN_CHUNK_OFFSET;
         // Must not exist on disk (a found read never converts to a generation ticket), and
         // the failure feed means no run ever generates it — but salt anyway (world persists).
-        int cz = origin.z() + (int) Math.floorMod(System.nanoTime(), 64L);
+        int cz = origin.z + (int) Math.floorMod(System.nanoTime(), 64L);
         var tickets = ticketStorage(level);
         var mock = placeMockServerPlayer(helper);
         var uuid = mock.getUUID();
@@ -667,14 +686,14 @@ public class GenerationLifecycleGameTests {
      * so the re-request can always be queued before the completion tick.
      */
     // maxTicks 1200 (not 600): waits on real cold chunk generation (see FP-033's precedent below).
-    @GameTest(structure = "fabric-gametest-api-v1:empty", maxTicks = 1200)
+    @GameTest(template = "fabric-gametest-api-v1:empty", timeoutTicks = 1200)
     public void sameTickGenerationCompletionAndQueuedReRequestServeExactlyOnePayload(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         var server = level.getServer();
         var playerList = server.getPlayerList();
-        var origin = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
-        int cx = origin.x() + GEN_REASK_CHUNK_OFFSET;
-        int cz = origin.z() + (int) Math.floorMod(System.nanoTime(), 64L);
+        var origin = new ChunkPos(helper.absolutePos(BlockPos.ZERO));
+        int cx = origin.x + GEN_REASK_CHUNK_OFFSET;
+        int cz = origin.z + (int) Math.floorMod(System.nanoTime(), 64L);
         long packed = PositionUtil.packPosition(cx, cz);
         var mock = placeMockServerPlayer(helper);
         var service = new RequestProcessingService(server);
@@ -741,15 +760,15 @@ public class GenerationLifecycleGameTests {
      * forever; a lost sentinel seed re-marks every void column after every save.
      */
     // maxTicks 1200 (not 600): waits on real cold chunk generation (see FP-033's precedent below).
-    @GameTest(structure = "fabric-gametest-api-v1:empty", maxTicks = 1200)
+    @GameTest(template = "fabric-gametest-api-v1:empty", timeoutTicks = 1200)
     public void endVoidGenerationCompletionSeedsTheAllAirSentinel(GameTestHelper helper) {
         ServerLevel endLevel = helper.getLevel().getServer().getLevel(Level.END);
         helper.assertTrue(endLevel != null, "the End dimension must exist on the gametest server");
         var dim = LSSConstants.DIM_STR_THE_END;
         // Void guarantee band (see SerializerParityGameTests): density contributes nothing
         // between the main island and the outer islands; salted, disjoint from other tests.
-        var origin = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
-        int salt = Math.floorMod(origin.x() * 31 + origin.z(), 64);
+        var origin = new ChunkPos(helper.absolutePos(BlockPos.ZERO));
+        int salt = Math.floorMod(origin.x * 31 + origin.z, 64);
         int cx = 48 + (salt & 7);
         int cz = 18 + ((salt >> 3) & 7);
         var gen = newGenService(3, 2, 60);
@@ -800,12 +819,12 @@ public class GenerationLifecycleGameTests {
     // maxTicks 1200 (not 600): the faulted entry generates a chunk at the gametest structure's
     // far origin, whose cold generation can exceed 600 ticks on the first run (the warm re-run is
     // fast) — a 600-tick budget made this an intermittent timeout flake.
-    @GameTest(structure = "fabric-gametest-api-v1:empty", maxTicks = 1200)
+    @GameTest(template = "fabric-gametest-api-v1:empty", timeoutTicks = 1200)
     public void serializationThrowableDuringCompletionReleasesTicketAndBalancesBooks(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
-        var origin = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
-        int cx = origin.x() + SERIALIZER_FAULT_CHUNK_OFFSET;
-        int cz = origin.z() + 5;
+        var origin = new ChunkPos(helper.absolutePos(BlockPos.ZERO));
+        int cx = origin.x + SERIALIZER_FAULT_CHUNK_OFFSET;
+        int cz = origin.z + 5;
         var tickets = ticketStorage(level);
         var config = new LSSServerConfig();
         config.generationConcurrencyLimitGlobal = 3;
@@ -872,7 +891,7 @@ public class GenerationLifecycleGameTests {
      * already-generated and not-unsaved, and the save pass would skip it vacuously.
      */
     // maxTicks 1200 (not 600): waits on real cold chunk generation (see FP-033's precedent above).
-    @GameTest(structure = "fabric-gametest-api-v1:empty", maxTicks = 1200)
+    @GameTest(template = "fabric-gametest-api-v1:empty", timeoutTicks = 1200)
     public void generationServeSeedSuppressesTheFollowingSave(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         var liveService = LSSServerNetworking.getRequestService();
@@ -880,9 +899,9 @@ public class GenerationLifecycleGameTests {
         // Arm the P3 never-registered skip gate: the quiet-save assertion below must
         // observe the live hook actually hashing (a skipped hook would fake the quiet).
         liveService.armSaveHookForTest();
-        var origin = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
-        int cx = origin.x() + SEED_SUPPRESS_CHUNK_OFFSET;
-        int cz = origin.z() + (int) Math.floorMod(System.nanoTime(), 64L);
+        var origin = new ChunkPos(helper.absolutePos(BlockPos.ZERO));
+        int cx = origin.x + SEED_SUPPRESS_CHUNK_OFFSET;
+        int cz = origin.z + (int) Math.floorMod(System.nanoTime(), 64L);
         long packed = PositionUtil.packPosition(cx, cz);
         var dim = LSSConstants.DIM_STR_OVERWORLD;
         var gen = newGenService(3, 2, 60);

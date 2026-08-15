@@ -9,12 +9,8 @@ import dev.vox.lss.networking.server.LSSServerNetworking;
 import dev.vox.lss.networking.server.SectionSerializer;
 import dev.vox.lss.networking.server.ServerReceiverGlue;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.registries.Registries;
-import net.minecraft.gametest.framework.FunctionGameTestInstance;
+import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
-import net.minecraft.gametest.framework.TestData;
-import net.minecraft.resources.Identifier;
-import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.TicketType;
 import net.minecraft.world.level.ChunkPos;
@@ -22,7 +18,8 @@ import net.minecraft.world.level.block.Blocks;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
-import net.neoforged.neoforge.registries.RegisterEvent;
+import net.neoforged.neoforge.gametest.GameTestHolder;
+import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -30,50 +27,32 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
 
 /**
  * The N-2 gametest smoke subset (neoforge-support-plan.md §5.2): ~8 tests, not
- * the fabric module's 71 — best-effort tier. Registration is the 26.2
- * data-driven idiom (bytecode-researched): test FUNCTIONS go into the static
- * {@code TEST_FUNCTION} registry during mod construction (frozen long before
- * the gametest event), and {@code RegisterGameTestsEvent} — fired from the
- * RegistryDataLoader patch on every load-from-resources — registers the
- * {@code FunctionGameTestInstance}s against our own empty ALL_OF environment
- * ({@code minecraft:default} is unreachable from the event, and is itself an
- * empty all_of). Structures use vanilla's {@code minecraft:empty} (the
- * fabric-gametest-api-v1:empty equivalent). Run:
+ * the fabric module's 71 — best-effort tier. 1.21.1 line: registration is the
+ * classic NeoForge 21.1 idiom — {@code RegisterGameTestsEvent.register(Class)}
+ * over vanilla {@code @GameTest}-annotated methods, with {@code @GameTestHolder}
+ * supplying the template namespace and {@code @PrefixGameTestTemplate(false)}
+ * keeping template names un-prefixed (the 26.x TEST_FUNCTION-registry idiom does
+ * not exist on this MC). Structures use this mod's own {@code lsstest:empty}
+ * (shipped at {@code data/lsstest/structure/empty.nbt} — vanilla 1.21.1 has no
+ * empty template; fabric's fabric-gametest-api-v1:empty is loader-private). Run:
  * {@code ./gradlew :neoforge:runGameTestServer} (exit code = failed count).
  */
 @Mod("lsstest")
+@GameTestHolder("lsstest")
+@PrefixGameTestTemplate(false)
 public final class LSSNeoGameTests {
 
-    private record Smoke(String name, int maxTicks, Consumer<GameTestHelper> body) {
-    }
-
-    private static final List<Smoke> TESTS = List.of(
-            new Smoke("service_activates", 200, LSSNeoGameTests::serviceActivates),
-            new Smoke("config_loads_fresh_defaults", 100, LSSNeoGameTests::configLoadsFreshDefaults),
-            new Smoke("store_active_on_fresh_world", 200, LSSNeoGameTests::storeActiveOnFreshWorld),
-            new Smoke("handshake_caps0_replies_without_register", 200,
-                    LSSNeoGameTests::handshakeCapsZeroRepliesWithoutRegistering),
-            new Smoke("handshake_foreign_version_is_silent", 200,
-                    LSSNeoGameTests::handshakeForeignVersionIsSilent),
-            new Smoke("handshake_v20_registers_and_removes", 200,
-                    LSSNeoGameTests::handshakeV20RegistersAndRemoves),
-            new Smoke("dirty_save_hook_marks_on_content_change", 400,
-                    LSSNeoGameTests::dirtySaveHookMarksOnContentChange),
-            new Smoke("disk_read_bytes_match_live_bytes", 1200,
-                    LSSNeoGameTests::diskReadBytesMatchLiveBytes));
-
     public LSSNeoGameTests(IEventBus modBus) {
-        modBus.addListener(RegisterEvent.class, LSSNeoGameTests::registerFunctions);
-        modBus.addListener(RegisterGameTestsEvent.class, LSSNeoGameTests::registerTests);
+        modBus.addListener(RegisterGameTestsEvent.class,
+                e -> e.register(LSSNeoGameTests.class));
         // The N-3 executable client gate (plan §0.1): the "throwaway LSSApi consumer
         // test mod" — with -Dlss.smoke.consumer=true on a CLIENT run, register a
         // consumer that logs decoded column receipts. Proves the whole client half
         // (handshake, capability bit, want-set, decode, dispatch) with no renderer.
-        if (net.neoforged.fml.loading.FMLEnvironment.getDist().isClient()
+        if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient() // 1.21.1 line: dist is a field on 21.1
                 && Boolean.getBoolean("lss.smoke.consumer")) {
             SmokeConsumer.register();
         }
@@ -103,37 +82,17 @@ public final class LSSNeoGameTests {
         }
     }
 
-    private static void registerFunctions(RegisterEvent event) {
-        for (Smoke t : TESTS) {
-            event.register(Registries.TEST_FUNCTION,
-                    Identifier.fromNamespaceAndPath("lsstest", t.name()),
-                    t::body);
-        }
-    }
+    // ---- bodies (vanilla @GameTest methods — the method name is the test name) ----
 
-    private static void registerTests(RegisterGameTestsEvent event) {
-        // Fires per datapack load (server start AND /reload) with FRESH registries —
-        // this listener is deliberately re-runnable and touches no other state.
-        var env = event.registerEnvironment(Identifier.fromNamespaceAndPath("lsstest", "default"));
-        for (Smoke t : TESTS) {
-            ResourceKey<Consumer<GameTestHelper>> fn = ResourceKey.create(Registries.TEST_FUNCTION,
-                    Identifier.fromNamespaceAndPath("lsstest", t.name()));
-            event.registerTest(Identifier.fromNamespaceAndPath("lsstest", t.name()),
-                    td -> new FunctionGameTestInstance(fn, td),
-                    new TestData<>(env, Identifier.withDefaultNamespace("empty"),
-                            t.maxTicks(), 1, true));
-        }
-    }
-
-    // ---- bodies ----
-
-    private static void serviceActivates(GameTestHelper helper) {
+    @GameTest(template = "empty", timeoutTicks = 200)
+    public static void serviceActivates(GameTestHelper helper) {
         helper.succeedWhen(() -> helper.assertTrue(
                 LSSServerNetworking.getRequestService() != null,
                 "RequestProcessingService should be active on the gametest (dedicated) server"));
     }
 
-    private static void configLoadsFreshDefaults(GameTestHelper helper) {
+    @GameTest(template = "empty", timeoutTicks = 100)
+    public static void configLoadsFreshDefaults(GameTestHelper helper) {
         var config = LSSServerConfig.CONFIG;
         helper.assertTrue(config != null, "server config must load");
         helper.assertTrue(config.enabled, "fresh config must default enabled");
@@ -142,7 +101,8 @@ public final class LSSNeoGameTests {
         helper.succeed();
     }
 
-    private static void storeActiveOnFreshWorld(GameTestHelper helper) {
+    @GameTest(template = "empty", timeoutTicks = 200)
+    public static void storeActiveOnFreshWorld(GameTestHelper helper) {
         helper.succeedWhen(() -> {
             var service = LSSServerNetworking.getRequestService();
             helper.assertTrue(service != null, "service must be up first");
@@ -154,7 +114,8 @@ public final class LSSNeoGameTests {
         });
     }
 
-    private static void handshakeCapsZeroRepliesWithoutRegistering(GameTestHelper helper) {
+    @GameTest(template = "empty", timeoutTicks = 200)
+    public static void handshakeCapsZeroRepliesWithoutRegistering(GameTestHelper helper) {
         var service = LSSServerNetworking.getRequestService();
         helper.assertTrue(service != null, "service must be up");
         var player = helper.makeMockServerPlayerInLevel();
@@ -169,7 +130,8 @@ public final class LSSNeoGameTests {
         helper.succeed();
     }
 
-    private static void handshakeForeignVersionIsSilent(GameTestHelper helper) {
+    @GameTest(template = "empty", timeoutTicks = 200)
+    public static void handshakeForeignVersionIsSilent(GameTestHelper helper) {
         var service = LSSServerNetworking.getRequestService();
         helper.assertTrue(service != null, "service must be up");
         var player = helper.makeMockServerPlayerInLevel();
@@ -185,7 +147,8 @@ public final class LSSNeoGameTests {
         helper.succeed();
     }
 
-    private static void handshakeV20RegistersAndRemoves(GameTestHelper helper) {
+    @GameTest(template = "empty", timeoutTicks = 200)
+    public static void handshakeV20RegistersAndRemoves(GameTestHelper helper) {
         var service = LSSServerNetworking.getRequestService();
         helper.assertTrue(service != null, "service must be up");
         var player = helper.makeMockServerPlayerInLevel();
@@ -210,7 +173,8 @@ public final class LSSNeoGameTests {
         helper.succeed();
     }
 
-    private static void dirtySaveHookMarksOnContentChange(GameTestHelper helper) {
+    @GameTest(template = "empty", timeoutTicks = 400)
+    public static void dirtySaveHookMarksOnContentChange(GameTestHelper helper) {
         var service = LSSServerNetworking.getRequestService();
         helper.assertTrue(service != null, "service must be up");
         ServerLevel level = helper.getLevel();
@@ -221,12 +185,12 @@ public final class LSSNeoGameTests {
         var filter = service.getDirtyContentFilter();
         var editPos = helper.absolutePos(new BlockPos(1, 2, 1));
         var chunk = level.getChunkAt(editPos);
-        String dim = level.dimension().identifier().toString();
+        String dim = level.dimension().location().toString();
         var first = filter.observeSave(level, chunk, dim);
         boolean placed = level.setBlock(editPos, Blocks.DIAMOND_BLOCK.defaultBlockState(), 3);
         var second = filter.observeSave(level, chunk, dim);
         var probe = SectionSerializer.serializeColumn(level, chunk,
-                chunk.getPos().x(), chunk.getPos().z());
+                chunk.getPos().x, chunk.getPos().z);
         helper.assertTrue(second.changed(),
                 "a content edit must hash as changed: first.changed=" + first.changed()
                         + " placed=" + placed
@@ -251,21 +215,22 @@ public final class LSSNeoGameTests {
      * and vanilla's save re-palettizes containers, so the comparison must run against
      * the reloaded chunk.
      */
-    private static void diskReadBytesMatchLiveBytes(GameTestHelper helper) {
+    @GameTest(template = "empty", timeoutTicks = 1200)
+    public static void diskReadBytesMatchLiveBytes(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
-        var origin = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
-        int cx = origin.x() + 120;
-        int cz = origin.z() + 7;
+        var origin = new ChunkPos(helper.absolutePos(BlockPos.ZERO));
+        int cx = origin.x + 120;
+        int cz = origin.z + 7;
         var chunkPos = new ChunkPos(cx, cz);
         var chunkSource = level.getChunkSource();
         var torchPos = new BlockPos(cx * 16 + 8, -60, cz * 16 + 8);
 
-        chunkSource.addTicketWithRadius(TicketType.PLAYER_LOADING, chunkPos, 0);
+        chunkSource.addRegionTicket(TicketType.PLAYER, chunkPos, 0, chunkPos);
         level.getChunk(cx, cz);
         level.setBlock(torchPos, Blocks.TORCH.defaultBlockState(), 3);
         helper.runAfterDelay(4, () -> level.setBlock(torchPos, Blocks.AIR.defaultBlockState(), 3));
-        helper.runAfterDelay(8, () -> chunkSource.removeTicketWithRadius(
-                TicketType.PLAYER_LOADING, chunkPos, 0));
+        helper.runAfterDelay(8, () -> chunkSource.removeRegionTicket(
+                TicketType.PLAYER, chunkPos, 0, chunkPos));
 
         var reader = new ChunkDiskReader(1, false);
         var readerId = UUID.randomUUID();

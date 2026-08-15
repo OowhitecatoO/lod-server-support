@@ -8,7 +8,7 @@ import dev.vox.lss.common.processing.OffThreadProcessor;
 import dev.vox.lss.common.processing.QueuedPayload;
 import dev.vox.lss.networking.payloads.VoxelColumnS2CPayload;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
@@ -34,7 +34,7 @@ public class FabricOffThreadProcessor extends OffThreadProcessor<PlayerRequestSt
     // vanilla only has 3 permanent dimensions, and the map is cleared on shutdown.
     private final ConcurrentHashMap<String, ServerLevel> dimensionLevelMap = new ConcurrentHashMap<>();
 
-    // Cache parsed ResourceKeys to avoid Identifier.parse per column payload (3 entries for vanilla)
+    // Cache parsed ResourceKeys to avoid ResourceLocation.parse per column payload (3 entries for vanilla)
     private final ConcurrentHashMap<String, ResourceKey<Level>> dimensionKeyCache = new ConcurrentHashMap<>();
 
     // The session-dialect source for the C2 legacy egress translation (XVER §4.2, placed
@@ -130,7 +130,7 @@ public class FabricOffThreadProcessor extends OffThreadProcessor<PlayerRequestSt
             return false;
         }
         var dimensionKey = this.dimensionKeyCache.computeIfAbsent(dimension,
-                d -> ResourceKey.create(Registries.DIMENSION, Identifier.parse(d)));
+                d -> ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse(d)));
 
         // C2 legacy egress translation (XVER §4.2), placed at THIS per-recipient choke
         // point rather than the flush seam so every downstream size — queue gauges,

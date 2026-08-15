@@ -4,7 +4,7 @@ import dev.vox.lss.common.LSSConstants;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 
 /**
  * Far players (v0.11.0 stage E1): C2S prefs frame (FarPlayerWire.encodePrefs bytes).
@@ -17,7 +17,7 @@ import net.minecraft.resources.Identifier;
 public record FarPlayerPrefsC2SPayload(byte[] body) implements CustomPacketPayload {
 
     public static final CustomPacketPayload.Type<FarPlayerPrefsC2SPayload> TYPE =
-            new CustomPacketPayload.Type<>(Identifier.parse(LSSConstants.CHANNEL_FAR_PLAYER_PREFS));
+            new CustomPacketPayload.Type<>(ResourceLocation.parse(LSSConstants.CHANNEL_FAR_PLAYER_PREFS));
 
     public static final StreamCodec<FriendlyByteBuf, FarPlayerPrefsC2SPayload> CODEC =
             StreamCodec.of(

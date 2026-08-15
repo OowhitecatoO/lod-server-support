@@ -6,7 +6,7 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.SectionPos;
 import net.minecraft.network.protocol.ping.ServerboundPingRequestPacket;
-import net.minecraft.util.Util;
+import net.minecraft.Util;
 
 /**
  * The transport instrument: one {@code net} trace event per second carrying VANILLA's own

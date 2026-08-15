@@ -5,14 +5,14 @@ import dev.vox.lss.common.LSSLogger;
 import dev.vox.lss.common.farplayers.FarPlayerClientTracker;
 import dev.vox.lss.common.farplayers.FarPlayerWire;
 import dev.vox.lss.config.LSSClientConfig;
-import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
+import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.client.player.RemotePlayer;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.Pose;
@@ -30,7 +30,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The far-player proxy renderer (E2, FARP §3.3/§7-B — the SeeU
- * {@code RemotePlayer}-proxy + {@code LevelRenderContext} submission approach, proven
+ * {@code RemotePlayer}-proxy + {@code WorldRenderContext} immediate-render approach, proven
  * on 26.2, reimplemented in LSS idiom). Differences from SeeU that are DECISIONS, not
  * drift (all review-pinned in the FARP plan):
  *
@@ -64,7 +64,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>Threading: every touchpoint runs on the client MAIN thread, which IS the render
  * thread (network receivers hop via execute(), ENTITY_LOAD fires from addEntity,
- * COLLECT_SUBMITS is the main-thread extract/submit phase). snapshot() is a shallow
+ * AFTER_ENTITIES is a main-thread render-pass event). snapshot() is a shallow
  * copy sharing mutable FarPlayerMotion — it is defense-in-depth, NOT a thread
  * boundary; do not move this pass off-thread trusting it (E2 review n9).
  */
@@ -178,8 +178,8 @@ public final class FarPlayerRenderer {
         itemCache.clear(); // C-M2: the memo empties with the session's proxies
     }
 
-    /** The COLLECT_SUBMITS pass. */
-    public void render(LevelRenderContext context) {
+    /** The AFTER_ENTITIES pass. */
+    public void render(WorldRenderContext context) {
         if (crashLatched) return;
         try {
             renderContained(context);
@@ -191,7 +191,7 @@ public final class FarPlayerRenderer {
         }
     }
 
-    private void renderContained(LevelRenderContext context) {
+    private void renderContained(WorldRenderContext context) {
         var config = LSSClientConfig.CONFIG;
         // The bit gate covers arm + the soak/benchmark properties; the EFFECTIVE
         // enabled term (config AND the SeeU-coexist gate, E3) is checked HERE because
@@ -206,9 +206,9 @@ public final class FarPlayerRenderer {
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
         var localPlayer = minecraft.player;
-        var poseStack = context.poseStack();
+        var poseStack = context.matrixStack();
         if (level == null || localPlayer == null || poseStack == null
-                || context.submitNodeCollector() == null) {
+                || context.consumers() == null) {
             clear();
             return;
         }
@@ -216,14 +216,15 @@ public final class FarPlayerRenderer {
         FarPlayerClientTracker tracker = FarPlayerClientSupport.tracker();
         String trackerDimension = tracker.dimension();
         if (trackerDimension == null
-                || !trackerDimension.equals(level.dimension().identifier().toString())) {
+                || !trackerDimension.equals(level.dimension().location().toString())) {
             clear();
             return;
         }
 
-        Vec3 cameraPosition = minecraft.gameRenderer.mainCamera().position();
+        Vec3 cameraPosition = minecraft.gameRenderer.getMainCamera().getPosition();
         var dispatcher = minecraft.getEntityRenderDispatcher();
-        float partialTick = minecraft.getDeltaTracker().getGameTimeDeltaPartialTick(false);
+        // 1.21.1 line: the DeltaTracker accessor is getTimer() on this MC.
+        float partialTick = minecraft.getTimer().getGameTimeDeltaPartialTick(false);
         int animationTick = localPlayer.tickCount;
         long now = FarPlayerClientSupport.monotonicMillis();
         int maxRender = config.farPlayersMaxRenderDistanceBlocks;
@@ -328,28 +329,27 @@ public final class FarPlayerRenderer {
             // skip this rider this frame — it renders unmounted next frame.
             if (proxy.isPassenger()) {
                 try {
-                    var renderState = dispatcher.extractEntity(proxy, partialTick);
-                    dispatcher.submit(
-                            renderState,
-                            context.levelState().cameraRenderState,
+                    // 1.21.1 line: no extract/submit phase on this MC — immediate
+                    // dispatcher.render (the standard fake-entity approach); yaw is
+                    // the sampled value (proxy yRot == yRotO by construction).
+                    dispatcher.render(proxy,
                             position.x - cameraPosition.x,
                             position.y - cameraPosition.y,
                             position.z - cameraPosition.z,
-                            poseStack,
-                            context.submitNodeCollector());
+                            sample.yaw(), partialTick, poseStack,
+                            context.consumers(),
+                            packedLightFor(dispatcher, proxy, level, position, partialTick));
                 } catch (Throwable t) {
                     latchSeatedFailure(tracked, proxy, t);
                 }
             } else {
-                var renderState = dispatcher.extractEntity(proxy, partialTick);
-                dispatcher.submit(
-                        renderState,
-                        context.levelState().cameraRenderState,
+                dispatcher.render(proxy,
                         position.x - cameraPosition.x,
                         position.y - cameraPosition.y,
                         position.z - cameraPosition.z,
-                        poseStack,
-                        context.submitNodeCollector());
+                        sample.yaw(), partialTick, poseStack,
+                        context.consumers(),
+                        packedLightFor(dispatcher, proxy, level, position, partialTick));
             }
         }
         // Prune with the ride link BROKEN (E3 review m2): a proxy dropped while
@@ -413,7 +413,7 @@ public final class FarPlayerRenderer {
                              net.minecraft.client.renderer.entity.EntityRenderDispatcher dispatcher,
                              float partialTick, Vec3 cameraPosition,
                              com.mojang.blaze3d.vertex.PoseStack poseStack,
-                             LevelRenderContext context) {
+                             WorldRenderContext context) {
         var mount = mountFor(wireVehicle, tracked, level, now);
         if (mount == null) {
             if (proxy.isPassenger()) {
@@ -424,26 +424,24 @@ public final class FarPlayerRenderer {
         activeVehicles.add(wireVehicle.uuid());
         if (proxy.getVehicle() != mount.entity) {
             proxy.stopRiding();
-            // 26.2's 3-arg overload: the 1-arg form delegates to (entity, false,
-            // true) — bytecode-checked (the third arg emits a GameEvent, a client
-            // no-op) — so this passes force=TRUE (render-only instances can fail
-            // vanilla's canRide/distance checks) and keeps the third at its vanilla
-            // default. A false return is rung 3 of the ladder — mounted-position
-            // standing pose, never a floating sit.
-            proxy.startRiding(mount.entity, true, true);
+            // 1.21.1 line: the 2-arg (entity, force) overload — force=TRUE because
+            // render-only instances can fail vanilla's canRide/distance checks (the
+            // 26.x third GameEvent arg does not exist here). A false return is rung 3
+            // of the ladder — mounted-position standing pose, never a floating sit.
+            proxy.startRiding(mount.entity, true);
         }
         if (submittedVehicles.add(wireVehicle.uuid())) {
             var vSample = mount.motion.sample(now);
             applyMountState(mount, vSample, animationTick);
-            var vState = dispatcher.extractEntity(mount.entity, partialTick);
-            dispatcher.submit(
-                    vState,
-                    context.levelState().cameraRenderState,
+            // 1.21.1 line: immediate dispatcher.render (no extract/submit on this MC).
+            var vPos = new Vec3(vSample.x(), vSample.y(), vSample.z());
+            dispatcher.render(mount.entity,
                     vSample.x() - cameraPosition.x,
                     vSample.y() - cameraPosition.y,
                     vSample.z() - cameraPosition.z,
-                    poseStack,
-                    context.submitNodeCollector());
+                    vSample.yaw(), partialTick, poseStack,
+                    context.consumers(),
+                    packedLightFor(dispatcher, mount.entity, level, vPos, partialTick));
         }
     }
 
@@ -513,14 +511,15 @@ public final class FarPlayerRenderer {
         Vec3 position = new Vec3(s.x(), s.y(), s.z());
         boolean advanceTick = entity.tickCount != animationTick;
         entity.tickCount = animationTick;
-        entity.setOldPosAndRot(position, s.yaw(), s.pitch());
+        // 1.21.1 line: no 3-arg setOldPosAndRot — the explicit old-field writes below
+        // (plus the rotation olds) cover it; snapTo is this line's moveTo.
         entity.xo = position.x;
         entity.yo = position.y;
         entity.zo = position.z;
         entity.xOld = position.x;
         entity.yOld = position.y;
         entity.zOld = position.z;
-        entity.snapTo(position, s.yaw(), s.pitch());
+        entity.moveTo(position, s.yaw(), s.pitch());
         entity.setYRot(s.yaw());
         entity.yRotO = s.yaw();
         entity.setXRot(s.pitch());
@@ -541,13 +540,31 @@ public final class FarPlayerRenderer {
             if (mount.lastWalkPosition != null && advanceTick) {
                 float movement = (float) Mth.length(position.x - mount.lastWalkPosition.x,
                         0, position.z - mount.lastWalkPosition.z);
+                // 1.21.1 line: 2-arg WalkAnimationState.update (no trailing position scale).
                 living.walkAnimation.update(Math.min(movement * 4.0f, 1.0f),
-                        WALK_ANIMATION_SCALE, 1.0f);
+                        WALK_ANIMATION_SCALE);
             }
             if (advanceTick || mount.lastWalkPosition == null) {
                 mount.lastWalkPosition = position;
             }
         }
+    }
+
+    /** 1.21.1 line: the immediate render path needs a packed light value (26.x's
+     *  submit pipeline derived it during extraction). Proxies mostly stand in
+     *  UNLOADED chunks (the handoff predicate renders them exactly where the real
+     *  entity would not draw), where the light engine has no data and vanilla's
+     *  per-entity lookup reads dark — so loaded chunks use vanilla's own lookup and
+     *  unloaded ones fall back to full-bright sky (LOD-range players are outdoors
+     *  by construction; matches how the LOD terrain itself reads at distance). */
+    private static int packedLightFor(
+            net.minecraft.client.renderer.entity.EntityRenderDispatcher dispatcher,
+            net.minecraft.world.entity.Entity entity, ClientLevel level, Vec3 position,
+            float partialTick) {
+        if (level.hasChunk(Mth.floor(position.x) >> 4, Mth.floor(position.z) >> 4)) {
+            return dispatcher.getPackedLightCoords(entity, partialTick);
+        }
+        return net.minecraft.client.renderer.LightTexture.pack(15, 15);
     }
 
     /** Monotonic id from the LSS block, probed against the live level (a taken id —
@@ -587,14 +604,15 @@ public final class FarPlayerRenderer {
 
             this.maxRenderDistanceBlocks = maxRenderDistanceBlocks;
             this.tickCount = animationTick;
-            this.setOldPosAndRot(position, sample.yaw(), sample.pitch());
+            // 1.21.1 line: no 3-arg setOldPosAndRot — explicit old-field writes below
+            // (plus the rotation olds) cover it; snapTo is this line's moveTo.
             this.xo = position.x;
             this.yo = position.y;
             this.zo = position.z;
             this.xOld = position.x;
             this.yOld = position.y;
             this.zOld = position.z;
-            this.snapTo(position, sample.yaw(), sample.pitch());
+            this.moveTo(position, sample.yaw(), sample.pitch());
             this.setYRot(sample.yaw());
             this.yRotO = sample.yaw();
             this.setXRot(sample.pitch());
@@ -647,7 +665,8 @@ public final class FarPlayerRenderer {
                 // Cross-version sessions (Via) can carry identities this client's
                 // registry lacks — an unknown identity renders as an EMPTY slot,
                 // the far-player analogue of the column fallback ladder.
-                return BuiltInRegistries.ITEM.getValue(Identifier.parse(id));
+                // 1.21.1 line: get() is this MC's defaulted lookup (getValue is 1.21.2+).
+                return BuiltInRegistries.ITEM.get(ResourceLocation.parse(id));
             } catch (Exception e) {
                 return Items.AIR;
             }
@@ -659,20 +678,21 @@ public final class FarPlayerRenderer {
                 if (lastWalkPosition == null) {
                     lastWalkPosition = position;
                     lastWalkTick = animationTick;
-                    this.walkAnimation.stop();
+                    this.walkAnimation.setSpeed(0.0f); // 1.21.1 line: no stop() on this MC
                 }
                 return;
             }
             lastWalkTick = animationTick;
             if (!allowWalk || nonWalkingPose) {
-                this.walkAnimation.stop();
+                this.walkAnimation.setSpeed(0.0f); // 1.21.1 line: no stop() on this MC
                 lastWalkPosition = position;
                 return;
             }
             float movement = (float) Mth.length(position.x - lastWalkPosition.x, 0,
                     position.z - lastWalkPosition.z);
+            // 1.21.1 line: 2-arg WalkAnimationState.update (no trailing position scale).
             this.walkAnimation.update(Math.min(movement * 4.0f, 1.0f),
-                    WALK_ANIMATION_SCALE, 1.0f);
+                    WALK_ANIMATION_SCALE);
             lastWalkPosition = position;
         }
 
@@ -697,7 +717,7 @@ public final class FarPlayerRenderer {
     /**
      * E2 renderer wiring, called once from {@link dev.vox.lss.LSSClient} (moved here
      * from FarPlayerClientSupport at N-1b — Fabric event registration is per-loader
-     * wiring; the support class is xplat): the COLLECT_SUBMITS pass (contained — a
+     * wiring; the support class is xplat): the AFTER_ENTITIES pass (contained — a
      * renderer bug degrades to no proxies) plus the ENTITY_LOAD edge trigger (a real
      * player entity appearing kills its proxy the same frame — the crossfade guard;
      * UNLOAD needs no hook, the per-frame real-present conjunct picks it up next pass).
@@ -705,8 +725,8 @@ public final class FarPlayerRenderer {
     public static void initRenderer() {
         var renderer = new FarPlayerRenderer();
         FarPlayerRenderer.install(renderer);
-        net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
-                .COLLECT_SUBMITS.register(renderer::render);
+        net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents
+                .AFTER_ENTITIES.register(renderer::render);
         net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientEntityEvents
                 .ENTITY_LOAD.register((entity, world) -> {
                     if (entity instanceof net.minecraft.world.entity.player.Player p) {

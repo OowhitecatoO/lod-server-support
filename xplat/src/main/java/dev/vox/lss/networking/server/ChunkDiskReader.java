@@ -10,7 +10,8 @@ import dev.vox.lss.mixin.AccessorSimpleRegionStorage;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ChunkMap;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.util.thread.PriorityConsecutiveExecutor;
+import net.minecraft.util.thread.ProcessorMailbox;
+import net.minecraft.util.thread.StrictQueue;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.storage.RegionFileStorage;
 
@@ -28,8 +29,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class ChunkDiskReader extends AbstractChunkDiskReader {
 
     // IOWorker$Priority is package-private and cannot be named here, so the ordinal is
-    // pinned. Verified against the 26.2 jar: FOREGROUND(0), BACKGROUND(1), SHUTDOWN(2) — scheduleWithResult takes the
-    // priority as an int, which is how vanilla passes it too. The SerializerParityGameTests
+    // pinned. Verified against the 1.21.1 jar (this support line — same ordering as 26.2):
+    // FOREGROUND(0), BACKGROUND(1), SHUTDOWN(2). 1.21.1 line: the executor is the
+    // ProcessorMailbox<StrictQueue.IntRunnable> (26.x's scheduleWithResult shape does not
+    // exist) — submission wraps the task in an IntRunnable carrying the same int priority,
+    // which is how vanilla passes it too. The SerializerParityGameTests
     // byte-parity test exercises this path end-to-end but does NOT pin the enum order (any
     // in-range ordinal returns identical bytes); a vanilla reorder must be re-verified by hand.
     //
@@ -107,8 +111,10 @@ public class ChunkDiskReader extends AbstractChunkDiskReader {
         // The mask entry is captured at submit time (the level is in hand here); the read
         // itself runs on the reader pool where only the dimension string survives.
         var maskEntry = XrayMaskManager.entryForActive(level);
-        int minSectionY = level.getMinSectionY();
-        int maxSectionY = level.getMaxSectionY();
+        // 1.21.1 line: getMinSection()/getMaxSection() (max is EXCLUSIVE here; the
+        // serializer's range gate wants the inclusive top section, hence the -1).
+        int minSectionY = level.getMinSection();
+        int maxSectionY = level.getMaxSection() - 1;
         // Phase 3 split dispatch: raw fetch + pool parse when the vanilla BACKGROUND rung
         // would serve this read; every other rung keeps the ChunkNbtRead ladder unchanged.
         var raw = chooseRawReadOrNull(level, chunkMap);
@@ -156,13 +162,13 @@ public class ChunkDiskReader extends AbstractChunkDiskReader {
         if (raw != null) {
             return NbtSectionSerializer.readAndSerializeSections(raw,
                     level.registryAccess(), chunkX, chunkZ, XrayMaskManager.entryForActive(level),
-                    level.getMinSectionY(), level.getMaxSectionY(), this.useNbtTranscode,
+                    level.getMinSection(), level.getMaxSection() - 1, this.useNbtTranscode,
                     this.useSelectiveNbtParse);
         }
         NbtSectionSerializer.ChunkNbtRead read = chooseReadPath(level, chunkMap);
         return NbtSectionSerializer.readAndSerializeSections(read,
                 level.registryAccess(), chunkX, chunkZ, XrayMaskManager.entryForActive(level),
-                level.getMinSectionY(), level.getMaxSectionY(), this.useNbtTranscode);
+                level.getMinSection(), level.getMaxSection() - 1, this.useNbtTranscode);
     }
 
     NbtSectionSerializer.ChunkNbtRead chooseReadPath(ServerLevel level, ChunkMap chunkMap) {
@@ -202,7 +208,7 @@ public class ChunkDiskReader extends AbstractChunkDiskReader {
      * one-shot latch + throttle + warn (one latch site, no drift).
      */
     NbtSectionSerializer.ChunkRawRead rawBackgroundReaderOrNull(ChunkMap chunkMap) {
-        PriorityConsecutiveExecutor executor = null;
+        ProcessorMailbox<StrictQueue.IntRunnable> executor = null;
         RegionFileStorage storage = null;
         try {
             var handles = resolveBackgroundHandles(chunkMap);
@@ -217,12 +223,16 @@ public class ChunkDiskReader extends AbstractChunkDiskReader {
         return rawBackgroundRead(executor, storage);
     }
 
-    private NbtSectionSerializer.ChunkRawRead rawBackgroundRead(PriorityConsecutiveExecutor executor,
+    private NbtSectionSerializer.ChunkRawRead rawBackgroundRead(ProcessorMailbox<StrictQueue.IntRunnable> executor,
                                                                 RegionFileStorage storage) {
         return (cx, cz) -> {
             var pos = new ChunkPos(cx, cz);
-            return executor.scheduleWithResult(IOWORKER_PRIORITY_BACKGROUND,
-                    (CompletableFuture<Optional<NbtSectionSerializer.RawChunkRecord>> f) -> {
+            // 1.21.1 line: mailbox tell() replaces scheduleWithResult — same executor, same
+            // int priority; the future is completed by the task body exactly as before. A
+            // mailbox already closed at shutdown silently drops the task and the read burns
+            // its 10 s timeout (matches vanilla's own submitTask exposure on this line).
+            var f = new CompletableFuture<Optional<NbtSectionSerializer.RawChunkRecord>>();
+            executor.tell(new StrictQueue.IntRunnable(IOWORKER_PRIORITY_BACKGROUND, () -> {
                         try {
                             var region = ((dev.vox.lss.mixin.AccessorRegionFileStorage) (Object) storage)
                                     .lss$getRegionFile(pos);
@@ -243,7 +253,8 @@ public class ChunkDiskReader extends AbstractChunkDiskReader {
                             // the pool wedges with nothing naming the cause.
                             f.completeExceptionally(t);
                         }
-                    });
+            }));
+            return f;
         };
     }
 
@@ -325,7 +336,7 @@ public class ChunkDiskReader extends AbstractChunkDiskReader {
      */
     // Package-private (not private) so the fail-safe path is unit-testable via an injected resolver.
     NbtSectionSerializer.ChunkNbtRead backgroundReaderOrFallback(ChunkMap chunkMap) {
-        PriorityConsecutiveExecutor executor = null;
+        ProcessorMailbox<StrictQueue.IntRunnable> executor = null;
         RegionFileStorage storage = null;
         try {
             var handles = resolveBackgroundHandles(chunkMap);
@@ -351,7 +362,7 @@ public class ChunkDiskReader extends AbstractChunkDiskReader {
     }
 
     /** The IOWorker handles the background path needs; either may be null on an incompatible server. */
-    record Handles(PriorityConsecutiveExecutor executor, RegionFileStorage storage) {}
+    record Handles(ProcessorMailbox<StrictQueue.IntRunnable> executor, RegionFileStorage storage) {}
 
     /** Latch the server-wide incompatible flag, engage the adaptive throttle (Approach B), and warn
      *  exactly once. Idempotent + one-way: the latch stops later reads from re-attempting the
@@ -439,12 +450,13 @@ public class ChunkDiskReader extends AbstractChunkDiskReader {
      *  executor via {@code storage.read}. Since Phase 3 this is the
      *  {@code useBackgroundReadSplit=false} rollback shape only — the default path is
      *  {@link #rawBackgroundRead} (fetch-only on the executor, parse on the pool). */
-    private NbtSectionSerializer.ChunkNbtRead backgroundRead(PriorityConsecutiveExecutor executor,
+    private NbtSectionSerializer.ChunkNbtRead backgroundRead(ProcessorMailbox<StrictQueue.IntRunnable> executor,
                                                              RegionFileStorage storage) {
         return (cx, cz) -> {
             var pos = new ChunkPos(cx, cz);
-            return executor.scheduleWithResult(IOWORKER_PRIORITY_BACKGROUND,
-                    (CompletableFuture<Optional<CompoundTag>> f) -> {
+            // 1.21.1 line: mailbox tell() replaces scheduleWithResult (see rawBackgroundRead).
+            var f = new CompletableFuture<Optional<CompoundTag>>();
+            executor.tell(new StrictQueue.IntRunnable(IOWORKER_PRIORITY_BACKGROUND, () -> {
                         try {
                             f.complete(Optional.ofNullable(storage.read(pos)));
                         } catch (Exception e) {
@@ -454,7 +466,8 @@ public class ChunkDiskReader extends AbstractChunkDiskReader {
                             // until DISK_READ_TIMEOUT_SECONDS instead of triaging immediately.
                             f.completeExceptionally(e);
                         }
-                    });
+            }));
+            return f;
         };
     }
 }

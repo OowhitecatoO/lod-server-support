@@ -9,7 +9,7 @@ import dev.vox.lss.common.LSSConstants;
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.loader.api.ModContainer;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.Objects;
 import java.util.Optional;
@@ -38,7 +38,7 @@ public class LSSConfigMenu implements ConfigEntryPoint {
 
         // Receive Server LODs
         var receiveGroup = builder.createOptionGroup();
-        var receiveOption = builder.createBooleanOption(Identifier.parse("lss:receive_server_lods"));
+        var receiveOption = builder.createBooleanOption(ResourceLocation.parse("lss:receive_server_lods"));
         receiveOption.setName(Component.translatable("lss.config.receive_server_lods"));
         receiveOption.setTooltip(Component.translatable("lss.config.receive_server_lods.tooltip"));
         receiveOption.setImpact(OptionImpact.HIGH);
@@ -48,11 +48,11 @@ public class LSSConfigMenu implements ConfigEntryPoint {
         receiveGroup.addOption(receiveOption);
         page.addOptionGroup(receiveGroup);
 
-        var enabledDep = new Identifier[]{Identifier.parse("lss:receive_server_lods")};
+        var enabledDep = new ResourceLocation[]{ResourceLocation.parse("lss:receive_server_lods")};
 
         // LOD Distance
         var distanceGroup = builder.createOptionGroup();
-        var distanceOption = builder.createIntegerOption(Identifier.parse("lss:lod_distance"));
+        var distanceOption = builder.createIntegerOption(ResourceLocation.parse("lss:lod_distance"));
         distanceOption.setName(Component.translatable("lss.config.lod_distance"));
         distanceOption.setTooltip(Component.translatable("lss.config.lod_distance.tooltip"));
         distanceOption.setDefaultValue(0);
@@ -78,7 +78,7 @@ public class LSSConfigMenu implements ConfigEntryPoint {
         // Every nonzero stop round-trips the validate() clamp unchanged: the lowest stop
         // equals the [10, 100000] floor by construction.
         var rateGroup = builder.createOptionGroup();
-        var rateOption = builder.createIntegerOption(Identifier.parse("lss:column_rate_limit"));
+        var rateOption = builder.createIntegerOption(ResourceLocation.parse("lss:column_rate_limit"));
         rateOption.setName(Component.translatable("lss.config.column_rate_limit"));
         rateOption.setTooltip(Component.translatable("lss.config.column_rate_limit.tooltip"));
         rateOption.setImpact(OptionImpact.LOW);
@@ -97,7 +97,7 @@ public class LSSConfigMenu implements ConfigEntryPoint {
         // menu, default enabled). Inert while the enableAdaptiveTransferRate umbrella
         // is off (config-file-only key) — the tooltip says so when that is the case
         // at menu build (the SeeU conditional-tooltip precedent).
-        var slowStartOption = builder.createBooleanOption(Identifier.parse("lss:join_slow_start"));
+        var slowStartOption = builder.createBooleanOption(ResourceLocation.parse("lss:join_slow_start"));
         slowStartOption.setName(Component.translatable("lss.config.join_slow_start"));
         slowStartOption.setTooltip(Component.translatable(cfg.enableAdaptiveTransferRate
                 ? "lss.config.join_slow_start.tooltip"
@@ -124,7 +124,7 @@ public class LSSConfigMenu implements ConfigEntryPoint {
 
         var fpGroup = builder.createOptionGroup();
         boolean seeu = dev.vox.lss.networking.client.FarPlayerClientSupport.isSeeuPresent();
-        var fpEnabled = builder.createBooleanOption(Identifier.parse("lss:far_players_enabled"));
+        var fpEnabled = builder.createBooleanOption(ResourceLocation.parse("lss:far_players_enabled"));
         fpEnabled.setName(Component.translatable("lss.config.far_players_enabled"));
         // With SeeU installed the coexist gate overrides this toggle — say so where
         // the user is looking (E3, the plan §6 discoverability requirement).
@@ -137,12 +137,12 @@ public class LSSConfigMenu implements ConfigEntryPoint {
         fpEnabled.setStorageHandler(fpSave);
         fpGroup.addOption(fpEnabled);
 
-        var fpDep = new Identifier[]{Identifier.parse("lss:far_players_enabled")};
+        var fpDep = new ResourceLocation[]{ResourceLocation.parse("lss:far_players_enabled")};
 
         // "Share your position with other players' LOD view" — the E2 defaults
         // decision's wording obligation (decisions log 2026-08-13): plain words, no
         // jargon, because default-true at server-default-on means installing = sharing.
-        var fpShare = builder.createBooleanOption(Identifier.parse("lss:far_players_share_self"));
+        var fpShare = builder.createBooleanOption(ResourceLocation.parse("lss:far_players_share_self"));
         fpShare.setName(Component.translatable("lss.config.far_players_share_self"));
         fpShare.setTooltip(Component.translatable("lss.config.far_players_share_self.tooltip"));
         fpShare.setImpact(OptionImpact.LOW);
@@ -151,7 +151,7 @@ public class LSSConfigMenu implements ConfigEntryPoint {
         fpShare.setStorageHandler(fpSave);
         fpGroup.addOption(fpShare);
 
-        var fpTags = builder.createBooleanOption(Identifier.parse("lss:far_players_name_tags"));
+        var fpTags = builder.createBooleanOption(ResourceLocation.parse("lss:far_players_name_tags"));
         fpTags.setName(Component.translatable("lss.config.far_players_name_tags"));
         fpTags.setTooltip(Component.translatable("lss.config.far_players_name_tags.tooltip"));
         fpTags.setImpact(OptionImpact.LOW);
@@ -161,7 +161,7 @@ public class LSSConfigMenu implements ConfigEntryPoint {
         fpTags.setEnabledProvider(s -> s.readBooleanOption(fpDep[0]), fpDep);
         fpGroup.addOption(fpTags);
 
-        var fpRender = builder.createIntegerOption(Identifier.parse("lss:far_players_render_distance"));
+        var fpRender = builder.createIntegerOption(ResourceLocation.parse("lss:far_players_render_distance"));
         fpRender.setName(Component.translatable("lss.config.far_players_render_distance"));
         fpRender.setTooltip(Component.translatable("lss.config.far_players_render_distance.tooltip"));
         fpRender.setImpact(OptionImpact.LOW);
@@ -178,7 +178,7 @@ public class LSSConfigMenu implements ConfigEntryPoint {
 
         if (seeu) {
             var fpWithSeeU = builder.createBooleanOption(
-                    Identifier.parse("lss:far_players_with_seeu"));
+                    ResourceLocation.parse("lss:far_players_with_seeu"));
             fpWithSeeU.setName(Component.translatable("lss.config.far_players_with_seeu"));
             fpWithSeeU.setTooltip(Component.translatable("lss.config.far_players_with_seeu.tooltip"));
             fpWithSeeU.setImpact(OptionImpact.LOW);
@@ -195,20 +195,20 @@ public class LSSConfigMenu implements ConfigEntryPoint {
         mod.addPage(fpPage);
     }
 
-    /** The descriptor's `icon` path as a resource Identifier ("assets/&lt;ns&gt;/&lt;path&gt;" →
+    /** The descriptor's `icon` path as a resource ResourceLocation ("assets/&lt;ns&gt;/&lt;path&gt;" →
      *  "&lt;ns&gt;:&lt;path&gt;"), falling back to the LSS icon. Display-only — a malformed or
      *  missing path must degrade, never throw. */
-    private static Identifier iconFromMetadata(Optional<ModContainer> container) {
+    private static ResourceLocation iconFromMetadata(Optional<ModContainer> container) {
         return container.flatMap(c -> c.getMetadata().getIconPath(32))
                 .filter(p -> p.startsWith("assets/"))
                 .map(p -> p.substring("assets/".length()))
                 .map(p -> {
                     int slash = p.indexOf('/');
                     return slash > 0
-                            ? Identifier.tryParse(p.substring(0, slash) + ":" + p.substring(slash + 1))
+                            ? ResourceLocation.tryParse(p.substring(0, slash) + ":" + p.substring(slash + 1))
                             : null;
                 })
                 .filter(Objects::nonNull)
-                .orElse(Identifier.parse("lss:icon.png"));
+                .orElse(ResourceLocation.parse("lss:icon.png"));
     }
 }

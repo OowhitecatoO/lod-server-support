@@ -4,7 +4,10 @@ import dev.vox.lss.common.LSSConstants;
 import dev.vox.lss.common.LSSLogger;
 import dev.vox.lss.common.processing.LoadedColumnData;
 import dev.vox.lss.common.processing.TickSnapshot;
-import ca.spottedleaf.concurrentutil.util.Priority;
+// 1.21.1 line: Paper's priority enum lives on PrioritisedExecutor here, and the
+// chunk-load scheduler is ChunkSystem (26.x's PlatformHooks/flat Priority reshape
+// does not exist on this line; javap-verified against the 1.21.1 dev bundle).
+import ca.spottedleaf.concurrentutil.executor.standard.PrioritisedExecutor;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
@@ -149,7 +152,7 @@ public class PaperChunkGenerationService {
             // Priority.LOW: LOD generation yields to player-driven (NORMAL) generation. Safe
             // against starvation-shaped timeouts because a timeout is a TRANSIENT outcome —
             // the client re-declares and the load is retried, never blanked NOT_GENERATED.
-            launchAsyncLoad(key, level, cx, cz, gen.token, Priority.LOW);
+            launchAsyncLoad(key, level, cx, cz, gen.token, PrioritisedExecutor.Priority.LOW);
             return true;
         }
 
@@ -165,8 +168,8 @@ public class PaperChunkGenerationService {
      * launch (and the priority, pinned to {@code Priority.LOW}).
      */
     void launchAsyncLoad(PendingGenerationKey key, ServerLevel level, int cx, int cz, long token,
-                         Priority priority) {
-        ca.spottedleaf.moonrise.common.PlatformHooks.get().scheduleChunkLoad(
+                         PrioritisedExecutor.Priority priority) {
+        ca.spottedleaf.moonrise.common.util.ChunkSystem.scheduleChunkLoad(
                 level, cx, cz, /*gen=*/true, ChunkStatus.FULL, /*addTicket=*/true, priority,
                 chunk -> completeAsyncLoad(key, level, chunk, cx, cz, token));
     }
@@ -305,7 +308,7 @@ public class PaperChunkGenerationService {
 
         if (columnData != null) {
             long columnTimestamp = LSSConstants.epochSeconds();
-            String dimension = key.dimension().identifier().toString();
+            String dimension = key.dimension().location().toString();
             for (var cb : gen.callbacks) {
                 this.mainReady.add(new TickSnapshot.GenerationReadyData(
                         cb.playerUuid, cx, cz, dimension,
@@ -334,7 +337,7 @@ public class PaperChunkGenerationService {
      */
     private void addFailures(List<GenerationCallback> callbacks, PendingGenerationKey key,
                              int cx, int cz, boolean transientFailure) {
-        String dimension = key.dimension().identifier().toString();
+        String dimension = key.dimension().location().toString();
         for (var cb : callbacks) {
             this.mainReady.add(new TickSnapshot.GenerationReadyData(
                     cb.playerUuid, cx, cz, dimension, null, 0L, cb.submissionOrder, transientFailure));

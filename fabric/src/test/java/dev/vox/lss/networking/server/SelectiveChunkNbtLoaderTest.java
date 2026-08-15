@@ -96,7 +96,7 @@ class SelectiveChunkNbtLoaderTest {
         var f = full(bytes);
         assertEquals(f.get("Status"), s.get("Status"));
         assertEquals(f.get("sections"), s.get("sections"));
-        assertEquals(SelectiveChunkNbtLoader.ROOT_KEY_WHITELIST, s.keySet(),
+        assertEquals(SelectiveChunkNbtLoader.ROOT_KEY_WHITELIST, s.getAllKeys(),
                 "the sparse tag must hold exactly the whitelisted keys");
         // Serializer byte-equality FOLLOWS from the two asserts above plus the
         // whitelist-drift pin below: serializeChunkNbt is a pure function of exactly
@@ -128,7 +128,7 @@ class SelectiveChunkNbtLoaderTest {
     @Test
     void rootKeyOrderingNeverChangesTheOutcome() throws Exception {
         var base = chunkNbt();
-        var keys = new ArrayList<>(base.keySet());
+        var keys = new ArrayList<>(base.getAllKeys());
         var rng = new Random(42);
         var expectedStatus = base.get("Status");
         var expectedSections = base.get("sections");
@@ -141,7 +141,7 @@ class SelectiveChunkNbtLoaderTest {
             assertEquals(expectedSections, s.get("sections"), "round " + round);
             assertEquals(f.get("Status"), s.get("Status"));
             assertEquals(f.get("sections"), s.get("sections"));
-            assertEquals(SelectiveChunkNbtLoader.ROOT_KEY_WHITELIST, s.keySet());
+            assertEquals(SelectiveChunkNbtLoader.ROOT_KEY_WHITELIST, s.getAllKeys());
         }
         // Directed extremes the shuffle may not hit: sections FIRST / Status LAST, and
         // both whitelisted keys adjacent after a skipped array-carrying subtree.

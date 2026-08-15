@@ -3,13 +3,14 @@ package dev.vox.lss.networking.server;
 import dev.vox.lss.common.LSSLogger;
 import dev.vox.lss.common.XrayMaskPolicy.FallbackKind;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.core.Registry;
+import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.chunk.PalettedContainer;
-import net.minecraft.world.level.chunk.PalettedContainerFactory;
 
 import java.util.Collection;
 
@@ -51,19 +52,19 @@ public final class XrayMaskFilter {
             int resolved = 0;
             for (String id : blockIds) {
                 if (id == null || id.isBlank()) {
-                    // GSON deserializes ["iron_ore", null] verbatim and Identifier.tryParse
+                    // GSON deserializes ["iron_ore", null] verbatim and ResourceLocation.tryParse
                     // NPEs on null — masking must be throw-free by construction: a throw
                     // here escapes into serve choke points whose ladders turn it into
                     // session-permanent NOT_GENERATED (generation) or tick aborts (probe).
                     LSSLogger.warn("xrayHiddenBlocks: null/blank entry — skipped");
                     continue;
                 }
-                Identifier rl = Identifier.tryParse(id);
+                ResourceLocation rl = ResourceLocation.tryParse(id);
                 if (rl == null || !BuiltInRegistries.BLOCK.containsKey(rl)) {
                     LSSLogger.warn("xrayHiddenBlocks: unknown block id '" + id + "' — skipped");
                     continue;
                 }
-                Block block = BuiltInRegistries.BLOCK.getValue(rl);
+                Block block = BuiltInRegistries.BLOCK.get(rl); // 1.21.1 line: get() is the defaulted lookup
                 if (block.defaultBlockState().isAir()) {
                     // Hiding air would FILL caves with the replacement and desync the
                     // section count headers — the never-air invariant is load-bearing.
@@ -153,7 +154,7 @@ public final class XrayMaskFilter {
      * which keeps live-vs-disk byte parity (both paths share this exact construction).
      */
     public static LevelChunkSection mask(LevelChunkSection section, int sectionY, MaskSet mask, FallbackKind kind,
-                                          PalettedContainerFactory factory) {
+                                          Registry<Biome> factory) {
         return mask(section, sectionY, mask, kind, factory, new int[1]);
     }
 
@@ -168,7 +169,7 @@ public final class XrayMaskFilter {
      * sections (one spurious re-serve per save; DirtyContentFilter is fail-open).
      */
     public static LevelChunkSection mask(LevelChunkSection section, int sectionY, MaskSet mask, FallbackKind kind,
-                                          PalettedContainerFactory factory, int[] replacedCellsOut) {
+                                          Registry<Biome> factory, int[] replacedCellsOut) {
         if (!needsMasking(section, sectionY, mask)) return section;
         PalettedContainer<BlockState> masked = maskedStates(section.getStates(), sectionY, mask, kind, factory,
                 replacedCellsOut);
@@ -183,11 +184,15 @@ public final class XrayMaskFilter {
      *  source's entry-0 seed that {@code recreate()} would smuggle in. */
     private static PalettedContainer<BlockState> maskedStates(PalettedContainer<BlockState> states,
                                                               int sectionY, MaskSet mask, FallbackKind kind,
-                                                              PalettedContainerFactory factory,
+                                                              Registry<Biome> factory,
                                                               int[] replacedCellsOut) {
         BlockState replacement = chooseReplacement(states, sectionY, mask, kind);
+        // 1.21.1 line: no PalettedContainerFactory — the (IdMap, T, Strategy) ctor with the
+        // block-state registry + SECTION_STATES is this MC's exact equivalent (the seam's
+        // Registry<Biome> handle is unused here; the signature stays twin-aligned).
         PalettedContainer<BlockState> fresh =
-                new PalettedContainer<>(replacement, factory.blockStatesStrategy());
+                new PalettedContainer<>(Block.BLOCK_STATE_REGISTRY, replacement,
+                        PalettedContainer.Strategy.SECTION_STATES);
         int bottomY = sectionY << 4;
         // A section STRADDLING the cutoff keeps cells at/above it real — vanilla packets
         // already reveal them, masking would only mismatch near terrain.

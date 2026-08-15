@@ -5,7 +5,7 @@ import com.google.gson.JsonParser;
 import com.mojang.authlib.GameProfile;
 import dev.vox.lss.trace.MoveDesyncTracer;
 import io.netty.channel.embedded.EmbeddedChannel;
-import net.fabricmc.fabric.api.gametest.v1.GameTest;
+import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.network.Connection;
@@ -43,16 +43,16 @@ import java.util.UUID;
  */
 public class MoveTraceGameTests {
 
-    @GameTest(structure = "fabric-gametest-api-v1:empty")
+    @GameTest(template = "fabric-gametest-api-v1:empty")
     public void tooQuicklyClaimEmitsRowWithBothPacketCounts(GameTestHelper helper) {
         var player = helper.makeMockServerPlayerInLevel();
         var origin = helper.absolutePos(BlockPos.ZERO);
         double x = origin.getX() + 0.5;
         double z = origin.getZ() + 0.5;
-        player.absSnapTo(x, 200, z);
+        player.absMoveTo(x, 200, z);
 
         var rows = drive(helper, player,
-                new ServerboundMovePlayerPacket.Pos(x + 18.5, 200, z, false, false));
+                new ServerboundMovePlayerPacket.Pos(x + 18.5, 200, z, false));
 
         var tooQuickly = rowsOfType(rows, "too_quickly", player.getUUID());
         helper.assertTrue(tooQuickly.size() == 1,
@@ -71,13 +71,13 @@ public class MoveTraceGameTests {
         helper.succeed();
     }
 
-    @GameTest(structure = "fabric-gametest-api-v1:empty")
+    @GameTest(template = "fabric-gametest-api-v1:empty")
     public void silentRejectionIntoPlacedBlocksEmitsRejectedRow(GameTestHelper helper) {
         var player = helper.makeMockServerPlayerInLevel();
         var origin = helper.absolutePos(BlockPos.ZERO);
         double x = origin.getX() + 0.5;
         double z = origin.getZ() + 0.5;
-        player.absSnapTo(x, 210, z);
+        player.absMoveTo(x, 210, z);
         // A solid 3x3x3 block of stone with its center ~3 blocks +x of the player: the
         // claimed AABB ends inside it, the pre-move AABB is free air.
         var level = helper.getLevel();
@@ -91,7 +91,7 @@ public class MoveTraceGameTests {
         }
 
         var rows = drive(helper, player,
-                new ServerboundMovePlayerPacket.Pos(x + 3, 210, z, false, false));
+                new ServerboundMovePlayerPacket.Pos(x + 3, 210, z, false));
 
         var rejected = rowsOfType(rows, "rejected", player.getUUID());
         helper.assertTrue(rejected.size() == 1,
@@ -121,7 +121,7 @@ public class MoveTraceGameTests {
         helper.succeed();
     }
 
-    @GameTest(structure = "fabric-gametest-api-v1:empty")
+    @GameTest(template = "fabric-gametest-api-v1:empty")
     public void survivalWronglyClaimEmitsWronglyAndLoggedRejection(GameTestHelper helper) {
         var level = helper.getLevel();
         var server = level.getServer();
@@ -139,7 +139,7 @@ public class MoveTraceGameTests {
             var origin = helper.absolutePos(BlockPos.ZERO);
             double x = origin.getX() + 0.5;
             double z = origin.getZ() + 0.5;
-            player.absSnapTo(x, 220, z);
+            player.absMoveTo(x, 220, z);
             var center = BlockPos.containing(x + 3, 220.9, z);
             for (int dx = -1; dx <= 1; dx++) {
                 for (int dy = -1; dy <= 1; dy++) {
@@ -151,7 +151,7 @@ public class MoveTraceGameTests {
             }
 
             var rows = drive(helper, player,
-                    new ServerboundMovePlayerPacket.Pos(x + 3, 220, z, false, false));
+                    new ServerboundMovePlayerPacket.Pos(x + 3, 220, z, false));
 
             var wrongly = rowsOfType(rows, "wrongly", player.getUUID());
             helper.assertTrue(wrongly.size() == 1,
@@ -190,28 +190,20 @@ public class MoveTraceGameTests {
 
     /** A mock connection never sends the client's side of the placement handshake:
      *  the placement teleport latches {@code awaitingPositionFromClient} (every move is
-     *  swallowed by updateAwaitingTeleport) and placeNewPlayer arms the 60-tick
-     *  {@code clientLoadedTimeoutTimer} (hasClientLoaded() reads false until a real
-     *  client confirms). Both cleared here — test-only reflection, dev runtime = named
-     *  mappings; a vanilla rename reds this loudly. */
+     *  swallowed by updateAwaitingTeleport). 1.21.1 line: that latch is the ONLY move
+     *  gate on this MC — the 60-tick {@code clientLoadedTimeoutTimer} /
+     *  {@code waitingForRespawn} pair is 26.x (javap-verified absent here), so priming
+     *  clears just the one field. Test-only reflection, dev runtime = named mappings;
+     *  a vanilla rename reds this loudly. */
     private static void primeListenerForMoves(ServerGamePacketListenerImpl connection) {
         try {
             var awaiting = ServerGamePacketListenerImpl.class
                     .getDeclaredField("awaitingPositionFromClient");
             awaiting.setAccessible(true);
             awaiting.set(connection, null);
-            var timer = ServerGamePacketListenerImpl.class
-                    .getDeclaredField("clientLoadedTimeoutTimer");
-            timer.setAccessible(true);
-            timer.setInt(connection, 0);
-            var waiting = ServerGamePacketListenerImpl.class
-                    .getDeclaredField("waitingForRespawn");
-            waiting.setAccessible(true);
-            waiting.setBoolean(connection, false);
         } catch (ReflectiveOperationException e) {
             throw new AssertionError("could not prime the listener for moves — "
-                    + "did vanilla rename a field? (awaitingPositionFromClient /"
-                    + " clientLoadedTimeoutTimer / waitingForRespawn)", e);
+                    + "did vanilla rename a field? (awaitingPositionFromClient)", e);
         }
     }
 

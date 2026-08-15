@@ -36,7 +36,19 @@ public final class NativeSectionShape {
      * {@code LevelChunkSection.write} emits); 1.21.x = 1. The cursor reads/writes the
      * second short only when this is 2 (V20 always carries both — wire spec).
      */
-    public static final int NATIVE_COUNT_SHORTS = 2;
+    // 1.21.1 LINE VALUE: one count short (vanilla's single nonEmptyBlockCount).
+    public static final int NATIVE_COUNT_SHORTS = 1;
+
+    /**
+     * Fourth LINE-level field (found at the 1.21.1 port): whether the NATIVE
+     * container long array is VarInt-length-prefixed. 1.21.1's vanilla
+     * {@code PalettedContainer$Data.write} uses {@code writeLongArray} (prefix,
+     * empty array included — javap-verified); 26.x and 1.21.11 write the words
+     * bare. V20 is prefix-free on every line (wire spec — never derive this
+     * there). Consumed by the cursor's NATIVE parse+emit and both transcode
+     * writers.
+     */
+    public static final boolean NATIVE_LONG_ARRAY_PREFIXED = true;
 
     /**
      * The LINE-level fold the CURSOR's one-short NATIVE emit writes (V-2 review
@@ -48,8 +60,10 @@ public final class NativeSectionShape {
      * side). Unreachable while {@link #NATIVE_COUNT_SHORTS} is 2.
      */
     public static int foldedCountForNativeHeader(int nonEmpty, int fluid) {
-        throw new IllegalStateException(
-                "no single-short fold on a " + NATIVE_COUNT_SHORTS + "-short line");
+        // 1.21.1 fold (artifact-verified: vanilla write ships ONE short; the visitor counts every non-air state — same family as the recorded 1.21.11 values): this line's vanilla counts fluid cells into its single
+        // count, so the cursor's client-facing native emit sums (sum range-checked at
+        // the emit site).
+        return nonEmpty + fluid;
     }
 
     /**
@@ -59,8 +73,9 @@ public final class NativeSectionShape {
      * {@code nonEmpty + fluid}); reaching it on a two-short line is a caller bug.
      */
     public static int foldedCountFabricFamily(int nonEmpty, int fluid) {
-        throw new IllegalStateException(
-                "no single-short fold on a " + NATIVE_COUNT_SHORTS + "-short line");
+        // 1.21.1 fold (artifact-verified: vanilla write ships ONE short; the visitor counts every non-air state — same family as the recorded 1.21.11 values): vanilla's recalc — nonEmpty + fluid (coincides with
+        // the line rule on this line's fabric side).
+        return nonEmpty + fluid;
     }
 
     /**
@@ -68,8 +83,9 @@ public final class NativeSectionShape {
      * recalc writes {@code nonEmpty} alone). Same unreachability rule.
      */
     public static int foldedCountPaperFamily(int nonEmpty, int fluid) {
-        throw new IllegalStateException(
-                "no single-short fold on a " + NATIVE_COUNT_SHORTS + "-short line");
+        // 1.21.1 fold (artifact-verified: vanilla write ships ONE short; the visitor counts every non-air state — same family as the recorded 1.21.11 values): Moonrise's recalc — nonEmpty alone (a DIFFERENT fold
+        // from Fabric's on the same line; the corpus parity flips to count-normalized).
+        return nonEmpty;
     }
 
     /**

@@ -67,7 +67,7 @@ class ToolchainContractTest {
     @Test
     void resolvedMinecraftArtifactMatchesTheDeclaredLine() {
         assertEquals(gradleProps.getProperty("minecraft_version"),
-                SharedConstants.getCurrentVersion().name(),
+                SharedConstants.getCurrentVersion().getName(),
                 "gradle.properties minecraft_version must equal the MC artifact paperweight "
                         + "resolved — the line.env↔gradle.properties↔artifact chain's last link");
     }

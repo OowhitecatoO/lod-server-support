@@ -67,7 +67,7 @@ final class FabricFarPlayerSnapshots {
         var delta = p.getKnownMovement(); // blocks/tick -> blocks/second
         return new FarPlayerBroadcastService.PlayerSnapshot(
                 p.getUUID(), p.getName().getString(),
-                p.level().dimension().identifier().toString(),
+                p.level().dimension().location().toString(),
                 p.getX(), p.getY(), p.getZ(),
                 p.getYRot(), p.getYHeadRot(), p.getXRot(),
                 pose,

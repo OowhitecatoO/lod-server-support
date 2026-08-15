@@ -14,6 +14,7 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * A gametest class that is not listed in the {@code fabric-gametest} entrypoint of
@@ -36,7 +37,13 @@ class GameTestEntrypointContractTest {
                         locate("fabric/src/gametest/resources/fabric.mod.json")))
                 .getAsJsonObject().getAsJsonObject("entrypoints");
         Set<String> listedServer = names(entrypoints, "fabric-gametest");
-        Set<String> listedClient = names(entrypoints, "fabric-client-gametest");
+        // 1.21.1 line: fabric-api 0.116.x has no client gametest API — Tier 3 and its
+        // fabric-client-gametest entrypoint are CUT on this branch (the 1.20.1 support
+        // branch records the same flavor), so only the server listing is
+        // contract-checked and the client entrypoint must stay absent.
+        assertFalse(entrypoints.has("fabric-client-gametest"),
+                "fabric-client-gametest entrypoint must not exist on the 1.21.1 line"
+                        + " (no client gametest API in fabric-api 0.116.x)");
 
         Set<String> foundServer = new TreeSet<>();
         Set<String> foundClient = new TreeSet<>();
@@ -62,8 +69,9 @@ class GameTestEntrypointContractTest {
         assertEquals(foundServer, listedServer,
                 "fabric-gametest entrypoint must list exactly the classes with @GameTest methods"
                         + " — an unlisted class compiles but NEVER runs; a stale entry breaks the runner");
-        assertEquals(foundClient, listedClient,
-                "fabric-client-gametest entrypoint must list exactly the FabricClientGameTest classes");
+        assertTrue(foundClient.isEmpty(),
+                "no FabricClientGameTest sources may exist on the 1.21.1 line (Tier 3 cut): "
+                        + foundClient);
     }
 
     private static Set<String> names(JsonObject entrypoints, String key) {

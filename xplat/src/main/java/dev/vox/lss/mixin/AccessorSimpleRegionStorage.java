@@ -1,19 +1,28 @@
 package dev.vox.lss.mixin;
 
+import net.minecraft.world.level.chunk.storage.ChunkStorage;
 import net.minecraft.world.level.chunk.storage.IOWorker;
-import net.minecraft.world.level.chunk.storage.SimpleRegionStorage;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
 /**
- * Exposes {@code SimpleRegionStorage.worker} so LSS can reach the IOWorker that {@link
- * net.minecraft.server.level.ChunkMap} (which extends SimpleRegionStorage) reads through, to
- * schedule BACKGROUND-priority reads on the same executor vanilla uses.
+ * Exposes the private {@code worker} field so LSS can reach the IOWorker that {@link
+ * net.minecraft.server.level.ChunkMap} reads through, to schedule BACKGROUND-priority
+ * reads on the same executor vanilla uses.
+ *
+ * <p>1.21.1 line: on this MC {@code ChunkMap extends ChunkStorage} and the worker field
+ * lives on {@link ChunkStorage} directly ({@code SimpleRegionStorage} exists here but is
+ * NOT in ChunkMap's hierarchy — that superclass move is 26.x, where this accessor
+ * targeted it; the class NAME is kept so the mixin listing and the cross-line call
+ * sites stay textually stable). A wrong target here does not crash: the resolve's
+ * catch-all latches backgroundIncompatible and the C2ME-style throttle fallback
+ * engages — exactly the silent inertness the Tier-2 raw_serves receipt caught at the
+ * port.
  *
  * <p>The method is {@code lss$}-prefixed because mixin adds it to the target class: an
  * unprefixed {@code getWorker()} could collide with a vanilla method of that name.
  */
-@Mixin(SimpleRegionStorage.class)
+@Mixin(ChunkStorage.class)
 public interface AccessorSimpleRegionStorage {
     @Accessor("worker")
     IOWorker lss$getWorker();

@@ -4,7 +4,7 @@ import dev.vox.lss.common.LSSConstants;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 
 /**
  * C2S sidecar carrying the client's MC data version (protocol 20, XVER §2.2). Sent
@@ -18,7 +18,7 @@ import net.minecraft.resources.Identifier;
 public record ClientInfoC2SPayload(int dataVersion) implements CustomPacketPayload {
 
     public static final CustomPacketPayload.Type<ClientInfoC2SPayload> TYPE =
-            new CustomPacketPayload.Type<>(Identifier.parse(LSSConstants.CHANNEL_CLIENT_INFO));
+            new CustomPacketPayload.Type<>(ResourceLocation.parse(LSSConstants.CHANNEL_CLIENT_INFO));
 
     public static final StreamCodec<FriendlyByteBuf, ClientInfoC2SPayload> CODEC =
             StreamCodec.of(

@@ -48,7 +48,7 @@ public final class LSSNeoMod {
         NeoForge.EVENT_BUS.addListener(RegisterCommandsEvent.class,
                 LSSServerNetworking::onRegisterCommands);
 
-        if (FMLEnvironment.getDist().isClient()) {
+        if (FMLEnvironment.dist.isClient()) { // 1.21.1 line: dist is a field on 21.1
             initClientReflectively();
         }
     }

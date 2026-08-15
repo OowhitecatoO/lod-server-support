@@ -1,11 +1,12 @@
 package dev.vox.lss.paper;
 
 import net.minecraft.core.Holder;
+import net.minecraft.core.Registry;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.chunk.PalettedContainer;
-import net.minecraft.world.level.chunk.PalettedContainerFactory;
 import net.minecraft.world.level.chunk.PalettedContainerRO;
 
 /**
@@ -20,9 +21,12 @@ import net.minecraft.world.level.chunk.PalettedContainerRO;
 final class PaperSectionConstruction {
     private PaperSectionConstruction() {}
 
+    // 1.21.1 line: no PalettedContainerFactory on this MC — the seam's construction
+    // parameter is the biome Registry (matching the xplat twin's retarget).
+
     /** An all-air section with default biomes (vanilla's empty-section fill). */
-    static LevelChunkSection empty(PalettedContainerFactory factory) {
-        return new LevelChunkSection(factory);
+    static LevelChunkSection empty(Registry<Biome> biomeRegistry) {
+        return new LevelChunkSection(biomeRegistry);
     }
 
     /**
@@ -33,10 +37,15 @@ final class PaperSectionConstruction {
      */
     static LevelChunkSection fromContainers(PalettedContainer<BlockState> states,
                                             PalettedContainerRO<Holder<Biome>> biomes,
-                                            PalettedContainerFactory factory) {
+                                            Registry<Biome> biomeRegistry) {
         return biomes instanceof PalettedContainer<Holder<Biome>> biomeContainer
                 ? new LevelChunkSection(states, biomeContainer)
-                : new LevelChunkSection(states, factory.createForBiomes());
+                // 1.21.1 line: the factory's createForBiomes becomes the explicit
+                // default-biome container build (same shape production uses).
+                : new LevelChunkSection(states, new PalettedContainer<>(
+                        biomeRegistry.asHolderIdMap(),
+                        biomeRegistry.getHolderOrThrow(Biomes.PLAINS),
+                        PalettedContainer.Strategy.SECTION_BIOMES));
     }
 
     /**

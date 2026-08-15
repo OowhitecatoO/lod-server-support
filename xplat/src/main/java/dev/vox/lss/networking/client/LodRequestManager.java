@@ -167,7 +167,7 @@ public class LodRequestManager {
             var connection = mc.getConnection();
             if (connection != null) {
                 connection.send(new net.minecraft.network.protocol.ping
-                        .ServerboundPingRequestPacket(net.minecraft.util.Util.getMillis()));
+                        .ServerboundPingRequestPacket(net.minecraft.Util.getMillis()));
             }
         } catch (Exception e) {
             // A congestion probe is never worth a client-side failure.
@@ -813,7 +813,7 @@ public class LodRequestManager {
 
     private void onDimensionChange(ResourceKey<Level> newDimension) {
         if (ClientTraceLog.enabled()) {
-            ClientTraceLog.event("dim_change", "\"to\":\"" + newDimension.identifier() + "\"");
+            ClientTraceLog.event("dim_change", "\"to\":\"" + newDimension.location() + "\"");
         }
         // Unstamp columns still queued for decode BEFORE saveCache persists the old
         // dimension's map: their stamps describe data no consumer ever saw (the drain's
@@ -922,7 +922,7 @@ public class LodRequestManager {
     /** Dimension id of the level this manager is currently scanning, or "none" before the first tick. */
     public String getCurrentDimensionId() {
         var dim = this.lastDimension;
-        return dim != null ? dim.identifier().toString() : "none";
+        return dim != null ? dim.location().toString() : "none";
     }
 
     /**

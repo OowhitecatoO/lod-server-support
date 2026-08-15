@@ -13,14 +13,13 @@ import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.data.registries.VanillaRegistries;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.chunk.LevelChunkSection;
-import net.minecraft.world.level.chunk.PalettedContainerFactory;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -40,7 +39,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  */
 class ClientColumnDecompressTest {
 
-    private static PalettedContainerFactory FACTORY;
+    private static net.minecraft.core.Registry<net.minecraft.world.level.biome.Biome> FACTORY; // 1.21.1 line: the seam handle is the biome registry
     private static final int LEVEL_SECTIONS = 4;
     private static final int MIN_SECTION_Y = -4;
     private static StoreCodec codec;
@@ -49,7 +48,7 @@ class ClientColumnDecompressTest {
     static void setup() {
         SharedConstants.tryDetectVersion();
         Bootstrap.bootStrap();
-        FACTORY = PalettedContainerFactory.create(buildRegistryAccess());
+        FACTORY = buildRegistryAccess().registryOrThrow(Registries.BIOME);
         codec = StoreCodec.zstdOrNull();
         assumeTrue(codec != null, "zstd native unavailable on this platform");
     }
@@ -79,7 +78,7 @@ class ClientColumnDecompressTest {
         processor = new ClientColumnProcessor(
                 (d, cx, cz) -> reports.add(new Report(d, cx, cz)),
                 () -> null);
-        dim = ResourceKey.create(Registries.DIMENSION, Identifier.parse("lss_test:decompress"));
+        dim = ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse("lss_test:decompress"));
     }
 
     private void drainNow() {

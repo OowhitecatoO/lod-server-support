@@ -2,7 +2,7 @@ package dev.vox.lss.mixin;
 
 import dev.vox.lss.networking.server.LSSServerNetworking;
 import net.minecraft.client.server.IntegratedServer;
-import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.level.GameType;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -10,20 +10,18 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(IntegratedServer.class)
 public class IntegratedServerLanHook {
-    // MC 26.2 has two publishServer overloads. The 4-arg (scope, gameType, allowCheats,
-    // port) is a thin wrapper that delegates into THIS 2-arg overload — and the LAN screen
-    // (MultiplayerOptionsScreen.changeMultiplayerScope) calls the 2-arg one DIRECTLY, so
-    // hooking the 4-arg (the shipped v0.6.0–v0.8.0 target) never fired for "Open to LAN";
-    // only /publish worked. Injecting here covers both entry points exactly once. The full
-    // descriptor stays pinned so mixin resolution cannot drift to the wrapper; the
-    // descriptor-vs-real-overload agreement is enforced by LanHookContractTest.
-    @Inject(method = "publishServer(Lnet/minecraft/server/MinecraftServer$MultiplayerScope;I)Z",
-            at = @At("RETURN"))
-    private void lss$onLanPublished(MinecraftServer.MultiplayerScope scope, int port,
+    // 1.21.1-LINE FLAVOR: this line's IntegratedServer declares exactly one publishServer
+    // overload — (GameType, boolean, int) — so the bare selector would also work; the full
+    // descriptor is pinned anyway so a future overload (26.2 added the MultiplayerScope
+    // split, where the LAN screen calls a DIFFERENT 2-arg overload — the M2 retarget) fails
+    // loudly at apply time instead of matching ambiguously. The descriptor-vs-real-overload
+    // agreement is enforced by LanHookContractTest (this line's single-overload flavor).
+    @Inject(method = "publishServer(Lnet/minecraft/world/level/GameType;ZI)Z", at = @At("RETURN"))
+    private void lss$onLanPublished(GameType gameType, boolean allowCheats, int port,
                                      CallbackInfoReturnable<Boolean> cir) {
-        // getReturnValue() is read HERE, in the callback frame (false for scope-off,
-        // already-published, and listener IOException — no spurious starts); only the
-        // start itself is deferred (see startServiceForLan's server-thread hop).
+        // getReturnValue() is read HERE, in the callback frame (false for already-published
+        // and listener IOException — no spurious starts); only the start itself is deferred
+        // (see startServiceForLan's server-thread hop).
         if (cir.getReturnValue()) {
             LSSServerNetworking.startServiceForLan((IntegratedServer) (Object) this);
         }

@@ -21,7 +21,6 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.chunk.LevelChunkSection;
-import net.minecraft.world.level.chunk.PalettedContainerFactory;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -59,12 +58,12 @@ class NbtSectionSerializerTest {
     }
 
     private static RegistryAccess REGISTRY_ACCESS;
-    private static PalettedContainerFactory FACTORY;
+    private static net.minecraft.core.Registry<net.minecraft.world.level.biome.Biome> FACTORY; // 1.21.1 line: the seam handle is the biome registry
 
     @BeforeAll
     static void setup() {
         REGISTRY_ACCESS = buildRegistryAccess();
-        FACTORY = PalettedContainerFactory.create(REGISTRY_ACCESS);
+        FACTORY = REGISTRY_ACCESS.registryOrThrow(Registries.BIOME);
     }
 
     /**
@@ -91,9 +90,9 @@ class NbtSectionSerializerTest {
         if (stone) sec.setBlockState(0, 0, 0, Blocks.STONE.defaultBlockState());
         var s = new CompoundTag();
         s.putInt("Y", y);
-        s.put("block_states", FACTORY.blockStatesContainerCodec().encodeStart(NbtOps.INSTANCE, sec.getStates()).getOrThrow());
+        s.put("block_states", dev.vox.lss.paper.testutil.TestPalettedContainers.blockStatesContainerCodec().encodeStart(NbtOps.INSTANCE, sec.getStates()).getOrThrow());
         if (includeBiomes) {
-            s.put("biomes", FACTORY.biomeContainerCodec().encodeStart(NbtOps.INSTANCE, sec.getBiomes()).getOrThrow());
+            s.put("biomes", dev.vox.lss.paper.testutil.TestPalettedContainers.biomeContainerCodec(FACTORY).encodeStart(NbtOps.INSTANCE, sec.getBiomes()).getOrThrow());
         }
         if (blockLight != null) s.putByteArray("BlockLight", blockLight);
         if (skyLight != null) s.putByteArray("SkyLight", skyLight);
@@ -184,9 +183,9 @@ class NbtSectionSerializerTest {
         sec.setBlockState(3, 0, 3, Blocks.DIAMOND_ORE.defaultBlockState());
         var s = new CompoundTag();
         s.putInt("Y", 0);
-        s.put("block_states", FACTORY.blockStatesContainerCodec()
+        s.put("block_states", dev.vox.lss.paper.testutil.TestPalettedContainers.blockStatesContainerCodec()
                 .encodeStart(NbtOps.INSTANCE, sec.getStates()).getOrThrow());
-        s.put("biomes", FACTORY.biomeContainerCodec()
+        s.put("biomes", dev.vox.lss.paper.testutil.TestPalettedContainers.biomeContainerCodec(FACTORY)
                 .encodeStart(NbtOps.INSTANCE, sec.getBiomes()).getOrThrow());
         var nbt = chunkNbt("minecraft:full", s);
 
@@ -292,7 +291,7 @@ class NbtSectionSerializerTest {
     void missingBlockStates_sectionDropped() {
         var noStates = new CompoundTag();
         noStates.putInt("Y", 1);
-        noStates.put("biomes", FACTORY.biomeContainerCodec()
+        noStates.put("biomes", dev.vox.lss.paper.testutil.TestPalettedContainers.biomeContainerCodec(FACTORY)
                 .encodeStart(NbtOps.INSTANCE, new LevelChunkSection(FACTORY).getBiomes()).getOrThrow());
         byte[] wire = PaperNbtSectionSerializer.serializeChunkNbt(
                 chunkNbt("minecraft:full", noStates, sectionNbt(2, true, true, null, null)), REGISTRY_ACCESS);
@@ -304,7 +303,7 @@ class NbtSectionSerializerTest {
     @Test
     void sectionMissingY_skipped() {
         var noY = new CompoundTag();
-        noY.put("block_states", FACTORY.blockStatesContainerCodec()
+        noY.put("block_states", dev.vox.lss.paper.testutil.TestPalettedContainers.blockStatesContainerCodec()
                 .encodeStart(NbtOps.INSTANCE, new LevelChunkSection(FACTORY).getStates()).getOrThrow());
         byte[] wire = PaperNbtSectionSerializer.serializeChunkNbt(
                 chunkNbt("minecraft:full", noY, sectionNbt(7, true, true, null, null)), REGISTRY_ACCESS);
@@ -369,12 +368,12 @@ class NbtSectionSerializerTest {
 
     @Test
     void multiBlockSection_paletteRoundTrips() {
-        var states = FACTORY.createForBlockStates();
+        var states = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBlockStates();
         states.set(0, 0, 0, Blocks.STONE.defaultBlockState());
         states.set(15, 15, 15, Blocks.DIRT.defaultBlockState());
         states.set(7, 8, 9, Blocks.GLASS.defaultBlockState());
         var section = decode(PaperNbtSectionSerializer.serializeChunkNbt(
-                chunkNbt("minecraft:full", sectionFrom(1, states, FACTORY.createForBiomes())), REGISTRY_ACCESS))
+                chunkNbt("minecraft:full", sectionFrom(1, states, dev.vox.lss.paper.testutil.TestPalettedContainers.createForBiomes(FACTORY))), REGISTRY_ACCESS))
                 .get(0).section();
         assertEquals(Blocks.STONE.defaultBlockState(), section.getBlockState(0, 0, 0));
         assertEquals(Blocks.DIRT.defaultBlockState(), section.getBlockState(15, 15, 15));
@@ -383,9 +382,9 @@ class NbtSectionSerializerTest {
 
     @Test
     void biomeData_roundTrips() {
-        var states = FACTORY.createForBlockStates();
+        var states = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBlockStates();
         states.set(0, 0, 0, Blocks.STONE.defaultBlockState());
-        var biomes = FACTORY.createForBiomes();
+        var biomes = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBiomes(FACTORY);
         biomes.set(0, 0, 0, REGISTRY_ACCESS.lookupOrThrow(Registries.BIOME).getOrThrow(Biomes.DESERT));
         var section = decode(PaperNbtSectionSerializer.serializeChunkNbt(
                 chunkNbt("minecraft:full", sectionFrom(0, states, biomes)), REGISTRY_ACCESS))
@@ -398,8 +397,8 @@ class NbtSectionSerializerTest {
                                     net.minecraft.world.level.chunk.PalettedContainer<net.minecraft.core.Holder<Biome>> biomes) {
         var s = new CompoundTag();
         s.putInt("Y", y);
-        s.put("block_states", FACTORY.blockStatesContainerCodec().encodeStart(NbtOps.INSTANCE, states).getOrThrow());
-        s.put("biomes", FACTORY.biomeContainerCodec().encodeStart(NbtOps.INSTANCE, biomes).getOrThrow());
+        s.put("block_states", dev.vox.lss.paper.testutil.TestPalettedContainers.blockStatesContainerCodec().encodeStart(NbtOps.INSTANCE, states).getOrThrow());
+        s.put("biomes", dev.vox.lss.paper.testutil.TestPalettedContainers.biomeContainerCodec(FACTORY).encodeStart(NbtOps.INSTANCE, biomes).getOrThrow());
         return s;
     }
 
@@ -420,22 +419,19 @@ class NbtSectionSerializerTest {
 
     @Test
     void nonCompoundSectionElement_failsWholeChunk() {
-        // Each sections-list element is blindly cast to CompoundTag (PaperNbtSectionSerializer
-        // first pass). A non-compound element — NBT lists are heterogeneous since 1.21.5,
-        // so a corrupt region or rogue tool can produce one — throws CCE out of
-        // serializeChunkNbt; AbstractChunkDiskReader.readAndDeliver catches it on the
-        // reader thread, counts an error, and answers the not-found envelope. Pinned:
-        // the WHOLE chunk resolves NOT_GENERATED — surviving siblings do not serve
-        // (contrast with the per-section skip of malformed block_states below).
+        // 1.21.1 line: NBT lists are HOMOGENEOUS on this MC (heterogeneity arrived
+        // 1.21.5), so a mixed sections list is unrepresentable — the representable
+        // corrupt shape is a sections list of the WRONG element type wholesale; the
+        // serializer's typed getList reads it as empty and the WHOLE chunk resolves
+        // null (the not-found envelope) — same contract as the 26.x CCE flavor (see
+        // the Fabric twin).
         var corrupt = new CompoundTag();
         corrupt.putString("Status", "minecraft:full");
         var list = new ListTag();
-        list.add(sectionNbt(0, true, true, null, null));
         list.add(StringTag.valueOf("not-a-section"));
-        list.add(sectionNbt(2, true, true, null, null));
+        list.add(StringTag.valueOf("also-not-a-section"));
         corrupt.put("sections", list);
-        assertThrows(ClassCastException.class,
-                () -> PaperNbtSectionSerializer.serializeChunkNbt(corrupt, REGISTRY_ACCESS));
+        assertNull(PaperNbtSectionSerializer.serializeChunkNbt(corrupt, REGISTRY_ACCESS));
     }
 
     @Test
@@ -473,13 +469,13 @@ class NbtSectionSerializerTest {
         sec.setBlockState(1, 0, 0, Blocks.DIRT.defaultBlockState());
         var s = new CompoundTag();
         s.putInt("Y", 1);
-        s.put("block_states", FACTORY.blockStatesContainerCodec()
+        s.put("block_states", dev.vox.lss.paper.testutil.TestPalettedContainers.blockStatesContainerCodec()
                 .encodeStart(NbtOps.INSTANCE, sec.getStates()).getOrThrow());
-        var palette = s.getCompound("block_states").orElseThrow().getList("palette").orElseThrow();
+        var palette = s.getCompound("block_states").getList("palette", net.minecraft.nbt.Tag.TAG_COMPOUND);
         boolean renamed = false;
         for (var e : palette) {
             var pe = (CompoundTag) e;
-            if ("minecraft:dirt".equals(pe.getStringOr("Name", ""))) {
+            if ("minecraft:dirt".equals(pe.getString("Name"))) {
                 pe.putString("Name", "lss:renamed_away");
                 renamed = true;
             }
@@ -699,17 +695,17 @@ class NbtSectionSerializerTest {
 
     @Test
     void golden_multiSection_listOrderPreserved() throws IOException {
-        var bottom = FACTORY.createForBlockStates();
+        var bottom = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBlockStates();
         bottom.set(0, 0, 0, Blocks.STONE.defaultBlockState());
-        var middle = FACTORY.createForBlockStates();
+        var middle = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBlockStates();
         middle.set(8, 8, 8, Blocks.DIRT.defaultBlockState());
-        var top = FACTORY.createForBlockStates();
+        var top = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBlockStates();
         top.set(15, 15, 15, Blocks.GLASS.defaultBlockState());
         byte[] wire = PaperNbtSectionSerializer.serializeChunkNbt(
                 chunkNbt("minecraft:full",
-                        sectionFrom(0, middle, FACTORY.createForBiomes()),
-                        sectionFrom(-4, bottom, FACTORY.createForBiomes()),
-                        sectionFrom(7, top, FACTORY.createForBiomes())),
+                        sectionFrom(0, middle, dev.vox.lss.paper.testutil.TestPalettedContainers.createForBiomes(FACTORY)),
+                        sectionFrom(-4, bottom, dev.vox.lss.paper.testutil.TestPalettedContainers.createForBiomes(FACTORY)),
+                        sectionFrom(7, top, dev.vox.lss.paper.testutil.TestPalettedContainers.createForBiomes(FACTORY))),
                 REGISTRY_ACCESS);
         var sections = decode(wire);
         assertEquals(3, sections.size());
@@ -735,7 +731,7 @@ class NbtSectionSerializerTest {
 
     @Test
     void golden_multiPaletteFullSection() throws IOException {
-        var states = FACTORY.createForBlockStates();
+        var states = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBlockStates();
         for (int y = 0; y < 16; y++) {
             for (int z = 0; z < 16; z++) {
                 for (int x = 0; x < 16; x++) {
@@ -744,7 +740,7 @@ class NbtSectionSerializerTest {
             }
         }
         byte[] wire = PaperNbtSectionSerializer.serializeChunkNbt(
-                chunkNbt("minecraft:full", sectionFrom(2, states, FACTORY.createForBiomes())),
+                chunkNbt("minecraft:full", sectionFrom(2, states, dev.vox.lss.paper.testutil.TestPalettedContainers.createForBiomes(FACTORY))),
                 REGISTRY_ACCESS);
         var section = decode(wire).get(0).section();
         assertEquals(Blocks.STONE.defaultBlockState(), section.getBlockState(0, 0, 0));
@@ -756,7 +752,7 @@ class NbtSectionSerializerTest {
     void golden_nonDefaultBiomePattern() throws IOException {
         var biomeRegistry = REGISTRY_ACCESS.lookupOrThrow(Registries.BIOME);
         var corpusBiomes = List.of(Biomes.DESERT, Biomes.JUNGLE, Biomes.SNOWY_TAIGA);
-        var biomes = FACTORY.createForBiomes();
+        var biomes = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBiomes(FACTORY);
         for (int qy = 0; qy < 4; qy++) {
             for (int qz = 0; qz < 4; qz++) {
                 for (int qx = 0; qx < 4; qx++) {
@@ -764,7 +760,7 @@ class NbtSectionSerializerTest {
                 }
             }
         }
-        var states = FACTORY.createForBlockStates();
+        var states = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBlockStates();
         states.set(0, 0, 0, Blocks.STONE.defaultBlockState());
         byte[] wire = PaperNbtSectionSerializer.serializeChunkNbt(
                 chunkNbt("minecraft:full", sectionFrom(0, states, biomes)), REGISTRY_ACCESS);
@@ -810,12 +806,12 @@ class NbtSectionSerializerTest {
 
     @Test
     void golden_waterloggedBlockStateProperty() throws IOException {
-        var states = FACTORY.createForBlockStates();
+        var states = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBlockStates();
         states.set(0, 0, 0, Blocks.OAK_STAIRS.defaultBlockState().setValue(BlockStateProperties.WATERLOGGED, true));
         states.set(1, 0, 0, Blocks.OAK_STAIRS.defaultBlockState());
         states.set(2, 0, 0, Blocks.STONE.defaultBlockState());
         byte[] wire = PaperNbtSectionSerializer.serializeChunkNbt(
-                chunkNbt("minecraft:full", sectionFrom(1, states, FACTORY.createForBiomes())),
+                chunkNbt("minecraft:full", sectionFrom(1, states, dev.vox.lss.paper.testutil.TestPalettedContainers.createForBiomes(FACTORY))),
                 REGISTRY_ACCESS);
         var section = decode(wire).get(0).section();
         assertTrue(section.getBlockState(0, 0, 0).getValue(BlockStateProperties.WATERLOGGED),
@@ -851,12 +847,12 @@ class NbtSectionSerializerTest {
         // ideal widths 1-4 all onto 4-bit linear; the boundary where ideal and stored
         // width diverge (a transcoder computing ceillog2 naively corrupts every 2-entry
         // section here).
-        var states = FACTORY.createForBlockStates();
+        var states = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBlockStates();
         for (int x = 0; x < 16; x++)
             for (int z = 0; z < 16; z++)
                 states.set(x, 0, z, Blocks.STONE.defaultBlockState());
         byte[] wire = PaperNbtSectionSerializer.serializeChunkNbt(
-                chunkNbt("minecraft:full", sectionFrom(0, states, FACTORY.createForBiomes())),
+                chunkNbt("minecraft:full", sectionFrom(0, states, dev.vox.lss.paper.testutil.TestPalettedContainers.createForBiomes(FACTORY))),
                 REGISTRY_ACCESS);
         var section = decode(wire).get(0).section();
         assertEquals(Blocks.STONE.defaultBlockState(), section.getBlockState(0, 0, 0));
@@ -870,14 +866,14 @@ class NbtSectionSerializerTest {
         // entries), the first width past linear.
         var pool = Blocks.OAK_STAIRS.getStateDefinition().getPossibleStates();
         assertTrue(pool.size() >= 24, "premise: oak_stairs has at least 24 states");
-        var states = FACTORY.createForBlockStates();
+        var states = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBlockStates();
         int i = 0;
         for (int y = 0; y < 16; y++)
             for (int z = 0; z < 16; z++)
                 for (int x = 0; x < 16; x++)
                     states.set(x, y, z, pool.get(i++ % 24));
         byte[] wire = PaperNbtSectionSerializer.serializeChunkNbt(
-                chunkNbt("minecraft:full", sectionFrom(1, states, FACTORY.createForBiomes())),
+                chunkNbt("minecraft:full", sectionFrom(1, states, dev.vox.lss.paper.testutil.TestPalettedContainers.createForBiomes(FACTORY))),
                 REGISTRY_ACCESS);
         var section = decode(wire).get(0).section();
         assertEquals(pool.get(0), section.getBlockState(0, 0, 0));
@@ -897,14 +893,14 @@ class NbtSectionSerializerTest {
             pool.addAll(block.getStateDefinition().getPossibleStates());
         }
         assertTrue(pool.size() > 256, "premise: four stair blocks exceed the 256-entry ceiling");
-        var states = FACTORY.createForBlockStates();
+        var states = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBlockStates();
         int i = 0;
         for (int y = 0; y < 16; y++)
             for (int z = 0; z < 16; z++)
                 for (int x = 0; x < 16; x++)
                     states.set(x, y, z, pool.get(i++ % pool.size()));
         byte[] wire = PaperNbtSectionSerializer.serializeChunkNbt(
-                chunkNbt("minecraft:full", sectionFrom(3, states, FACTORY.createForBiomes())),
+                chunkNbt("minecraft:full", sectionFrom(3, states, dev.vox.lss.paper.testutil.TestPalettedContainers.createForBiomes(FACTORY))),
                 REGISTRY_ACCESS);
         var section = decode(wire).get(0).section();
         assertEquals(pool.get(0), section.getBlockState(0, 0, 0));
@@ -919,16 +915,16 @@ class NbtSectionSerializerTest {
         // and the wire ships palette ids in list order, duplicates included
         // (LinearPalette/HashMapPalette write byId 0..size-1, no dedup). Indices never
         // shift: cells of the unknown entries decode as air, known cells keep states.
-        var states = FACTORY.createForBlockStates();
+        var states = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBlockStates();
         states.set(0, 0, 0, Blocks.STONE.defaultBlockState());
         states.set(1, 0, 0, Blocks.DIRT.defaultBlockState());
         states.set(2, 0, 0, Blocks.GLASS.defaultBlockState());
-        var s = sectionFrom(0, states, FACTORY.createForBiomes());
-        var palette = s.getCompound("block_states").orElseThrow().getList("palette").orElseThrow();
+        var s = sectionFrom(0, states, dev.vox.lss.paper.testutil.TestPalettedContainers.createForBiomes(FACTORY));
+        var palette = s.getCompound("block_states").getList("palette", net.minecraft.nbt.Tag.TAG_COMPOUND);
         int renamed = 0;
         for (var e : palette) {
             var pe = (CompoundTag) e;
-            var name = pe.getStringOr("Name", "");
+            var name = pe.getString("Name");
             if ("minecraft:dirt".equals(name)) {
                 pe.putString("Name", "lss:gone_one");
                 renamed++;
@@ -956,13 +952,13 @@ class NbtSectionSerializerTest {
         var biomeRegistry = REGISTRY_ACCESS.lookupOrThrow(Registries.BIOME);
         var picks = List.of(Biomes.PLAINS, Biomes.DESERT, Biomes.JUNGLE,
                 Biomes.SNOWY_TAIGA, Biomes.SWAMP, Biomes.TAIGA);
-        var biomes = FACTORY.createForBiomes();
+        var biomes = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBiomes(FACTORY);
         int i = 0;
         for (int qy = 0; qy < 4; qy++)
             for (int qz = 0; qz < 4; qz++)
                 for (int qx = 0; qx < 4; qx++)
                     biomes.set(qx, qy, qz, biomeRegistry.getOrThrow(picks.get(i++ % picks.size())));
-        var states = FACTORY.createForBlockStates();
+        var states = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBlockStates();
         states.set(0, 0, 0, Blocks.STONE.defaultBlockState());
         byte[] wire = PaperNbtSectionSerializer.serializeChunkNbt(
                 chunkNbt("minecraft:full", sectionFrom(0, states, biomes)), REGISTRY_ACCESS);
@@ -982,13 +978,13 @@ class NbtSectionSerializerTest {
         var picks = List.of(Biomes.PLAINS, Biomes.DESERT, Biomes.JUNGLE, Biomes.SNOWY_TAIGA,
                 Biomes.SWAMP, Biomes.TAIGA, Biomes.SAVANNA, Biomes.BADLANDS, Biomes.BEACH,
                 Biomes.RIVER);
-        var biomes = FACTORY.createForBiomes();
+        var biomes = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBiomes(FACTORY);
         int i = 0;
         for (int qy = 0; qy < 4; qy++)
             for (int qz = 0; qz < 4; qz++)
                 for (int qx = 0; qx < 4; qx++)
                     biomes.set(qx, qy, qz, biomeRegistry.getOrThrow(picks.get(i++ % picks.size())));
-        var states = FACTORY.createForBlockStates();
+        var states = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBlockStates();
         states.set(0, 0, 0, Blocks.STONE.defaultBlockState());
         byte[] wire = PaperNbtSectionSerializer.serializeChunkNbt(
                 chunkNbt("minecraft:full", sectionFrom(0, states, biomes)), REGISTRY_ACCESS);
@@ -1044,11 +1040,11 @@ class NbtSectionSerializerTest {
             // Expected: identical envelope, but the section body written by the real
             // counting ctor + LevelChunkSection.write. Round-trip the SAME NBT through the
             // factory codec so palette order matches what the headless path parsed.
-            var roundTripped = FACTORY.blockStatesContainerCodec()
-                    .parse(NbtOps.INSTANCE, sectionNbtFor(4, sec).getCompound("block_states").orElseThrow())
+            var roundTripped = dev.vox.lss.paper.testutil.TestPalettedContainers.blockStatesContainerCodec()
+                    .parse(NbtOps.INSTANCE, sectionNbtFor(4, sec).getCompound("block_states"))
                     .getOrThrow();
-            var biomesRT = FACTORY.biomeContainerCodec()
-                    .parse(NbtOps.INSTANCE, sectionNbtFor(4, sec).getCompound("biomes").orElseThrow())
+            var biomesRT = dev.vox.lss.paper.testutil.TestPalettedContainers.biomeContainerCodec(FACTORY)
+                    .parse(NbtOps.INSTANCE, sectionNbtFor(4, sec).getCompound("biomes"))
                     .getOrThrow();
             var real = new LevelChunkSection(roundTripped,
                     (net.minecraft.world.level.chunk.PalettedContainer<net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome>>) biomesRT);
@@ -1080,9 +1076,9 @@ class NbtSectionSerializerTest {
     private CompoundTag sectionNbtFor(int y, LevelChunkSection sec) {
         var s = new CompoundTag();
         s.putInt("Y", y);
-        s.put("block_states", FACTORY.blockStatesContainerCodec()
+        s.put("block_states", dev.vox.lss.paper.testutil.TestPalettedContainers.blockStatesContainerCodec()
                 .encodeStart(NbtOps.INSTANCE, sec.getStates()).getOrThrow());
-        s.put("biomes", FACTORY.biomeContainerCodec()
+        s.put("biomes", dev.vox.lss.paper.testutil.TestPalettedContainers.biomeContainerCodec(FACTORY)
                 .encodeStart(NbtOps.INSTANCE, sec.getBiomes()).getOrThrow());
         return s;
     }
@@ -1128,13 +1124,13 @@ class NbtSectionSerializerTest {
                 case 2 -> 2048;
                 default -> 4096;
             };
-            var states = FACTORY.createForBlockStates();
+            var states = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBlockStates();
             for (int i = 0; i < placements; i++) {
                 int cell = rng.nextInt(4096);
                 states.set(cell & 15, (cell >> 8) & 15, (cell >> 4) & 15,
                         pool.get(rng.nextInt(pool.size())));
             }
-            var biomes = FACTORY.createForBiomes();
+            var biomes = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBiomes(FACTORY);
             int biomeWidth = 1 + round % 10;
             for (int q = 0; q < 64; q++) {
                 biomes.set(q & 3, (q >> 4) & 3, (q >> 2) & 3,
@@ -1190,14 +1186,14 @@ class NbtSectionSerializerTest {
             int sectionCount = 1 + rng.nextInt(3);
             int baseY = -4 + rng.nextInt(8);
             for (int i = 0; i < sectionCount; i++) {
-                var states = FACTORY.createForBlockStates();
+                var states = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBlockStates();
                 int placements = 1 + rng.nextInt(4096);
                 for (int p = 0; p < placements; p++) {
                     int cell = rng.nextInt(4096);
                     states.set(cell & 15, (cell >> 8) & 15, (cell >> 4) & 15,
                             pool.get(rng.nextInt(pool.size())));
                 }
-                sectionList.add(sectionFrom(baseY + i, states, FACTORY.createForBiomes()));
+                sectionList.add(sectionFrom(baseY + i, states, dev.vox.lss.paper.testutil.TestPalettedContainers.createForBiomes(FACTORY)));
             }
             var chunk = chunkNbt("minecraft:full", sectionList.toArray(new CompoundTag[0]));
             byte[] transcoded = PaperNbtSectionSerializer.serializeChunkNbt(chunk, REGISTRY_ACCESS,
@@ -1229,12 +1225,12 @@ class NbtSectionSerializerTest {
             var tierPool = new ArrayList<net.minecraft.world.level.block.state.BlockState>();
             tierPool.add(Blocks.AIR.defaultBlockState());
             tierPool.addAll(widePool.subList(0, paletteSize - 1));
-            var states = FACTORY.createForBlockStates();
+            var states = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBlockStates();
             for (int cell = 0; cell < 4096; cell++) {
                 states.set(cell & 15, (cell >> 8) & 15, (cell >> 4) & 15,
                         tierPool.get(cell % paletteSize));
             }
-            var desert = FACTORY.createForBiomes();
+            var desert = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBiomes(FACTORY);
             for (int q = 0; q < 64; q++) {
                 desert.set(q & 3, (q >> 4) & 3, (q >> 2) & 3,
                         biomeRegistry.getOrThrow(Biomes.DESERT));
@@ -1263,11 +1259,11 @@ class NbtSectionSerializerTest {
         sec.setBlockState(0, 0, 0, Blocks.STONE.defaultBlockState());
         sec.setBlockState(1, 0, 0, Blocks.DIRT.defaultBlockState());
         var s = sectionNbtFor(1, sec);
-        var palette = s.getCompound("block_states").orElseThrow().getList("palette").orElseThrow();
+        var palette = s.getCompound("block_states").getList("palette", net.minecraft.nbt.Tag.TAG_COMPOUND);
         boolean renamed = false;
         for (var e : palette) {
             var pe = (CompoundTag) e;
-            if ("minecraft:dirt".equals(pe.getStringOr("Name", ""))) {
+            if ("minecraft:dirt".equals(pe.getString("Name"))) {
                 pe.putString("Name", "lss:renamed_away");
                 renamed = true;
             }
@@ -1288,11 +1284,11 @@ class NbtSectionSerializerTest {
         // longs; 255 is structural corruption with no partial — the whole column is an
         // authoritative miss on the object path, and the transcoder's fallback rung must
         // land on the same outcome, never silently re-derive.
-        var states = FACTORY.createForBlockStates();
+        var states = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBlockStates();
         states.set(0, 0, 0, Blocks.STONE.defaultBlockState());
-        var s = sectionFrom(0, states, FACTORY.createForBiomes());
-        var bs = s.getCompound("block_states").orElseThrow();
-        long[] data = bs.getLongArray("data").orElseThrow();
+        var s = sectionFrom(0, states, dev.vox.lss.paper.testutil.TestPalettedContainers.createForBiomes(FACTORY));
+        var bs = s.getCompound("block_states");
+        long[] data = bs.getLongArray("data");
         bs.putLongArray("data", Arrays.copyOf(data, data.length - 1));
         var chunk = chunkNbt("minecraft:full", s, sectionNbt(2, true, true, null, null));
         assertNull(PaperNbtSectionSerializer.serializeChunkNbt(chunk, REGISTRY_ACCESS,
@@ -1305,14 +1301,14 @@ class NbtSectionSerializerTest {
     void strayDataOnASingleEntryPaletteIsIgnoredOnBothPaths() {
         // ZeroBitStorage: a 1-entry palette ignores any data tag on disk (the bits-0
         // branch never reads it) — zero longs reach the wire on both paths.
-        var states = FACTORY.createForBlockStates();
+        var states = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBlockStates();
         for (int y = 0; y < 16; y++)
             for (int z = 0; z < 16; z++)
                 for (int x = 0; x < 16; x++)
                     states.set(x, y, z, Blocks.STONE.defaultBlockState());
-        var s = sectionFrom(0, states, FACTORY.createForBiomes());
-        var bs = s.getCompound("block_states").orElseThrow();
-        assertTrue(bs.getLongArray("data").isEmpty(), "premise: a single palette packs no data");
+        var s = sectionFrom(0, states, dev.vox.lss.paper.testutil.TestPalettedContainers.createForBiomes(FACTORY));
+        var bs = s.getCompound("block_states");
+        assertTrue(bs.getLongArray("data").length == 0, "premise: a single palette packs no data");
         bs.putLongArray("data", new long[]{-1L, 123L});
         var chunk = chunkNbt("minecraft:full", s);
         byte[] transcoded = PaperNbtSectionSerializer.serializeChunkNbt(chunk, REGISTRY_ACCESS,
@@ -1340,7 +1336,7 @@ class NbtSectionSerializerTest {
                 Blocks.JUNGLE_STAIRS)) {
             pool.addAll(block.getStateDefinition().getPossibleStates());
         }
-        var globalStates = FACTORY.createForBlockStates();
+        var globalStates = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBlockStates();
         int i = 0;
         for (int y = 0; y < 16; y++)
             for (int z = 0; z < 16; z++)
@@ -1350,7 +1346,7 @@ class NbtSectionSerializerTest {
         byte[] mixed = PaperNbtSectionSerializer.serializeChunkNbt(
                 chunkNbt("minecraft:full",
                         sectionNbt(0, true, true, null, null),
-                        sectionFrom(1, globalStates, FACTORY.createForBiomes())),
+                        sectionFrom(1, globalStates, dev.vox.lss.paper.testutil.TestPalettedContainers.createForBiomes(FACTORY))),
                 REGISTRY_ACCESS);
         assertEquals(2, decode(mixed).size(),
                 "premise: the mixed column still SERVES both sections via translate");
@@ -1372,9 +1368,9 @@ class NbtSectionSerializerTest {
         // transcode (mask() provably no-ops on them). The mixed column must byte-match
         // the all-object path, the hidden ore must be gone, and the above-cutoff ore
         // must stay real (the height-gate pin).
-        var ore = FACTORY.createForBlockStates();
-        var clean = FACTORY.createForBlockStates();
-        var high = FACTORY.createForBlockStates();
+        var ore = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBlockStates();
+        var clean = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBlockStates();
+        var high = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBlockStates();
         for (int x = 0; x < 16; x++) {
             for (int z = 0; z < 16; z++) {
                 ore.set(x, 0, z, Blocks.STONE.defaultBlockState());
@@ -1388,9 +1384,9 @@ class NbtSectionSerializerTest {
                 PaperXrayMaskFilter.MaskSet.resolve(List.of("diamond_ore"), 32),
                 dev.vox.lss.common.XrayMaskPolicy.FallbackKind.OVERWORLD, "test");
         var chunk = chunkNbt("minecraft:full",
-                sectionFrom(0, ore, FACTORY.createForBiomes()),
-                sectionFrom(1, clean, FACTORY.createForBiomes()),
-                sectionFrom(4, high, FACTORY.createForBiomes()));
+                sectionFrom(0, ore, dev.vox.lss.paper.testutil.TestPalettedContainers.createForBiomes(FACTORY)),
+                sectionFrom(1, clean, dev.vox.lss.paper.testutil.TestPalettedContainers.createForBiomes(FACTORY)),
+                sectionFrom(4, high, dev.vox.lss.paper.testutil.TestPalettedContainers.createForBiomes(FACTORY)));
         byte[] transcoded = PaperNbtSectionSerializer.serializeChunkNbt(chunk, REGISTRY_ACCESS,
                 entry, Integer.MIN_VALUE, Integer.MAX_VALUE, true);
         byte[] object = PaperNbtSectionSerializer.serializeChunkNbt(chunk, REGISTRY_ACCESS,
@@ -1424,7 +1420,7 @@ class NbtSectionSerializerTest {
                 Blocks.JUNGLE_STAIRS)) {
             pool.addAll(block.getStateDefinition().getPossibleStates());
         }
-        var globalStates = FACTORY.createForBlockStates();
+        var globalStates = dev.vox.lss.paper.testutil.TestPalettedContainers.createForBlockStates();
         int gi = 0;
         for (int y = 0; y < 16; y++)
             for (int z = 0; z < 16; z++)
@@ -1433,7 +1429,7 @@ class NbtSectionSerializerTest {
         long directBefore = PaperNbtSectionSerializer.DIRECT_V20_EMITS.get();
         PaperNbtSectionSerializer.serializeChunkNbt(chunkNbt("minecraft:full",
                 sectionNbt(0, true, true, light(3, (byte) 9), null),
-                sectionFrom(1, globalStates, FACTORY.createForBiomes())), REGISTRY_ACCESS);
+                sectionFrom(1, globalStates, dev.vox.lss.paper.testutil.TestPalettedContainers.createForBiomes(FACTORY))), REGISTRY_ACCESS);
         assertEquals(directBefore, PaperNbtSectionSerializer.DIRECT_V20_EMITS.get(),
                 "premise: the mixed column took the sized-buffer route, not the direct emit");
         assertEquals(before, PaperNbtSectionSerializer.SIZE_MISMATCH_FALLBACKS.get(),

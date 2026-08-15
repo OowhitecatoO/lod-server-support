@@ -2,7 +2,7 @@ package dev.vox.lss.networking.client;
 
 import com.mojang.brigadier.Command;
 import dev.vox.lss.common.Brand;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 
 /**
@@ -15,31 +15,31 @@ public class LSSClientCommands {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
             // Command literal is branded (lss / vss); it is a LOCAL client command and
             // never crosses the wire, so it does not affect LSS<->VSS compatibility.
-            dispatcher.register(ClientCommands.literal(Brand.clientCommand())
-                    .then(ClientCommands.literal("clearcache")
+            dispatcher.register(ClientCommandManager.literal(Brand.clientCommand())
+                    .then(ClientCommandManager.literal("clearcache")
                             .executes(context -> {
                                 ClientCommandActions.clearCache(context.getSource()::sendFeedback);
                                 return Command.SINGLE_SUCCESS;
                             })
                     )
-                    .then(ClientCommands.literal("reset")
+                    .then(ClientCommandManager.literal("reset")
                             .executes(context -> {
                                 ClientCommandActions.runReset(context.getSource()::sendFeedback, false);
                                 return Command.SINGLE_SUCCESS;
                             })
-                            .then(ClientCommands.literal("confirm")
+                            .then(ClientCommandManager.literal("confirm")
                                     .executes(context -> {
                                         ClientCommandActions.runReset(context.getSource()::sendFeedback, true);
                                         return Command.SINGLE_SUCCESS;
                                     }))
                     )
-                    .then(ClientCommands.literal("diag")
+                    .then(ClientCommandManager.literal("diag")
                             .executes(context -> {
                                 ClientCommandActions.showDiagnostics(context.getSource()::sendFeedback);
                                 return Command.SINGLE_SUCCESS;
                             })
                     )
-                    .then(ClientCommands.literal("trace")
+                    .then(ClientCommandManager.literal("trace")
                             .executes(context -> {
                                 ClientCommandActions.toggleTrace(context.getSource()::sendFeedback);
                                 return Command.SINGLE_SUCCESS;

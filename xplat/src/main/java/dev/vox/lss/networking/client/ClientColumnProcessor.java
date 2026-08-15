@@ -14,8 +14,9 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.chunk.DataLayer;
+import net.minecraft.core.Registry;
+import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.chunk.LevelChunkSection;
-import net.minecraft.world.level.chunk.PalettedContainerFactory;
 
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
@@ -201,9 +202,12 @@ class ClientColumnProcessor {
     }
 
     private void drainColumnQueue(ClientLevel level, int epoch) {
-        var factory = PalettedContainerFactory.create(level.registryAccess());
+        // 1.21.1 line: the section-construction seam handle is the biome Registry
+        // (no PalettedContainerFactory on this MC); local name kept for diff stability.
+        var factory = level.registryAccess().registryOrThrow(
+                net.minecraft.core.registries.Registries.BIOME);
         var resolver = resolverFor(level, factory);
-        drainColumnQueue(level.dimension(), level.getSectionsCount(), level.getMinSectionY(),
+        drainColumnQueue(level.dimension(), level.getSectionsCount(), level.getMinSection(),
                 level.dimensionType().hasSkyLight(),
                 factory,
                 // Legacy-server (v16 OR the C3 ladder's 19 rung) sessions ship NATIVE
@@ -228,14 +232,12 @@ class ClientColumnProcessor {
     private volatile ClientIdentityResolver identityResolver;
     private volatile Object identityResolverKey;
 
-    private ClientIdentityResolver resolverFor(ClientLevel level, PalettedContainerFactory factory) {
+    private ClientIdentityResolver resolverFor(ClientLevel level, Registry<Biome> factory) {
         var key = level.registryAccess();
         var resolver = this.identityResolver;
         if (resolver == null || this.identityResolverKey != key) {
             try {
-                resolver = new ClientIdentityResolver(
-                        key.lookupOrThrow(net.minecraft.core.registries.Registries.BIOME),
-                        factory.biomeStrategy().globalMap());
+                resolver = new ClientIdentityResolver(factory, factory.asHolderIdMap());
             } catch (Throwable ctor) {
                 // Containment belt (C6 review C-2): a throwing constructor used to
                 // escape the drain's executor task EVERY tick with no ingest-failure
@@ -276,14 +278,14 @@ class ClientColumnProcessor {
      *  through the resolver-backed 8-arg form. */
     void drainColumnQueue(ResourceKey<Level> levelDimension, int levelSectionCount, int minSectionY,
                           boolean hasSkyLight,
-                          PalettedContainerFactory factory, ColumnDispatcher dispatcher, int epoch) {
+                          Registry<Biome> factory, ColumnDispatcher dispatcher, int epoch) {
         drainColumnQueue(levelDimension, levelSectionCount, minSectionY, hasSkyLight,
                 factory, java.util.function.UnaryOperator.identity(), dispatcher, epoch);
     }
 
     void drainColumnQueue(ResourceKey<Level> levelDimension, int levelSectionCount, int minSectionY,
                           boolean hasSkyLight,
-                          PalettedContainerFactory factory,
+                          Registry<Biome> factory,
                           java.util.function.UnaryOperator<byte[]> v20ToNative,
                           ColumnDispatcher dispatcher, int epoch) {
         QueuedColumn queued;
@@ -429,7 +431,7 @@ class ClientColumnProcessor {
      */
     static VoxelColumnData.SectionData[] withImplicitSkyAbove(
             VoxelColumnData.SectionData[] present, int levelSectionCount, int minSectionY,
-            PalettedContainerFactory factory) {
+            Registry<Biome> factory) {
         if (present.length == 0) return present;   // a CLEAR stays a clear
         int top = Integer.MIN_VALUE;
         for (var s : present) top = Math.max(top, s.sectionY());
@@ -450,7 +452,7 @@ class ClientColumnProcessor {
 
     static VoxelColumnData.SectionData[] withAirFilledAbsentSections(
             VoxelColumnData.SectionData[] present, int levelSectionCount, int minSectionY,
-            PalettedContainerFactory factory, boolean brightSky) {
+            Registry<Biome> factory, boolean brightSky) {
         var seen = new java.util.HashSet<Integer>(present.length * 2);
         for (var s : present) seen.add(s.sectionY());
 
@@ -525,7 +527,7 @@ class ClientColumnProcessor {
      * drain converts into an ingest-failure report for the column.
      */
     static VoxelColumnData.SectionData[] decodeSections(byte[] decompressed, int levelSectionCount,
-                                                        PalettedContainerFactory factory) {
+                                                        Registry<Biome> factory) {
         var buf = new FriendlyByteBuf(Unpooled.wrappedBuffer(decompressed));
         try {
             int sectionCount = Math.max(0, Math.min(buf.readVarInt(), levelSectionCount));

@@ -21,7 +21,11 @@ import java.util.List;
  *   bits==0            -> VarInt single palette value, no data words
  *   0&lt;bits&lt;=threshold  -> VarInt paletteCount + paletteCount VarInt values, then data
  *   bits&gt;threshold     -> DIRECT: NO palette list, data holds registry ids
- * data: ceil(entries / (64/bits)) raw big-endian longs, NO length prefix
+ * data: ceil(entries / (64/bits)) raw big-endian longs.
+ *   1.21.1 line: the NATIVE layout carries a VarInt long-count BEFORE the words
+ *   (vanilla writeLongArray/readLongArray — the 26.x/1.21.11 prefix-free
+ *   optimization does not exist on this MC; javap-verified PalettedContainer$Data
+ *   .write). V20 stays prefix-free — line-invariant wire spec, never flavored.
  * thresholds: blocks 8, biomes 3 (vanilla's width→shape strategy tables)
  * </pre>
  * Vanilla's width→shape tables also make some widths ILLEGAL on the wire even
@@ -60,6 +64,11 @@ import java.util.List;
  * "fix" this into a validating parse.
  */
 public final class WireSectionCursor {
+
+    // 1.21.1 line: vanilla's native container serialization length-prefixes its long
+    // array (writeLongArray = VarInt count + words); 26.x/1.21.11 write the words bare.
+    // This axis belongs in NativeSectionShape conceptually, but that descriptor is
+    // owned/frozen by the coordinator this round — FLAGGED in the port report; a
     private WireSectionCursor() {}
 
     public enum Layout { NATIVE, V20 }
@@ -177,8 +186,17 @@ public final class WireSectionCursor {
         int bits = in.readUnsignedByte();
         checkWidth(bits, layout, isBlocks);
         if (bits == 0) {
-            return new WireContainer(0,
+            var single = new WireContainer(0,
                     new int[] { readPaletteValue(in, layout, isBlocks, dictSize) }, EMPTY_DATA);
+            if (layout == Layout.NATIVE && NativeSectionShape.NATIVE_LONG_ARRAY_PREFIXED) {
+                // 1.21.1 line: vanilla's single-value container still writes its (empty)
+                // long array through writeLongArray — one VarInt 0 on the wire.
+                int len = in.readVarIntCount("longCount");
+                if (len != 0) {
+                    throw new WireFormatException("single-value container longCount " + len);
+                }
+            }
+            return single;
         }
         int[] palette = null;
         int paletteThreshold = isBlocks ? NATIVE_BLOCK_PALETTE_MAX_BITS : NATIVE_BIOME_PALETTE_MAX_BITS;
@@ -194,6 +212,15 @@ public final class WireSectionCursor {
         }
         int valuesPerLong = 64 / bits;
         int longCount = (entries + valuesPerLong - 1) / valuesPerLong;
+        if (layout == Layout.NATIVE && NativeSectionShape.NATIVE_LONG_ARRAY_PREFIXED) {
+            // 1.21.1 line: the wire carries the VarInt long count; vanilla's
+            // readLongArray hard-fails a mismatch, and so does the cursor.
+            int claimed = in.readVarIntCount("longCount");
+            if (claimed != longCount) {
+                throw new WireFormatException("container longCount " + claimed
+                        + ", layout implies " + longCount);
+            }
+        }
         long[] data = new long[longCount];
         for (int i = 0; i < longCount; i++) {
             data[i] = in.readLong();
@@ -302,6 +329,9 @@ public final class WireSectionCursor {
                 throw new WireFormatException("malformed single-value container");
             }
             out.writeVarInt(checkPaletteValue(c.palette()[0], layout, isBlocks, dictSize));
+            if (layout == Layout.NATIVE && NativeSectionShape.NATIVE_LONG_ARRAY_PREFIXED) {
+                out.writeVarInt(0); // 1.21.1 line: the empty writeLongArray prefix
+            }
             return;
         }
         if (!c.isDirect()) {
@@ -323,6 +353,9 @@ public final class WireSectionCursor {
         if (c.data().length != expected) {
             throw new WireFormatException("container data has " + c.data().length
                     + " longs, layout implies " + expected);
+        }
+        if (layout == Layout.NATIVE && NativeSectionShape.NATIVE_LONG_ARRAY_PREFIXED) {
+            out.writeVarInt(expected); // 1.21.1 line: vanilla's writeLongArray prefix
         }
         for (long l : c.data()) {
             out.writeLong(l);

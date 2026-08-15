@@ -435,7 +435,7 @@ public class PaperRequestProcessingService {
             var regionDirs = new java.util.HashMap<String, java.nio.file.Path>();
             var maskFingerprints = new java.util.HashMap<String, String>();
             for (ServerLevel level : server.getAllLevels()) {
-                String dim = level.dimension().identifier().toString();
+                String dim = level.dimension().location().toString();
                 // Paper 26.x uses the vanilla UNIFIED world layout (one world dir,
                 // dimensions/minecraft/<dim>/region — verified on disk against a live
                 // 26.2 Paper server), so the server worldRoot is the correct
@@ -512,7 +512,7 @@ public class PaperRequestProcessingService {
         }
         var biomeKeys = new java.util.ArrayList<String>();
         var biomes = server.registryAccess()
-                .lookupOrThrow(net.minecraft.core.registries.Registries.BIOME);
+                .registryOrThrow(net.minecraft.core.registries.Registries.BIOME);
         for (var biome : biomes) {
             var key = biomes.getKey(biome);
             biomeKeys.add(key == null ? "?" : key.toString());
@@ -764,7 +764,7 @@ public class PaperRequestProcessingService {
                     this.config.generationConcurrencyLimitPerPlayer);
             // Session identity for the router's stale-snapshot guard (set before the map
             // publish so the processing thread never sees it null on a live state).
-            s.setRegisteredDimension(player.level().dimension().identifier().toString());
+            s.setRegisteredDimension(player.level().dimension().location().toString());
             // Transport-pressure gauge (elytra-wall §8.3), Fabric-parity.
             s.setChannelPressureProbe(PaperChannelPressure.forPlayer(player));
             return s;
@@ -1033,7 +1033,7 @@ public class PaperRequestProcessingService {
             if (!state.hasCompletedHandshake()) continue;
             var player = state.getPlayer();
             this.v16Compat.tickPlayer(player.getUUID(), state,
-                    player.chunkPosition().x(), player.chunkPosition().z(), maxDist);
+                    player.chunkPosition().x, player.chunkPosition().z, maxDist);
         }
     }
 
@@ -1110,13 +1110,16 @@ public class PaperRequestProcessingService {
             }
 
             var player = state.getPlayer();
-            var level = player.level();
+            // 1.21.1 line: level() returns plain Level here — cast rather than
+            // serverLevel(), which is a distinct method the test twins' mocks (stubbing
+            // level(), the cross-line contract) would answer with null.
+            var level = (net.minecraft.server.level.ServerLevel) player.level();
             // Ring origin for the generation order-spread gate — must be the REAL player
             // chunk (the want-set's first entry sits at ~viewDistance on a ring perimeter,
             // which wedged the gate — see AbstractPlayerRequestState.updatePlayerChunk).
-            state.updatePlayerChunk(player.chunkPosition().x(), player.chunkPosition().z());
+            state.updatePlayerChunk(player.chunkPosition().x, player.chunkPosition().z);
             String dimension = this.dimensionStringCache.computeIfAbsent(level.dimension(),
-                    k -> k.identifier().toString());
+                    k -> k.location().toString());
 
             this.offThreadProcessor.updateDimensionContext(dimension, level);
 
@@ -1379,7 +1382,7 @@ public class PaperRequestProcessingService {
             }
         }
         if (found == null) return;
-        var batch = new RegionProbeBatch(level.dimension().identifier().toString(), found);
+        var batch = new RegionProbeBatch(level.dimension().location().toString(), found);
         this.regionProbeResults.compute(uuid, (k, prev) -> {
             if (prev == null || !prev.dimension().equals(batch.dimension())) return batch;
             prev.probes().putAll(batch.probes());
@@ -1408,9 +1411,12 @@ public class PaperRequestProcessingService {
                 continue;
 
             var player = state.getPlayer();
-            var level = player.level();
+            // 1.21.1 line: level() returns plain Level here — cast rather than
+            // serverLevel(), which is a distinct method the test twins' mocks (stubbing
+            // level(), the cross-line contract) would answer with null.
+            var level = (net.minecraft.server.level.ServerLevel) player.level();
             String dimension = this.dimensionStringCache.computeIfAbsent(level.dimension(),
-                    k -> k.identifier().toString());
+                    k -> k.location().toString());
             // Ticket queued before a dimension change targets the old dimension's coordinates.
             // Dropping it leaks nothing: the admitting state was discarded by
             // removePlayer+registerPlayer (its slot dies with it), AND that same removePlayer
@@ -1491,14 +1497,16 @@ public class PaperRequestProcessingService {
         player.connection.send(new net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket(
                 new net.minecraft.network.protocol.common.custom.DiscardedPayload(
                         FAR_PLAYER_CHANNEL_IDS.computeIfAbsent(channel,
-                                net.minecraft.resources.Identifier::parse), body)));
+                                net.minecraft.resources.ResourceLocation::parse),
+                        // 1.21.1 line: ByteBuf-carrying DiscardedPayload
+                        io.netty.buffer.Unpooled.wrappedBuffer(body))));
         this.bandwidthLimiter.recordSend(body.length);
         return true;
     }
 
     // Two entries ever (roster + updates) — parse once, not per frame (review NIT).
     private static final java.util.concurrent.ConcurrentHashMap<String,
-            net.minecraft.resources.Identifier> FAR_PLAYER_CHANNEL_IDS =
+            net.minecraft.resources.ResourceLocation> FAR_PLAYER_CHANNEL_IDS =
             new java.util.concurrent.ConcurrentHashMap<>();
 
     public dev.vox.lss.common.farplayers.FarPlayerBroadcastService getFarPlayerService() {

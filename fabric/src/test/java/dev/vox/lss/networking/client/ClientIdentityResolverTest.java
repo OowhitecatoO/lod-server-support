@@ -11,7 +11,7 @@ import net.minecraft.core.RegistrationInfo;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.data.registries.VanillaRegistries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.Biomes;
@@ -20,7 +20,6 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.Half;
-import net.minecraft.world.level.chunk.PalettedContainerFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -77,10 +76,8 @@ class ClientIdentityResolverTest {
         biomes.freeze();
         BIOME_REGISTRY = biomes;
         // The SAME map production hands the resolver (ClientColumnProcessor.resolverFor):
-        // the factory strategy's global holder map, never bare Registry ids.
-        BIOME_ID_MAP = PalettedContainerFactory
-                .create(new RegistryAccess.ImmutableRegistryAccess(List.of(biomes)))
-                .biomeStrategy().globalMap();
+        // 1.21.1 line — the registry's holder id map (no PalettedContainerFactory here).
+        BIOME_ID_MAP = biomes.asHolderIdMap();
     }
 
     // The resolver snapshots LSSClientConfig.CONFIG in its constructor. Pin the two
@@ -115,8 +112,8 @@ class ClientIdentityResolverTest {
         return idOf(Blocks.STONE.defaultBlockState());
     }
 
-    private static int biomeIdOf(Identifier id) {
-        return BIOME_ID_MAP.getId(BIOME_REGISTRY.get(id).orElseThrow());
+    private static int biomeIdOf(ResourceLocation id) {
+        return BIOME_ID_MAP.getId(BIOME_REGISTRY.getHolder(id).orElseThrow());
     }
 
     // ---- rung 1: exact ----------------------------------------------------------
@@ -293,11 +290,11 @@ class ClientIdentityResolverTest {
     @Test
     void biomeIdentityResolvesExactlyAndUnknownFallsBackToPlains() {
         var r = newResolver();
-        assertEquals(biomeIdOf(Identifier.parse("minecraft:desert")),
+        assertEquals(biomeIdOf(ResourceLocation.parse("minecraft:desert")),
                 r.biomeIdFor("minecraft:desert"));
         assertEquals(0, r.fallbackCount(), "an exact biome resolve is not a fallback");
 
-        int plains = biomeIdOf(Identifier.parse("minecraft:plains"));
+        int plains = biomeIdOf(ResourceLocation.parse("minecraft:plains"));
         assertEquals(plains, r.biomeIdFor("hills:unknown_biome"));
         assertEquals(1, r.fallbackCount());
         // Memoized like blocks: the repeat costs no second count.

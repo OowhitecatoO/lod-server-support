@@ -36,6 +36,35 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class XverLiveCorpusDecodeTest {
 
+    // 1.21.1 line: the class javadoc's support-line rule made concrete — the corpus is
+    // 26.2-mainline capture (NEVER regenerated here), and these identities are genuinely
+    // new mainline content this line's registry lacks. Per the documented rule they move
+    // to the CLIENT FALLBACK expectations (terminal minecraft:stone), pinned as an EXACT
+    // set both directions: a NEW unknown identity reds (the tripwire survives), and a
+    // vanished entry reds too (a re-captured corpus must re-derive this pin). Populated
+    // from the first strict run on this line; every entry hand-checked absent from
+    // 1.21.1's block registry.
+    private static final java.util.Set<String> LINE_DRIFTED_BLOCK_IDENTITIES =
+            buildLineDriftPin();
+
+    /** The 2025 "spring drop" blocks (1.21.5+): bush + the leaf_litter/wildflowers
+     *  4-facing x 4-amount state families — enumerated from the first strict run on
+     *  this line, spot-checked absent from the 1.21.1 registry. */
+    private static java.util.Set<String> buildLineDriftPin() {
+        var pin = new java.util.TreeSet<String>();
+        pin.add("minecraft:bush");
+        for (String facing : new String[]{"east", "north", "south", "west"}) {
+            for (int n = 1; n <= 4; n++) {
+                pin.add("minecraft:leaf_litter[facing=" + facing + ",segment_amount=" + n + "]");
+                pin.add("minecraft:wildflowers[facing=" + facing + ",flower_amount=" + n + "]");
+            }
+        }
+        return java.util.Collections.unmodifiableSet(pin);
+    }
+    /** 1.21.1 line: no biome drift observed (biomes are stable across these lines). */
+    private static final java.util.Set<String> LINE_DRIFTED_BIOME_IDENTITIES =
+            java.util.Set.of();
+
     static {
         SharedConstants.tryDetectVersion();
         Bootstrap.bootStrap();
@@ -105,34 +134,53 @@ class XverLiveCorpusDecodeTest {
 
     @Test
     void everyLiveFixtureDecodesStrictlyAgainstThisLinesRegistries() throws Exception {
+        var allObservedBlockDrift = new java.util.TreeSet<String>();
+        var allObservedBiomeDrift = new java.util.TreeSet<String>();
         for (Path fixture : fixtures()) {
             byte[] v20 = Files.readAllBytes(fixture);
             var column = WireSectionCursor.parse(v20, WireSectionCursor.Layout.V20);
             assertTrue(column.dictionary().size() > 0, fixture + ": empty dictionary");
 
-            // Strict resolvers, line-neutral (V-1/T4): every captured identity must
-            // resolve on the line this test runs on — see the class javadoc for what a
-            // miss means on the capture line vs a support line.
+            // 1.21.1 line: strict resolvers over THIS LINE's registries, with the
+            // pinned drift set routed to the terminal fallback (the class javadoc's
+            // support-line rule — never a silent widening: unknowns outside the pin
+            // still throw, and the observed set must equal the pin exactly, below).
+            var observedBlockDrift = new java.util.TreeSet<String>();
+            var observedBiomeDrift = new java.util.TreeSet<String>();
             byte[] nativeBody = V20ToNativeTranslator.translate(v20,
                     identity -> {
                         Integer id = blockIds.get(identity);
                         if (id == null) {
-                            throw new AssertionError(fixture + ": block identity '"
-                                    + identity + "' (captured on the 26.2 mainline) is "
-                                    + "unknown on this line — see the class javadoc");
+                            observedBlockDrift.add(identity);
+                            if (!LINE_DRIFTED_BLOCK_IDENTITIES.contains(identity)) {
+                                throw new AssertionError(fixture + ": block identity '"
+                                        + identity + "' (captured on the 26.2 mainline) is "
+                                        + "unknown on this line AND not in the pinned drift"
+                                        + " set — re-derive LINE_DRIFTED_BLOCK_IDENTITIES");
+                            }
+                            return blockIds.get("minecraft:stone");
                         }
                         return id;
                     },
                     identity -> {
                         Integer id = biomeIds.get(identity);
                         if (id == null) {
-                            throw new AssertionError(fixture + ": biome identity '"
-                                    + identity + "' (captured on the 26.2 mainline) is "
-                                    + "unknown on this line — see the class javadoc");
+                            observedBiomeDrift.add(identity);
+                            if (!LINE_DRIFTED_BIOME_IDENTITIES.contains(identity)) {
+                                throw new AssertionError(fixture + ": biome identity '"
+                                        + identity + "' (captured on the 26.2 mainline) is "
+                                        + "unknown on this line AND not in the pinned drift"
+                                        + " set — re-derive LINE_DRIFTED_BIOME_IDENTITIES");
+                            }
+                            return biomeIds.get("minecraft:plains");
                         }
                         return id;
                     },
                     blockRegistrySize, biomeRegistrySize);
+            // Both directions of the pin (per fixture we only require subset; the
+            // whole-corpus exactness check runs after the loop below).
+            allObservedBlockDrift.addAll(observedBlockDrift);
+            allObservedBiomeDrift.addAll(observedBiomeDrift);
 
             var nativeColumn = WireSectionCursor.parse(nativeBody,
                     WireSectionCursor.Layout.NATIVE);
@@ -171,9 +219,13 @@ class XverLiveCorpusDecodeTest {
                 for (int v = 0; v < 4096; v++) {
                     String want = dict.get(v20Blocks[v]);
                     String got = blockIdentities[nativeBlocks[v]];
-                    if (!want.equals(got)) {
+                    // 1.21.1 line: pinned-drifted voxels land on the terminal fallback.
+                    String expect = LINE_DRIFTED_BLOCK_IDENTITIES.contains(want)
+                            ? "minecraft:stone" : want;
+                    if (!expect.equals(got)) {
                         throw new AssertionError(at + " voxel " + v + ": v20 identity '"
-                                + want + "' decoded to '" + got + "'");
+                                + want + "' decoded to '" + got + "' (expected '"
+                                + expect + "')");
                     }
                 }
                 int[] v20Biomes = resolvedValues(sv.biomes(), 64);
@@ -181,13 +233,22 @@ class XverLiveCorpusDecodeTest {
                 for (int v = 0; v < 64; v++) {
                     String want = dict.get(v20Biomes[v]);
                     String got = biomeIdentityByIdCache[nativeBiomes[v]];
-                    if (!want.equals(got)) {
+                    String expect = LINE_DRIFTED_BIOME_IDENTITIES.contains(want)
+                            ? "minecraft:plains" : want;
+                    if (!expect.equals(got)) {
                         throw new AssertionError(at + " biome voxel " + v + ": '"
-                                + want + "' decoded to '" + got + "'");
+                                + want + "' decoded to '" + got + "' (expected '"
+                                + expect + "')");
                     }
                 }
             }
         }
+        // The pin is EXACT (both directions): a vanished drift entry means the corpus
+        // or this line's registry moved — re-derive, never accumulate stale entries.
+        assertEquals(LINE_DRIFTED_BLOCK_IDENTITIES, allObservedBlockDrift,
+                "the observed block drift must equal the pinned per-line set exactly");
+        assertEquals(LINE_DRIFTED_BIOME_IDENTITIES, allObservedBiomeDrift,
+                "the observed biome drift must equal the pinned per-line set exactly");
     }
 
     private static String[] biomeIdentityByIdCache;
@@ -238,12 +299,18 @@ class XverLiveCorpusDecodeTest {
                 new WireSectionCursor.WireColumn(drifted, column.sections()),
                 WireSectionCursor.Layout.V20);
 
-        long[] fallbacks = {0};
+        long[] syntheticFallbacks = {0};
         byte[] nativeBody = V20ToNativeTranslator.translate(driftBody,
                 identity -> {
                     Integer id = blockIds.get(identity);
                     if (id == null) {
-                        fallbacks[0]++;
+                        // 1.21.1 line: the capture legitimately carries naturally-drifted
+                        // mainline identities on this support line (the strict arm pins
+                        // them) — count ONLY the synthetic drift here, or the assertion
+                        // measures the line gap instead of the ladder.
+                        if (identity.startsWith("lss_drift:")) {
+                            syntheticFallbacks[0]++;
+                        }
                         return blockIds.get(
                                 "minecraft:stone"); // the terminal ladder's direction
                     }
@@ -251,8 +318,8 @@ class XverLiveCorpusDecodeTest {
                 },
                 identity -> biomeIds.getOrDefault(identity, 0),
                 blockRegistrySize, biomeRegistrySize);
-        assertEquals(1, fallbacks[0],
-                "exactly the one drifted identity falls back (memoized per palette entry)");
+        assertEquals(1, syntheticFallbacks[0],
+                "exactly the one synthetic drifted identity falls back (memoized per palette entry)");
         var nativeColumn = WireSectionCursor.parse(nativeBody,
                 WireSectionCursor.Layout.NATIVE);
         assertEquals(column.sections().size(), nativeColumn.sections().size(),

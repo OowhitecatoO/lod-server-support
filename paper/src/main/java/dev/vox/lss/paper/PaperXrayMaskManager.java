@@ -84,7 +84,7 @@ final class PaperXrayMaskManager {
     }
 
     MaskEntry entryFor(ServerLevel level) {
-        return entryFor(level.dimension().identifier().toString(), () -> {
+        return entryFor(level.dimension().location().toString(), () -> {
             try {
                 var antiXray = level.paperConfig().anticheat.antiXray;
                 return new EngineConfig(antiXray.enabled, antiXray.hiddenBlocks, antiXray.maxBlockHeight);
@@ -95,7 +95,7 @@ final class PaperXrayMaskManager {
                 // UNREADABLE probe: pretend "engine on, list unreadable", which evaluate()
                 // routes to the LSS config-key mask — fail-safe, masking stays ON.
                 LSSLogger.warn("Paper anti-xray config unreadable for "
-                        + level.dimension().identifier() + " — LOD masking falls back to the "
+                        + level.dimension().location() + " — LOD masking falls back to the "
                         + "LSS xrayHiddenBlocks config keys", t);
                 return new EngineConfig(true, List.of(), 0);
             }

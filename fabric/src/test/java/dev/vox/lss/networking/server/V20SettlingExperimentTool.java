@@ -101,7 +101,7 @@ class V20SettlingExperimentTool {
         RegistryAccess registryAccess = buildFullBiomeRegistry();
         String[] blockIdentities = IdentityTables.blockIdentities();
         var biomeTable = IdentityTables.biomeTable(
-                registryAccess.lookupOrThrow(Registries.BIOME));
+                registryAccess.registryOrThrow(Registries.BIOME));
 
         Series nativeRaw = new Series(), v20Raw = new Series(), deltaRaw = new Series();
         Series nativeFrame = new Series(), v20Frame = new Series(), deltaFrame = new Series();

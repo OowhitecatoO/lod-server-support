@@ -78,8 +78,9 @@ class PaperDiskReaderEnvelopeTest {
         // level.getMinSectionY()/getMaxSectionY() into the range-gated serialize, and the
         // Mockito default [0,0] only kept these fixtures alive because their lone section
         // sits at Y=0 — a future fixture at any other Y would be silently range-dropped.
-        when(level.getMinSectionY()).thenReturn(-4);
-        when(level.getMaxSectionY()).thenReturn(19);
+        when(level.getMinSection()).thenReturn(-4);
+        // 1.21.1 line: getMaxSection() is EXCLUSIVE — 20 keeps the inclusive top at 19.
+        when(level.getMaxSection()).thenReturn(20);
     }
 
     @AfterEach

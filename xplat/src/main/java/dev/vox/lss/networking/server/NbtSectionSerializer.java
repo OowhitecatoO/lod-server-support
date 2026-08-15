@@ -12,19 +12,19 @@ import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtOps;
+import net.minecraft.nbt.Tag;
 import net.minecraft.nbt.StringTag;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.VarInt;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
-import net.minecraft.world.level.chunk.PalettedContainerFactory;
 import net.minecraft.world.level.chunk.PalettedContainerRO;
-import net.minecraft.world.level.chunk.Strategy;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 
 import dev.vox.lss.common.wire.WireSectionCursor;
@@ -281,8 +281,10 @@ final class NbtSectionSerializer {
      * GLOBAL ids in disk-list order plus the disk long array by reference. {@code write}
      * emits exactly {@code PalettedContainer$Data.write}'s shape (bits byte; single = one
      * varint id, linear/hashmap = varint count + ids in list order, duplicates included;
-     * raw big-endian longs, NO length prefix), which the unpack-verbatim invariant makes
-     * byte-identical to parsing and re-serializing the container.
+     * 1.21.1 line: a VarInt long count THEN the big-endian longs — this MC's
+     * writeLongArray prefix, absent on 26.x/1.21.11; javap-verified), which the
+     * unpack-verbatim invariant makes byte-identical to parsing and re-serializing the
+     * container.
      */
     record TranscodedBody(int blockBits, int[] blockIds, long[] blockData,
                           int biomeBits, int[] biomeIds, long[] biomeData) {
@@ -294,7 +296,9 @@ final class NbtSectionSerializer {
         }
 
         private static int containerSize(int bits, int[] ids, long[] data) {
-            int size = 1 + data.length * 8;
+            // 1.21.1 line: + the VarInt long-count prefix (0-length included — vanilla's
+            // single-value container still writes its empty array through writeLongArray).
+            int size = 1 + VarInt.getByteSize(data.length) + data.length * 8;
             if (bits == 0) {
                 return size + VarInt.getByteSize(ids[0]);
             }
@@ -320,6 +324,9 @@ final class NbtSectionSerializer {
                     buf.writeVarInt(id);
                 }
             }
+            // 1.21.1 line: vanilla's writeLongArray prefix (varint count, then words —
+            // written for the empty single-value array too, exactly like vanilla).
+            buf.writeVarInt(data.length);
             for (long l : data) {
                 buf.writeLong(l);
             }
@@ -353,22 +360,22 @@ final class NbtSectionSerializer {
     static byte[] serializeChunkNbt(CompoundTag chunkNbt, RegistryAccess registryAccess,
                                     XrayMaskManager.MaskEntry maskEntry,
                                     int minSectionY, int maxSectionY, boolean useNbtTranscode) {
-        var statusStr = chunkNbt.getStringOr("Status", null);
-        if (statusStr == null || ChunkStatus.byName(statusStr) != ChunkStatus.FULL) return null;
+        // 1.21.1 line: old-family CompoundTag getters (defaulting, not Optional-returning).
+        var statusStr = chunkNbt.getString("Status");
+        if (statusStr.isEmpty() || ChunkStatus.byName(statusStr) != ChunkStatus.FULL) return null;
 
         var scoped = scopedFor(registryAccess);
-        var factory = scoped.factory();
+        var factory = scoped.biomeRegistry();
         // Block-state container codec is LSS-built: vanilla's exact codecRW arguments
         // (fuzz + goldens pin equivalence) with only the ELEMENT codec swapped for the
-        // palette-entry memo. Biomes keep the factory codec (tiny palettes, dynamic
-        // registry — not worth the per-registry memo lifecycle).
+        // palette-entry memo. Biomes keep the vanilla-shaped codec (tiny palettes, dynamic
+        // registry), memoized per registry in the scoped slot — 1.21.1 line: no
+        // PalettedContainerFactory here, the codec is built codecRO-style in scopedFor.
         var blockStateCodec = BlockCodecHolder.CODEC;
-        var biomeCodec = factory.biomeContainerCodec();
+        var biomeCodec = scoped.biomeCodec();
 
-        var sectionsTag = chunkNbt.getList("sections");
-        if (sectionsTag.isEmpty()) return null;
-
-        var sectionsList = sectionsTag.orElseThrow();
+        var sectionsList = chunkNbt.getList("sections", Tag.TAG_COMPOUND);
+        if (sectionsList.isEmpty()) return null;
 
         // First pass: parse sections and check if any are non-empty
         var parsed = new java.util.ArrayList<ParsedSection>(sectionsList.size());
@@ -377,14 +384,15 @@ final class NbtSectionSerializer {
         boolean[] fallback = {false};
         for (var sectionElement : sectionsList) {
             var sectionTag = (CompoundTag) sectionElement;
-            int sectionY = sectionTag.getIntOr("Y", Integer.MIN_VALUE);
+            int sectionY = sectionTag.contains("Y", Tag.TAG_ANY_NUMERIC)
+                    ? sectionTag.getInt("Y") : Integer.MIN_VALUE;
             if (sectionY == Integer.MIN_VALUE) continue;
             // Range gate BEFORE parse: an out-of-range garbage entry must not count as
             // unparseable and condemn a column it would have been dropped from anyway.
             if (sectionY < minSectionY || sectionY > maxSectionY) continue;
 
-            byte[] blockLightData = sectionTag.getByteArray("BlockLight").orElse(EMPTY);
-            byte[] skyLightData = sectionTag.getByteArray("SkyLight").orElse(EMPTY);
+            byte[] blockLightData = sectionTag.getByteArray("BlockLight");
+            byte[] skyLightData = sectionTag.getByteArray("SkyLight");
             ParsedSection result;
             if (useNbtTranscode) {
                 fallback[0] = false;
@@ -579,19 +587,19 @@ final class NbtSectionSerializer {
         int hardErrors = 0;
         String firstHardError = null;
 
-        var blockStatesOpt = sectionTag.getCompound("block_states");
-        if (blockStatesOpt.isEmpty()) {
+        if (!sectionTag.contains("block_states", Tag.TAG_COMPOUND)) {
             // Vanilla's light-only cap entries (heightmap+1) carry SkyLight but no
             // block_states: an all-air single container, counts 0.
             blockIds = BlockCodecHolder.AIR_SINGLE;
         } else {
-            var bs = blockStatesOpt.get();
-            var paletteOpt = bs.getList("palette");
-            if (paletteOpt.isEmpty()) {
+            var bs = sectionTag.getCompound("block_states");
+            // 1.21.1 line: untyped list access via the raw tag (getList is typed here);
+            // missing/mistyped palette falls back exactly like the Optional-empty did.
+            var palette = bs.get("palette") instanceof net.minecraft.nbt.ListTag lt ? lt : null;
+            if (palette == null) {
                 fallback[0] = true;   // missing/mistyped palette — object path (condemns)
                 return null;
             }
-            var palette = paletteOpt.get();
             int n = palette.size();
             if (n == 0 || n > 256) {
                 fallback[0] = true;   // empty palette / Global config — object path
@@ -618,7 +626,8 @@ final class NbtSectionSerializer {
                 }
             } else {
                 blockBits = n <= 16 ? 4 : 32 - Integer.numberOfLeadingZeros(n - 1);
-                long[] data = bs.getLongArray("data").orElse(null);
+                long[] data = bs.contains("data", Tag.TAG_LONG_ARRAY)
+                        ? bs.getLongArray("data") : null;
                 int vpl = 64 / blockBits;
                 if (data == null || data.length != (4096 + vpl - 1) / vpl) {
                     // Absent (vanilla condemns), mistyped (a list-of-longs data tag can
@@ -678,10 +687,11 @@ final class NbtSectionSerializer {
         int biomeBits = 0;
         int[] biomeIds = null;
         long[] biomeData = EMPTY_LONGS;
-        var biomesOpt = sectionTag.getCompound("biomes");
-        if (biomesOpt.isPresent()) {
-            var bt = biomesOpt.get();
-            var palette = bt.getList("palette").orElse(null);
+        if (sectionTag.contains("biomes", Tag.TAG_COMPOUND)) {
+            var bt = sectionTag.getCompound("biomes");
+            // 1.21.1 line: untyped list access (mistyped ENTRIES must resolve id -1 ->
+            // default container, matching the 26.x untyped-Optional semantics).
+            var palette = bt.get("palette") instanceof net.minecraft.nbt.ListTag lt ? lt : null;
             int n = palette == null ? -1 : palette.size();
             if (n == 0 || n > 8) {
                 fallback[0] = true;
@@ -692,7 +702,7 @@ final class NbtSectionSerializer {
                 boolean clean = true;
                 for (int i = 0; i < n && clean; i++) {
                     int id = palette.get(i) instanceof StringTag st
-                            ? biomeResolver.idFor(st.value()) : -1;
+                            ? biomeResolver.idFor(st.getAsString()) : -1;
                     if (id < 0) clean = false;
                     else ids[i] = id;
                 }
@@ -701,11 +711,12 @@ final class NbtSectionSerializer {
                         biomeIds = ids;   // ZeroBitStorage: data ignored
                     } else {
                         int bits = 32 - Integer.numberOfLeadingZeros(n - 1);
-                        if (bt.get("data") != null && bt.getLongArray("data").isEmpty()) {
+                        if (bt.contains("data") && !bt.contains("data", Tag.TAG_LONG_ARRAY)) {
                             fallback[0] = true;   // present but not a long array
                             return null;
                         }
-                        long[] data = bt.getLongArray("data").orElse(null);
+                        long[] data = bt.contains("data", Tag.TAG_LONG_ARRAY)
+                                ? bt.getLongArray("data") : null;
                         int vpl = 64 / bits;
                         if (data != null && data.length == (64 + vpl - 1) / vpl) {
                             biomeBits = bits;
@@ -758,20 +769,22 @@ final class NbtSectionSerializer {
             CompoundTag sectionTag, int sectionY,
             Codec<PalettedContainer<BlockState>> blockStateCodec,
             Codec<PalettedContainerRO<Holder<Biome>>> biomeCodec,
-            PalettedContainerFactory factory,
+            Registry<Biome> factory, // 1.21.1 line: the seam parameter is the biome registry
             byte[] blockLightData, byte[] skyLightData, int[] unparseable) {
 
-        var blockStatesOpt = sectionTag.getCompound("block_states");
+        boolean hasBlockStates = sectionTag.contains("block_states", Tag.TAG_COMPOUND);
         PalettedContainer<BlockState> blockStates;
         boolean knownAir = false;
-        if (blockStatesOpt.isEmpty()) {
+        if (!hasBlockStates) {
             // Vanilla's light-only cap entries (heightmap+1) carry SkyLight but no
             // block_states — exactly the boundary layers the fix serves. Build an all-air
             // container for them; the air/light gate below decides whether it ships.
-            blockStates = factory.createForBlockStates();
+            blockStates = new PalettedContainer<>(Block.BLOCK_STATE_REGISTRY,
+                    Blocks.AIR.defaultBlockState(), PalettedContainer.Strategy.SECTION_STATES);
             knownAir = true;
         } else {
-            var blockStatesResult = blockStateCodec.parse(NbtOps.INSTANCE, blockStatesOpt.get());
+            var blockStatesResult = blockStateCodec.parse(NbtOps.INSTANCE,
+                    sectionTag.getCompound("block_states"));
             // Vanilla-lenient (resultOrPartial): a recoverable palette error — e.g. a
             // pre-DataFixer block rename in an upgraded world's unvisited chunk (this
             // path reads RAW region NBT, no DFU runs) — substitutes the container
@@ -796,13 +809,14 @@ final class NbtSectionSerializer {
         }
 
         PalettedContainerRO<Holder<Biome>> biomes = null;
-        var optBiomes = sectionTag.getCompound("biomes");
-        if (optBiomes.isPresent()) {
-            var biomesResult = biomeCodec.parse(NbtOps.INSTANCE, optBiomes.get());
+        if (sectionTag.contains("biomes", Tag.TAG_COMPOUND)) {
+            var biomesResult = biomeCodec.parse(NbtOps.INSTANCE, sectionTag.getCompound("biomes"));
             biomes = biomesResult.result().orElse(null);
         }
         if (biomes == null) {
-            biomes = factory.createForBiomes();
+            biomes = new PalettedContainer<>(factory.asHolderIdMap(),
+                    factory.getHolderOrThrow(Biomes.PLAINS),
+                    PalettedContainer.Strategy.SECTION_BIOMES);
         }
 
         int counts = knownAir ? 0 : countNonEmptyAndFluid(blockStates);
@@ -877,17 +891,19 @@ final class NbtSectionSerializer {
     }
 
     // Static (unlike factoryMemo): the block registry is bootstrap-frozen, so the memoized
-    // element codec and its cache live for the JVM. Arguments mirror
-    // PalettedContainerFactory.create's codecRW call exactly (fuzz + goldens pin it);
+    // element codec and its cache live for the JVM. Arguments mirror vanilla's
+    // ChunkSerializer BLOCK_STATE_CODEC codecRW call exactly (fuzz + goldens pin it);
     // the element memo doubles as the transcoder's palette-id resolver.
+    // 1.21.1 line: codecRW takes the IdMap + Strategy constant (no top-level Strategy class).
     private static final class BlockCodecHolder {
         static final MemoizedNbtCodec<BlockState> ELEMENT = new MemoizedNbtCodec<>(
                 BlockState.CODEC, 1 << 16, Blocks.AIR.defaultBlockState(),
                 state -> MemoizedNbtCodec.packMeta(Block.BLOCK_STATE_REGISTRY.getId(state),
                         state.isAir(), !state.getFluidState().isEmpty()));
         static final Codec<PalettedContainer<BlockState>> CODEC = PalettedContainer.codecRW(
+                Block.BLOCK_STATE_REGISTRY,
                 ELEMENT,
-                Strategy.createForBlockStates(Block.BLOCK_STATE_REGISTRY),
+                PalettedContainer.Strategy.SECTION_STATES,
                 Blocks.AIR.defaultBlockState());
         static final int[] AIR_SINGLE =
                 {Block.BLOCK_STATE_REGISTRY.getId(Blocks.AIR.defaultBlockState())};
@@ -905,9 +921,10 @@ final class NbtSectionSerializer {
         int idFor(String name) {
             Integer hit = this.byName.get(name);
             if (hit != null) return hit;
-            var rl = Identifier.tryParse(name);
+            var rl = ResourceLocation.tryParse(name);
             if (rl == null) return -1;
-            var holder = this.registry.get(rl).orElse(null);
+            // 1.21.1 line: the Optional-returning holder lookup is getHolder here.
+            var holder = this.registry.getHolder(rl).orElse(null);
             if (holder == null) return -1;
             int id = this.idMap.getId(holder);
             this.byName.put(name, id);
@@ -915,9 +932,13 @@ final class NbtSectionSerializer {
         }
     }
 
-    /** The registry-scoped pair the single-slot memo holds: the container factory and
-     *  the transcoder's biome resolver share one lifetime (both die with their key). */
-    private record RegistryScoped(PalettedContainerFactory factory, BiomeIdResolver biomeResolver,
+    /** The registry-scoped pair the single-slot memo holds: the biome registry (+ its
+     *  memoized container codec — 1.21.1 line: the factory that used to carry it does not
+     *  exist here) and the transcoder's biome resolver share one lifetime (all die with
+     *  their key). */
+    private record RegistryScoped(Registry<Biome> biomeRegistry,
+                                  Codec<PalettedContainerRO<Holder<Biome>>> biomeCodec,
+                                  BiomeIdResolver biomeResolver,
                                   java.util.function.IntFunction<String> biomeIdentityFor,
                                   java.util.function.ToIntFunction<String> biomeIdFor,
                                   int biomeIdCount) {}
@@ -1041,39 +1062,47 @@ final class NbtSectionSerializer {
                 // otherwise surface as a per-serve translation failure much later.
                 throw new IllegalStateException("biome id " + id + " has no registry key");
             }
-            String identity = key.identifier().toString();
+            String identity = key.location().toString();
             dev.vox.lss.common.wire.IdentityCodec.validate(identity);
             table[id] = identity;
         }
         return id -> id >= 0 && id < table.length ? table[id] : null;
     }
 
-    // PalettedContainerFactory.create builds two strategies + codecs per call — measurable
-    // allocation churn when every disk read pays it (review 2026-07-27). The registry access
-    // is stable for a server's lifetime; a single-slot memo (atomic pair via one volatile)
-    // covers it and survives the odd registry swap in tests. The key is held WEAKLY so an
-    // integrated server's departed world doesn't keep its dynamic registries pinned until
-    // the next world load (final review 2026-07-27); the factory dies with its key.
+    // The codec/idMap derivations cost per call — measurable allocation churn when every
+    // disk read pays it (review 2026-07-27). The registry access is stable for a server's
+    // lifetime; a single-slot memo (atomic pair via one volatile) covers it and survives
+    // the odd registry swap in tests. The key is held WEAKLY so an integrated server's
+    // departed world doesn't keep its dynamic registries pinned until the next world load
+    // (final review 2026-07-27); the scoped bundle dies with its key.
     private static volatile java.util.Map.Entry<java.lang.ref.WeakReference<RegistryAccess>, RegistryScoped> factoryMemo;
 
-    static PalettedContainerFactory factoryFor(RegistryAccess registryAccess) {
-        return scopedFor(registryAccess).factory();
+    // 1.21.1 line: the seam handle is the biome Registry (no PalettedContainerFactory on
+    // this MC); the name is kept so the SectionSerializer/XrayMaskFilter call sites and
+    // their pins stay textually stable across lines.
+    static Registry<Biome> factoryFor(RegistryAccess registryAccess) {
+        return scopedFor(registryAccess).biomeRegistry();
     }
 
     private static RegistryScoped scopedFor(RegistryAccess registryAccess) {
         var memo = factoryMemo;
         if (memo != null && memo.getKey().get() == registryAccess) return memo.getValue();
-        var factory = PalettedContainerFactory.create(registryAccess);
-        var idMap = factory.biomeStrategy().globalMap();
+        var biomeRegistry = registryAccess.registryOrThrow(Registries.BIOME);
+        var idMap = biomeRegistry.asHolderIdMap();
+        // Vanilla's makeBiomeCodec shape (ChunkSerializer), memoized here.
+        var biomeCodec = PalettedContainer.codecRO(
+                idMap, biomeRegistry.holderByNameCodec(),
+                PalettedContainer.Strategy.SECTION_BIOMES,
+                biomeRegistry.getHolderOrThrow(Biomes.PLAINS));
         var identityFor = buildBiomeIdentities(idMap);
         var inverse = new java.util.HashMap<String, Integer>(idMap.size() * 2);
         for (int id = 0; id < idMap.size(); id++) {
             inverse.put(identityFor.apply(id), id);
         }
         var frozenInverse = java.util.Map.copyOf(inverse);
-        var scoped = new RegistryScoped(factory, new BiomeIdResolver(
-                registryAccess.lookupOrThrow(Registries.BIOME), idMap,
-                idMap.getId(factory.defaultBiome()), new ConcurrentHashMap<>()),
+        var scoped = new RegistryScoped(biomeRegistry, biomeCodec, new BiomeIdResolver(
+                biomeRegistry, idMap,
+                idMap.getId(biomeRegistry.getHolderOrThrow(Biomes.PLAINS)), new ConcurrentHashMap<>()),
                 identityFor,
                 identity -> frozenInverse.getOrDefault(identity, -1),
                 idMap.size());

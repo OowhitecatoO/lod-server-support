@@ -2,7 +2,9 @@ package dev.vox.lss.platform;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.neoforged.neoforge.client.network.ClientPacketDistributor;
+// 1.21.1 line: NeoForge 21.1 has no ClientPacketDistributor — the client-to-server
+// send is PacketDistributor.sendToServer.
+import net.neoforged.neoforge.network.PacketDistributor;
 
 /**
  * The physical-client NeoForge impl: the common impl plus the client send.
@@ -37,7 +39,7 @@ public final class NeoForgeClientLoaderServices extends NeoForgeLoaderServices {
             return; // silent no-op: the server would ignore (or refuse) the channel
         }
         try {
-            ClientPacketDistributor.sendToServer(payload);
+            PacketDistributor.sendToServer(payload);
         } catch (UnsupportedOperationException e) {
             // The negotiation race between the pre-check and the send — same silent
             // no-op (the pre-check makes this rare).

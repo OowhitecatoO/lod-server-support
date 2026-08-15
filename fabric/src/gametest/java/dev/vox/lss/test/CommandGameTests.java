@@ -7,14 +7,13 @@ import dev.vox.lss.common.PositionUtil;
 import dev.vox.lss.config.LSSServerConfig;
 import dev.vox.lss.networking.server.LSSServerNetworking;
 import dev.vox.lss.networking.server.RequestProcessingService;
-import net.fabricmc.fabric.api.gametest.v1.GameTest;
+import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.commands.CommandSource;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.TicketType;
-import net.minecraft.server.permissions.PermissionSet;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
@@ -83,14 +82,14 @@ public class CommandGameTests {
      * skips unusable literals silently, so "no parse exceptions" would NOT discriminate;
      * the consumed-node check does.)
      */
-    @GameTest(structure = "fabric-gametest-api-v1:empty")
+    @GameTest(template = "fabric-gametest-api-v1:empty")
     public void lsslodRequiresGamemasterPermission(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         var server = level.getServer();
         var commands = server.getCommands();
         var lines = new ArrayList<String>();
         var stripped = new CommandSourceStack(recorder(lines), Vec3.ZERO, Vec2.ZERO, level,
-                PermissionSet.NO_PERMISSIONS, "lss-test", Component.literal("lss-test"),
+                0, "lss-test", Component.literal("lss-test"),
                 server, null);
 
         var strippedParse = commands.getDispatcher().parse("lsslod diag", stripped);
@@ -119,14 +118,14 @@ public class CommandGameTests {
      * gametest server runs lodStore=off, so the pinned answers are the documented
      * off/unavailable rungs.
      */
-    @GameTest(structure = "fabric-gametest-api-v1:empty")
+    @GameTest(template = "fabric-gametest-api-v1:empty")
     public void lsslodStoreVerbsDispatchThroughTheRealTree(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         var server = level.getServer();
         var commands = server.getCommands();
         var lines = new ArrayList<String>();
         var source = new CommandSourceStack(recorder(lines), Vec3.ZERO, Vec2.ZERO, level,
-                PermissionSet.ALL_PERMISSIONS, "lss-test", Component.literal("lss-test"),
+                4, "lss-test", Component.literal("lss-test"),
                 server, null);
 
         commands.performPrefixedCommand(source, "lsslod store status");
@@ -146,14 +145,14 @@ public class CommandGameTests {
     }
 
     /** v0.11.0 stage C: /lsslod help + the bare root through the real tree. */
-    @GameTest(structure = "fabric-gametest-api-v1:empty")
+    @GameTest(template = "fabric-gametest-api-v1:empty")
     public void lsslodHelpAndBareRootDispatchTheSharedHelp(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         var server = level.getServer();
         var commands = server.getCommands();
         var lines = new ArrayList<String>();
         var source = new CommandSourceStack(recorder(lines), Vec3.ZERO, Vec2.ZERO, level,
-                PermissionSet.ALL_PERMISSIONS, "lss-test", Component.literal("lss-test"),
+                4, "lss-test", Component.literal("lss-test"),
                 server, null);
 
         commands.performPrefixedCommand(source, "lsslod help");
@@ -177,14 +176,14 @@ public class CommandGameTests {
      * the file-side effect cannot leak into later tests (fabric/build.gradle's doFirst
      * re-stages each run regardless; the restore keeps the in-memory config honest).
      */
-    @GameTest(structure = "fabric-gametest-api-v1:empty")
+    @GameTest(template = "fabric-gametest-api-v1:empty")
     public void lsslodSetAppliesClampsAndRestores(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         var server = level.getServer();
         var commands = server.getCommands();
         var lines = new ArrayList<String>();
         var source = new CommandSourceStack(recorder(lines), Vec3.ZERO, Vec2.ZERO, level,
-                PermissionSet.ALL_PERMISSIONS, "lss-test", Component.literal("lss-test"),
+                4, "lss-test", Component.literal("lss-test"),
                 server, null);
         var config = dev.vox.lss.config.LSSServerConfig.CONFIG;
         int savedDistance = config.lodDistanceChunks;
@@ -227,7 +226,7 @@ public class CommandGameTests {
      * because other multi-tick gametests can hold registered players concurrently —
      * "re-pushed to 0" (our mock skipped) is the failure this pins.
      */
-    @GameTest(structure = "fabric-gametest-api-v1:empty")
+    @GameTest(template = "fabric-gametest-api-v1:empty")
     public void setLodDistanceRepushesSessionConfigToRegisteredPlayers(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         var server = level.getServer();
@@ -239,7 +238,7 @@ public class CommandGameTests {
         int savedDistance = config.lodDistanceChunks;
         var lines = new ArrayList<String>();
         var source = new CommandSourceStack(recorder(lines), Vec3.ZERO, Vec2.ZERO, level,
-                PermissionSet.ALL_PERMISSIONS, "lss-test", Component.literal("lss-test"),
+                4, "lss-test", Component.literal("lss-test"),
                 server, null);
         try {
             service.registerPlayer(player, dev.vox.lss.common.LSSConstants.CAPABILITY_VOXEL_COLUMNS);
@@ -266,7 +265,7 @@ public class CommandGameTests {
      * wiring. Registration, execution, and cleanup share one synchronous callback so the
      * live players map is empty again before any other test's callback can run.
      */
-    @GameTest(structure = "fabric-gametest-api-v1:empty")
+    @GameTest(template = "fabric-gametest-api-v1:empty")
     public void lsslodStatsRendersRegisteredPlayerLineThroughDispatcher(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         var server = level.getServer();
@@ -312,7 +311,7 @@ public class CommandGameTests {
      * and the diag lines never render. The generation-less service is swapped in for one
      * synchronous execution window and restored.
      */
-    @GameTest(structure = "fabric-gametest-api-v1:empty")
+    @GameTest(template = "fabric-gametest-api-v1:empty")
     public void lsslodDiagRendersGenerationDisabledWithoutNpe(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         var server = level.getServer();
@@ -364,7 +363,7 @@ public class CommandGameTests {
      * diagnostics, and requests. The workload makes the values pairwise distinct where the
      * keys could transpose (up_to_date=1 vs in_memory=2 vs requests=3).
      */
-    @GameTest(structure = "fabric-gametest-api-v1:empty", maxTicks = 600)
+    @GameTest(template = "fabric-gametest-api-v1:empty", timeoutTicks = 600)
     public void serverMetricsExporterAgreesWithDiagFormatterCounters(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         var server = level.getServer();
@@ -376,16 +375,16 @@ public class CommandGameTests {
         var chunkSource = level.getChunkSource();
         var pos1 = new ChunkPos(pcx - DIAG_CHUNK_OFFSET, pcz);
         var pos2 = new ChunkPos(pcx - DIAG_CHUNK_OFFSET, pcz + 1);
-        long packed1 = PositionUtil.packPosition(pos1.x(), pos1.z());
-        chunkSource.addTicketWithRadius(TicketType.PLAYER_LOADING, pos1, 0);
-        chunkSource.addTicketWithRadius(TicketType.PLAYER_LOADING, pos2, 0);
-        level.getChunk(pos1.x(), pos1.z());
-        level.getChunk(pos2.x(), pos2.z());
+        long packed1 = PositionUtil.packPosition(pos1.x, pos1.z);
+        chunkSource.addRegionTicket(TicketType.PLAYER, pos1, 0, pos1);
+        chunkSource.addRegionTicket(TicketType.PLAYER, pos2, 0, pos2);
+        level.getChunk(pos1.x, pos1.z);
+        level.getChunk(pos2.x, pos2.z);
 
         var service = new RequestProcessingService(server);
         var state = service.registerPlayer(mock, LSSConstants.CAPABILITY_VOXEL_COLUMNS);
         GameTestSeeding.seedRequests(state,
-                new long[]{packed1, PositionUtil.packPosition(pos2.x(), pos2.z())},
+                new long[]{packed1, PositionUtil.packPosition(pos2.x, pos2.z)},
                 new long[]{-1L, -1L});
         var step = new AtomicInteger();
 
@@ -471,8 +470,8 @@ public class CommandGameTests {
                             && ((Number) players.get(0).get("requests")).longValue() == 3,
                     "the exporter's per-player row must carry the same request total");
 
-            chunkSource.removeTicketWithRadius(TicketType.PLAYER_LOADING, pos1, 0);
-            chunkSource.removeTicketWithRadius(TicketType.PLAYER_LOADING, pos2, 0);
+            chunkSource.removeRegionTicket(TicketType.PLAYER, pos1, 0, pos1);
+            chunkSource.removeRegionTicket(TicketType.PLAYER, pos2, 0, pos2);
             service.shutdown();
             playerList.remove(mock);
         });

@@ -41,7 +41,7 @@ public final class SectionSerializer {
     }
 
     private static LoadedColumnData serializeColumnInner(ServerLevel level, LevelChunk chunk, int cx, int cz) {
-        int minSectionY = level.getMinSectionY();
+        int minSectionY = level.getMinSection(); // 1.21.1 line: getMinSection()
         var sections = chunk.getSections();
         var lightEngine = level.getLightEngine();
         var blockLightListener = lightEngine.getLayerListener(LightLayer.BLOCK);

@@ -21,8 +21,14 @@ import static org.junit.jupiter.api.Assertions.*;
  * exists but is not on the GUI path cannot be caught reflectively; what CAN be pinned is
  * (a) the descriptor resolves against a declared overload at all (goes red on the next MC
  * bump if the signature drifts, instead of silently never firing), and (b) the descriptor
- * is exactly the 2-arg overload the 26.2 GUI calls (bytecode-verified 2026-07-28), so a
- * future edit cannot quietly re-target the wrapper.
+ * is exactly the overload the GUI calls, so a future edit cannot quietly re-target a
+ * wrapper.
+ *
+ * <p>1.21.1-LINE FLAVOR (D3 re-port): this line's {@code IntegratedServer} declares
+ * exactly ONE {@code publishServer} overload — {@code (GameType, boolean, int)} — which
+ * both the LAN screen (ShareToLanScreen) and {@code /publish} call (the 26.2
+ * MultiplayerScope split does not exist here), so the pinned descriptor is that 3-arg
+ * form and the single-overload assertion below is this line's version of guard (b).
  *
  * <p>Reads the SOURCE file (the {@code GameTestEntrypointContractTest} idiom): classes in
  * a defined mixin package refuse direct classloading under fabric-loader-junit's mixin
@@ -42,17 +48,18 @@ class LanHookContractTest {
     }
 
     @Test
-    void injectDescriptorTargetsTheTwoArgOverloadTheLanGuiCalls() throws Exception {
+    void injectDescriptorTargetsTheSingleOverloadTheLanGuiCalls() throws Exception {
         String source = Files.readString(mixinSource());
         var matcher = INJECT_METHOD.matcher(source);
         assertTrue(matcher.find(), "the mixin declares exactly one @Inject with a method descriptor");
         String descriptor = matcher.group(1);
         assertFalse(matcher.find(), "exactly one @Inject expected");
 
-        assertEquals("publishServer(Lnet/minecraft/server/MinecraftServer$MultiplayerScope;I)Z",
+        // 1.21.1-line pin: the one real overload. (On 26.2 this is the 2-arg
+        // MultiplayerScope form — each line carries its own flavor of this constant.)
+        assertEquals("publishServer(Lnet/minecraft/world/level/GameType;ZI)Z",
                 descriptor,
-                "the hook must target the 2-arg overload — the 4-arg is a delegating wrapper "
-                        + "the LAN GUI never calls (the shipped v0.6.0-v0.8.0 bug)");
+                "the hook must target this line's single (GameType, boolean, int) overload");
 
         // The descriptor must resolve against a REAL declared overload — the next MC bump
         // that changes the signature turns this red instead of silently unhooking LAN.
@@ -65,6 +72,12 @@ class LanHookContractTest {
         assertTrue(declared.contains(descriptor),
                 "the @Inject descriptor must match a declared IntegratedServer.publishServer "
                         + "overload; declared overloads: " + declared);
+        // Guard (b), 1.21.1 form: the moment a second overload appears (a future 1.21.x
+        // backport of the MultiplayerScope split), this line must re-derive which one the
+        // GUI calls instead of trusting single-overload dispatch.
+        assertEquals(1, declared.size(),
+                "this line's IntegratedServer must declare exactly one publishServer "
+                        + "overload; a new overload re-opens the M2 wrong-overload trap: " + declared);
     }
 
     private static String descriptorOf(Method m) {

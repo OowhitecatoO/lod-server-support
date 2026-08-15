@@ -1,7 +1,10 @@
 package dev.vox.lss.paper;
 
-import ca.spottedleaf.concurrentutil.util.Priority;
-import ca.spottedleaf.moonrise.patches.chunk_system.io.MoonriseRegionFileIO;
+// 1.21.1 line: Paper's chunk-system IO here is RegionFileIOThread + the
+// PrioritisedExecutor.Priority enum (26.x's MoonriseRegionFileIO/flat Priority
+// reshape does not exist on this line; javap-verified against the 1.21.1 dev bundle).
+import ca.spottedleaf.concurrentutil.executor.standard.PrioritisedExecutor;
+import ca.spottedleaf.moonrise.patches.chunk_system.io.RegionFileIOThread;
 import dev.vox.lss.common.processing.AbstractChunkDiskReader;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
@@ -58,8 +61,9 @@ public class PaperChunkDiskReader extends AbstractChunkDiskReader {
         // The mask entry is captured at submit time (the level is in hand here); the read
         // itself runs on the reader pool where only the dimension string survives.
         var maskEntry = PaperXrayMaskManager.entryForActive(level);
-        int minSectionY = level.getMinSectionY();
-        int maxSectionY = level.getMaxSectionY();
+        // 1.21.1 line: getMinSection()/getMaxSection() (max EXCLUSIVE -> -1 for inclusive).
+        int minSectionY = level.getMinSection();
+        int maxSectionY = level.getMaxSection() - 1;
         submitRead(playerUuid, chunkX, chunkZ, dimension, submissionOrder,
                 () -> PaperNbtSectionSerializer.readAndSerializeSections(read, registryAccess, chunkX, chunkZ,
                         maskEntry, minSectionY, maxSectionY, this.useNbtTranscode));
@@ -89,13 +93,13 @@ public class PaperChunkDiskReader extends AbstractChunkDiskReader {
     private PaperNbtSectionSerializer.ChunkNbtRead moonriseReader(ServerLevel level) {
         return (cx, cz) -> {
             var future = new CompletableFuture<Optional<CompoundTag>>();
-            MoonriseRegionFileIO.loadDataAsync(level, cx, cz,
-                    MoonriseRegionFileIO.RegionFileType.CHUNK_DATA,
+            RegionFileIOThread.loadDataAsync(level, cx, cz,
+                    RegionFileIOThread.RegionFileType.CHUNK_DATA,
                     (tag, err) -> {
                         if (err != null) future.completeExceptionally(err);
                         else future.complete(Optional.ofNullable(tag));
                     },
-                    /* intendingToBlock = */ false, Priority.LOW);
+                    /* intendingToBlock = */ false, PrioritisedExecutor.Priority.LOW);
             return future;
         };
     }

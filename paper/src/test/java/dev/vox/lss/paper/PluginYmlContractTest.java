@@ -122,8 +122,15 @@ class PluginYmlContractTest {
         var bundle = Pattern.compile("paperweight\\.paperDevBundle\\('([^']+)'\\)")
                 .matcher(Files.readString(locate("paper/build.gradle")));
         assertTrue(bundle.find(), "paper/build.gradle must declare paperweight.paperDevBundle('...')");
-        assertTrue(bundle.group(1).startsWith(apiVersion + "."),
-                "dev bundle " + bundle.group(1) + " must be a build of api-version " + apiVersion);
+        // 1.21.1 line: this line's dev bundle uses the OLD '<mc>-R0.1-SNAPSHOT' scheme
+        // (26.x moved to '<mc>.build.N') — accept both, the 1.21.8 support branch's
+        // recorded form. The api-version VALUE stays the templated three-part
+        // minecraft_version (granular api-version is valid Paper 1.20.5+; 1.21.8
+        // records the same three-part shape).
+        assertTrue(bundle.group(1).startsWith(apiVersion + ".")
+                        || bundle.group(1).startsWith(apiVersion + "-R"),
+                "dev bundle " + bundle.group(1) + " must be a build of api-version " + apiVersion
+                        + " (new '<mc>.build.N' or old '<mc>-R0.1-SNAPSHOT' scheme)");
     }
 
     @Test

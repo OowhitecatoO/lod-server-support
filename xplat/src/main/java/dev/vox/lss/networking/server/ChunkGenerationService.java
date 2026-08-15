@@ -26,8 +26,11 @@ public class ChunkGenerationService {
     // not literals (V-2/S3 replacement): the record ctor is positional (long, int), and a
     // signature reorder in a future MC bump reds this line at compile instead of silently
     // swapping timeout and flags.
-    private static final TicketType LSS_GEN_TICKET =
-            new TicketType(TicketType.NO_TIMEOUT, TicketType.FLAG_LOADING);
+    private static final TicketType<ChunkPos> LSS_GEN_TICKET =
+            // 1.21.1 line: the create(name, comparator) family (no timeout by construction
+            // — the generation ticket must never expire under it); the 26.x flag ctor does
+            // not exist here. The 1.20.1-family recorded form.
+            TicketType.create("lss_gen", java.util.Comparator.comparingLong(ChunkPos::toLong));
 
     record GenerationCallback(UUID playerUuid, long submissionOrder) {}
 
@@ -125,7 +128,7 @@ public class ChunkGenerationService {
             // cancel the release and reuse it instead of add+remove churn through the
             // distance graph (the completion path's removal keeps the books 1:1).
             if (!this.deferredReleases.cancel(key)) {
-                level.getChunkSource().addTicketWithRadius(LSS_GEN_TICKET, pos, 0);
+                level.getChunkSource().addRegionTicket(LSS_GEN_TICKET, pos, 0, pos);
             }
 
             var gen = new PendingGeneration(pos, level);
@@ -158,7 +161,7 @@ public class ChunkGenerationService {
             gen.ticksWaiting++;
 
             if (gen.ticksWaiting > this.timeoutTicks) {
-                LSSLogger.debug("Generation timeout for chunk " + gen.pos.x() + "," + gen.pos.z()
+                LSSLogger.debug("Generation timeout for chunk " + gen.pos.x + "," + gen.pos.z
                         + " after " + gen.ticksWaiting + " ticks (" + gen.callbacks.size() + " callbacks)");
                 if (ready == null) ready = new ArrayList<>();
                 // Timeout is TRANSIENT: the outcome drops silently server-side and the client's
@@ -175,39 +178,39 @@ public class ChunkGenerationService {
                 var level = gen.level;
                 var pos = gen.pos;
                 this.deferredReleases.defer(entry.getKey(),
-                        () -> level.getChunkSource().removeTicketWithRadius(LSS_GEN_TICKET, pos, 0));
+                        () -> level.getChunkSource().removeRegionTicket(LSS_GEN_TICKET, pos, 0, pos));
                 iter.remove();
                 this.totalTimeouts++;
                 continue;
             }
 
-            LevelChunk chunk = gen.level.getChunkSource().getChunkNow(gen.pos.x(), gen.pos.z());
+            LevelChunk chunk = gen.level.getChunkSource().getChunkNow(gen.pos.x, gen.pos.z);
             if (chunk != null) {
                 if (ready == null) ready = new ArrayList<>();
                 try {
                     long columnTimestamp = LSSConstants.epochSeconds();
                     LoadedColumnData columnData = this.columnSerializer.serialize(
-                            gen.level, chunk, gen.pos.x(), gen.pos.z());
-                    String dimension = gen.level.dimension().identifier().toString();
+                            gen.level, chunk, gen.pos.x, gen.pos.z);
+                    String dimension = gen.level.dimension().location().toString();
 
                     // Seed the dirty filter with the served bytes: the chunk's imminent
                     // unload-save would otherwise count as "first observed save" and
                     // trigger a pointless second send of the identical column.
                     if (this.dirtyContentFilter != null) {
-                        this.dirtyContentFilter.seed(dimension, gen.pos.x(), gen.pos.z(),
+                        this.dirtyContentFilter.seed(dimension, gen.pos.x, gen.pos.z,
                                 columnData.serializedSections());
                     }
 
                     // One GenerationReadyData per callback — processing thread will voxelize
                     for (var cb : gen.callbacks) {
                         ready.add(new TickSnapshot.GenerationReadyData(
-                                cb.playerUuid, gen.pos.x(), gen.pos.z(), dimension,
+                                cb.playerUuid, gen.pos.x, gen.pos.z, dimension,
                                 columnData, columnTimestamp, cb.submissionOrder));
                         decrementCount(this.perPlayerActiveCount, cb.playerUuid);
                     }
                     this.totalCompleted++;
                 } catch (Throwable t) {
-                    LSSLogger.error("Failed to extract primitives for generated chunk at " + gen.pos.x() + ", " + gen.pos.z(), t);
+                    LSSLogger.error("Failed to extract primitives for generated chunk at " + gen.pos.x + ", " + gen.pos.z, t);
                     // Extraction failure is PERMANENT (a corrupt chunk must not be hammered):
                     // the client gets NOT_GENERATED and only a dirty broadcast revives it.
                     addFailures(ready, gen, false);
@@ -219,7 +222,7 @@ public class ChunkGenerationService {
                     // Always release the force-load ticket and drop the active entry — even on an
                     // Error during serialization — or the chunk stays force-loaded forever and the
                     // entry is retried (and re-throws) every server tick.
-                    gen.level.getChunkSource().removeTicketWithRadius(LSS_GEN_TICKET, gen.pos, 0);
+                    gen.level.getChunkSource().removeRegionTicket(LSS_GEN_TICKET, gen.pos, 0, gen.pos);
                     iter.remove();
                 }
             }
@@ -233,10 +236,10 @@ public class ChunkGenerationService {
      *  failure). The generation books count the entry the same either way. */
     private void addFailures(List<TickSnapshot.GenerationReadyData> ready, PendingGeneration gen,
                              boolean transientFailure) {
-        String dimension = gen.level.dimension().identifier().toString();
+        String dimension = gen.level.dimension().location().toString();
         for (var cb : gen.callbacks) {
             ready.add(new TickSnapshot.GenerationReadyData(
-                    cb.playerUuid, gen.pos.x(), gen.pos.z(), dimension,
+                    cb.playerUuid, gen.pos.x, gen.pos.z, dimension,
                     null, 0L, cb.submissionOrder, transientFailure));
             decrementCount(this.perPlayerActiveCount, cb.playerUuid);
         }
@@ -257,7 +260,7 @@ public class ChunkGenerationService {
                 var level = gen.level;
                 var pos = gen.pos;
                 this.deferredReleases.defer(entry.getKey(),
-                        () -> level.getChunkSource().removeTicketWithRadius(LSS_GEN_TICKET, pos, 0));
+                        () -> level.getChunkSource().removeRegionTicket(LSS_GEN_TICKET, pos, 0, pos));
                 iter.remove();
                 // Submitted but neither completed nor timed out — without this counter the
                 // submitted/completed books can never re-balance after a kick or dimension change
@@ -269,7 +272,7 @@ public class ChunkGenerationService {
     public void shutdown() {
         this.deferredReleases.flush(); // correctness over smoothness — never strand a ticket
         for (var gen : this.active.values()) {
-            gen.level.getChunkSource().removeTicketWithRadius(LSS_GEN_TICKET, gen.pos, 0);
+            gen.level.getChunkSource().removeRegionTicket(LSS_GEN_TICKET, gen.pos, 0, gen.pos);
         }
         this.active.clear();
         this.perPlayerActiveCount.clear();

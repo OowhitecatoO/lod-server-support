@@ -25,7 +25,6 @@ import net.minecraft.world.level.chunk.DataLayer;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
-import net.minecraft.world.level.chunk.PalettedContainerFactory;
 import net.minecraft.world.level.lighting.LayerLightEventListener;
 import net.minecraft.world.level.lighting.LevelLightEngine;
 import org.junit.jupiter.api.BeforeAll;
@@ -61,7 +60,7 @@ import static org.mockito.Mockito.when;
 class PaperSerializerParityTest {
 
     private static RegistryAccess REGISTRY_ACCESS;
-    private static PalettedContainerFactory FACTORY;
+    private static net.minecraft.core.Registry<net.minecraft.world.level.biome.Biome> FACTORY; // 1.21.1 line: the seam handle is the biome registry
 
     private static final int CX = 9, CZ = -6, MIN_SECTION_Y = -4;
 
@@ -75,7 +74,7 @@ class PaperSerializerParityTest {
         src.listElements().forEach(ref -> biomes.register(ref.key(), ref.value(), RegistrationInfo.BUILT_IN));
         biomes.freeze();
         REGISTRY_ACCESS = new RegistryAccess.ImmutableRegistryAccess(List.of(biomes));
-        FACTORY = PalettedContainerFactory.create(REGISTRY_ACCESS);
+        FACTORY = REGISTRY_ACCESS.registryOrThrow(Registries.BIOME);
     }
 
     // ---- the two paths over the same in-memory content ----
@@ -94,7 +93,7 @@ class PaperSerializerParityTest {
         when(lightEngine.getLayerListener(LightLayer.BLOCK)).thenReturn(blockListener);
         when(lightEngine.getLayerListener(LightLayer.SKY)).thenReturn(skyListener);
         ServerLevel level = mock(ServerLevel.class);
-        when(level.getMinSectionY()).thenReturn(MIN_SECTION_Y);
+        when(level.getMinSection()).thenReturn(MIN_SECTION_Y);
         when(level.getLightEngine()).thenReturn(lightEngine);
         // C1: the produce-path v20 hook reads the level's registry access.
         when(level.registryAccess()).thenReturn(REGISTRY_ACCESS);
@@ -113,8 +112,8 @@ class PaperSerializerParityTest {
             if (sections[i] == null) continue;
             var s = new CompoundTag();
             s.putInt("Y", MIN_SECTION_Y + i);
-            s.put("block_states", FACTORY.blockStatesContainerCodec().encodeStart(NbtOps.INSTANCE, sections[i].getStates()).getOrThrow());
-            s.put("biomes", FACTORY.biomeContainerCodec().encodeStart(NbtOps.INSTANCE, sections[i].getBiomes()).getOrThrow());
+            s.put("block_states", dev.vox.lss.paper.testutil.TestPalettedContainers.blockStatesContainerCodec().encodeStart(NbtOps.INSTANCE, sections[i].getStates()).getOrThrow());
+            s.put("biomes", dev.vox.lss.paper.testutil.TestPalettedContainers.biomeContainerCodec(FACTORY).encodeStart(NbtOps.INSTANCE, sections[i].getBiomes()).getOrThrow());
             if (blockLight[i] != null) s.putByteArray("BlockLight", blockLight[i].getData());
             if (skyLight[i] != null) s.putByteArray("SkyLight", skyLight[i].getData());
             list.add(s);
@@ -162,10 +161,10 @@ class PaperSerializerParityTest {
      * from the canonical disk shape both paths then share.
      */
     private LevelChunkSection normalized(LevelChunkSection sec) {
-        var statesNbt = FACTORY.blockStatesContainerCodec().encodeStart(NbtOps.INSTANCE, sec.getStates()).getOrThrow();
-        var biomesNbt = FACTORY.biomeContainerCodec().encodeStart(NbtOps.INSTANCE, sec.getBiomes()).getOrThrow();
-        var states = FACTORY.blockStatesContainerCodec().parse(NbtOps.INSTANCE, statesNbt).getOrThrow();
-        if (!(FACTORY.biomeContainerCodec().parse(NbtOps.INSTANCE, biomesNbt).getOrThrow()
+        var statesNbt = dev.vox.lss.paper.testutil.TestPalettedContainers.blockStatesContainerCodec().encodeStart(NbtOps.INSTANCE, sec.getStates()).getOrThrow();
+        var biomesNbt = dev.vox.lss.paper.testutil.TestPalettedContainers.biomeContainerCodec(FACTORY).encodeStart(NbtOps.INSTANCE, sec.getBiomes()).getOrThrow();
+        var states = dev.vox.lss.paper.testutil.TestPalettedContainers.blockStatesContainerCodec().parse(NbtOps.INSTANCE, statesNbt).getOrThrow();
+        if (!(dev.vox.lss.paper.testutil.TestPalettedContainers.biomeContainerCodec(FACTORY).parse(NbtOps.INSTANCE, biomesNbt).getOrThrow()
                 instanceof PalettedContainer<Holder<Biome>> biomes)) {
             throw new IllegalStateException("parsed biome container is not the concrete PalettedContainer");
         }

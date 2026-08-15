@@ -21,7 +21,6 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
-import net.minecraft.world.level.chunk.PalettedContainerFactory;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -50,12 +49,12 @@ class XrayMaskFilterTest {
     }
 
     private static RegistryAccess REGISTRY_ACCESS;
-    private static PalettedContainerFactory FACTORY;
+    private static net.minecraft.core.Registry<net.minecraft.world.level.biome.Biome> FACTORY; // 1.21.1 line: the seam handle is the biome registry
 
     @BeforeAll
     static void setup() {
         REGISTRY_ACCESS = buildRegistryAccess();
-        FACTORY = PalettedContainerFactory.create(REGISTRY_ACCESS);
+        FACTORY = REGISTRY_ACCESS.registryOrThrow(Registries.BIOME);
     }
 
     /** Same fixed 4-biome registry as the NbtSectionSerializerTest corpus — golden bytes
@@ -330,8 +329,11 @@ class XrayMaskFilterTest {
         // shipped that one ore id. The replacement-seeded rebuild must not: this source
         // container is seeded on the ore (palette entry 0 == DIAMOND_ORE), exactly the
         // disk shape that leaked.
-        var oreSeeded = new PalettedContainer<>(Blocks.DIAMOND_ORE.defaultBlockState(),
-                FACTORY.blockStatesStrategy());
+        // 1.21.1 line: the (IdMap, T, Strategy) ctor (no 2-arg registry-carrying form).
+        var oreSeeded = new PalettedContainer<>(
+                net.minecraft.world.level.block.Block.BLOCK_STATE_REGISTRY,
+                Blocks.DIAMOND_ORE.defaultBlockState(),
+                PalettedContainer.Strategy.SECTION_STATES);
         for (int y = 0; y < 16; y++) {
             for (int z = 0; z < 16; z++) {
                 for (int x = 0; x < 16; x++) {
@@ -339,7 +341,7 @@ class XrayMaskFilterTest {
                 }
             }
         }
-        var section = new LevelChunkSection(oreSeeded, FACTORY.createForBiomes());
+        var section = new LevelChunkSection(oreSeeded, dev.vox.lss.testutil.TestPalettedContainers.createForBiomes(FACTORY));
         var m = defaultMask();
         var masked = XrayMaskFilter.mask(section, 0, m, FallbackKind.OVERWORLD, FACTORY);
 

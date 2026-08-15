@@ -128,7 +128,7 @@ class MemoizedNbtCodecTest {
         var a = pair[0];
         var b = pair[1];
         assertEquals(a, b, "fixture: content must be equal");
-        assertNotEquals(List.copyOf(a.keySet()), List.copyOf(b.keySet()), VACUITY_RECIPE);
+        assertNotEquals(List.copyOf(a.getAllKeys()), List.copyOf(b.getAllKeys()), VACUITY_RECIPE);
         assertEquals(a.hashCode(), b.hashCode(),
                 "order-independent hashing: equal content must hash equal regardless"
                         + " of iteration order (Map.hashCode contract)");
@@ -145,7 +145,7 @@ class MemoizedNbtCodecTest {
         // The recursion pin, one level down: the same verified diverging key set
         // nested under Properties, with the same vacuity guard.
         var pair = divergingPair();
-        assertNotEquals(List.copyOf(pair[0].keySet()), List.copyOf(pair[1].keySet()),
+        assertNotEquals(List.copyOf(pair[0].getAllKeys()), List.copyOf(pair[1].getAllKeys()),
                 VACUITY_RECIPE);
         var t1 = new CompoundTag();
         t1.put("Properties", pair[0]);

@@ -108,7 +108,7 @@ class ToolchainContractTest {
         // runbook's gate-host note. The double-clobber's fabric-side backstop is the
         // compile itself (wrong-MC source rarely compiles).
         String declared = gradleProps.getProperty("minecraft_version");
-        assertEquals(declared, SharedConstants.getCurrentVersion().name(),
+        assertEquals(declared, SharedConstants.getCurrentVersion().getName(),
                 "gradle.properties minecraft_version must equal the resolved MC artifact's "
                         + "version — the line.env↔gradle.properties↔artifact chain's last link");
         String line = lineEnv.getProperty("LINE_MC_FABRIC");

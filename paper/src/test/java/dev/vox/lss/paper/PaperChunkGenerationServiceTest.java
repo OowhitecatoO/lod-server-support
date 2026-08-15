@@ -19,10 +19,9 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
-import net.minecraft.world.level.chunk.PalettedContainerFactory;
 import net.minecraft.world.level.lighting.LayerLightEventListener;
 import net.minecraft.world.level.lighting.LevelLightEngine;
-import ca.spottedleaf.concurrentutil.util.Priority;
+import ca.spottedleaf.concurrentutil.executor.standard.PrioritisedExecutor;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -59,7 +58,7 @@ import static org.mockito.Mockito.when;
 @SuppressWarnings("deprecation")
 class PaperChunkGenerationServiceTest {
 
-    private static PalettedContainerFactory FACTORY;
+    private static net.minecraft.core.Registry<net.minecraft.world.level.biome.Biome> FACTORY; // 1.21.1 line: the seam handle is the biome registry
     private static RegistryAccess REGISTRY_ACCESS;
 
     @BeforeAll
@@ -74,13 +73,13 @@ class PaperChunkGenerationServiceTest {
         src.listElements().forEach(ref -> biomes.register(ref.key(), ref.value(), RegistrationInfo.BUILT_IN));
         biomes.freeze();
         REGISTRY_ACCESS = new RegistryAccess.ImmutableRegistryAccess(List.of(biomes));
-        FACTORY = PalettedContainerFactory.create(REGISTRY_ACCESS);
+        FACTORY = REGISTRY_ACCESS.registryOrThrow(Registries.BIOME);
     }
 
     // ---- harness ----
 
     record CapturedLaunch(PaperChunkGenerationService.PendingGenerationKey key,
-                          ServerLevel level, int cx, int cz, long token, Priority priority) {}
+                          ServerLevel level, int cx, int cz, long token, PrioritisedExecutor.Priority priority) {}
 
     static class CapturingGenService extends PaperChunkGenerationService {
         final List<CapturedLaunch> launches = new ArrayList<>();
@@ -94,7 +93,7 @@ class PaperChunkGenerationServiceTest {
 
         @Override
         void launchAsyncLoad(PendingGenerationKey key, ServerLevel level, int cx, int cz, long token,
-                             Priority priority) {
+                             PrioritisedExecutor.Priority priority) {
             launches.add(new CapturedLaunch(key, level, cx, cz, token, priority));
         }
     }
@@ -636,8 +635,8 @@ class PaperChunkGenerationServiceTest {
         assertTrue(svc.submitGeneration(UUID.randomUUID(), level, 7, -3, 1L));
 
         assertEquals(1, svc.launches.size());
-        assertSame(Priority.LOW, svc.launches.get(0).priority(),
-                "LOD generation must launch at Moonrise Priority.LOW");
+        assertSame(PrioritisedExecutor.Priority.LOW, svc.launches.get(0).priority(),
+                "LOD generation must launch at Moonrise PrioritisedExecutor.Priority.LOW");
     }
 
     @Test

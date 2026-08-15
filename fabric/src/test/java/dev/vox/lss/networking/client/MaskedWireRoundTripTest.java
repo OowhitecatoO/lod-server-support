@@ -19,7 +19,6 @@ import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunkSection;
-import net.minecraft.world.level.chunk.PalettedContainerFactory;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -45,7 +44,7 @@ class MaskedWireRoundTripTest {
     }
 
     private static RegistryAccess REGISTRY_ACCESS;
-    private static PalettedContainerFactory FACTORY;
+    private static net.minecraft.core.Registry<net.minecraft.world.level.biome.Biome> FACTORY; // 1.21.1 line: the seam handle is the biome registry
 
     @BeforeAll
     static void setup() {
@@ -57,7 +56,7 @@ class MaskedWireRoundTripTest {
         }
         biomes.freeze();
         REGISTRY_ACCESS = new RegistryAccess.ImmutableRegistryAccess(List.of(biomes));
-        FACTORY = PalettedContainerFactory.create(REGISTRY_ACCESS);
+        FACTORY = REGISTRY_ACCESS.registryOrThrow(Registries.BIOME);
     }
 
     private static LevelChunkSection buildTerrainSection() {

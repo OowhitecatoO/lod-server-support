@@ -77,7 +77,7 @@ class FabricOffThreadProcessorDropTest {
         byte[] sections = new byte[64];
         // #4 fix: a pathological >256-char dimension id is dropped at the guard (returns false →
         // caller answers up-to-date) instead of letting the send-time writeUtf throw and drop
-        // the whole flush queue. The guard runs before the Identifier.parse, so it can't throw.
+        // the whole flush queue. The guard runs before the ResourceLocation.parse, so it can't throw.
         String oversizedDim = "lss:" + "a".repeat(LSSConstants.MAX_DIMENSION_STRING_LENGTH - 3); // 257
 
         boolean sent = h.processor().buildAndEnqueueColumnPayload(h.state(), 1, 2, oversizedDim,
@@ -107,7 +107,7 @@ class FabricOffThreadProcessorDropTest {
         assertEquals(3, column.chunkX());
         assertEquals(-4, column.chunkZ());
         assertEquals(77L, column.columnTimestamp());
-        assertEquals(LSSConstants.DIM_STR_THE_END, column.dimension().identifier().toString());
+        assertEquals(LSSConstants.DIM_STR_THE_END, column.dimension().location().toString());
         assertEquals(LSSConstants.MAX_SEND_SECTIONS_SIZE, column.shippedSections().length);
     }
 }

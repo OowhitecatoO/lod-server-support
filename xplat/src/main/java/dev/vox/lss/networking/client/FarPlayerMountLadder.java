@@ -3,7 +3,7 @@ package dev.vox.lss.networking.client;
 import dev.vox.lss.common.LSSLogger;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 
@@ -56,15 +56,15 @@ final class FarPlayerMountLadder {
     static FarPlayerMountLadder production() {
         return new FarPlayerMountLadder(
                 FarPlayerMountLadder::resolveTypeStrict,
-                (type, level) -> type.create(level,
-                        net.minecraft.world.entity.EntitySpawnReason.LOAD));
+                // 1.21.1 line: no EntitySpawnReason on this MC — the 1-arg create.
+                (type, level) -> type.create(level));
     }
 
     /** Rung 1's resolver: getOptional, NEVER getValue (the DefaultedRegistry PIG
      *  trap). Malformed identities resolve empty like unknown ones. */
     static Optional<EntityType<?>> resolveTypeStrict(String identity) {
         try {
-            Identifier id = Identifier.tryParse(identity);
+            ResourceLocation id = ResourceLocation.tryParse(identity);
             if (id == null) return Optional.empty();
             return BuiltInRegistries.ENTITY_TYPE.getOptional(id);
         } catch (Exception e) {

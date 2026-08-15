@@ -63,7 +63,7 @@ public final class ClientNetGlue {
         if (SoakDialectOverride.isV19()) return;
         try {
             LoaderServices.get().sendToServer(new dev.vox.lss.networking.payloads.ClientInfoC2SPayload(
-                    net.minecraft.SharedConstants.getCurrentVersion().dataVersion().version()));
+                    net.minecraft.SharedConstants.getCurrentVersion().getDataVersion().getVersion()));
         } catch (Exception e) {
             LSSLogger.debug("client_info sidecar send failed: " + e.getMessage());
         }

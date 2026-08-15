@@ -22,7 +22,6 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.chunk.DataLayer;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
-import net.minecraft.world.level.chunk.PalettedContainerFactory;
 import net.minecraft.world.level.lighting.LayerLightEventListener;
 import net.minecraft.world.level.lighting.LevelLightEngine;
 import org.junit.jupiter.api.BeforeAll;
@@ -63,7 +62,7 @@ import static org.mockito.Mockito.when;
 class SectionLightDefaultsTest {
 
     private static RegistryAccess REGISTRY_ACCESS;
-    private static PalettedContainerFactory FACTORY;
+    private static net.minecraft.core.Registry<net.minecraft.world.level.biome.Biome> FACTORY; // 1.21.1 line: the seam handle is the biome registry
 
     @BeforeAll
     static void setup() {
@@ -75,7 +74,7 @@ class SectionLightDefaultsTest {
         src.listElements().forEach(ref -> biomes.register(ref.key(), ref.value(), RegistrationInfo.BUILT_IN));
         biomes.freeze();
         REGISTRY_ACCESS = new RegistryAccess.ImmutableRegistryAccess(List.of(biomes));
-        FACTORY = PalettedContainerFactory.create(REGISTRY_ACCESS);
+        FACTORY = REGISTRY_ACCESS.registryOrThrow(Registries.BIOME);
     }
 
     // ---- NBT builders (same grammar as NbtSectionSerializerTest) ----
@@ -94,8 +93,8 @@ class SectionLightDefaultsTest {
         sec.setBlockState(0, 0, 0, Blocks.STONE.defaultBlockState());
         var s = new CompoundTag();
         s.putInt("Y", y);
-        s.put("block_states", FACTORY.blockStatesContainerCodec().encodeStart(NbtOps.INSTANCE, sec.getStates()).getOrThrow());
-        s.put("biomes", FACTORY.biomeContainerCodec().encodeStart(NbtOps.INSTANCE, sec.getBiomes()).getOrThrow());
+        s.put("block_states", dev.vox.lss.paper.testutil.TestPalettedContainers.blockStatesContainerCodec().encodeStart(NbtOps.INSTANCE, sec.getStates()).getOrThrow());
+        s.put("biomes", dev.vox.lss.paper.testutil.TestPalettedContainers.biomeContainerCodec(FACTORY).encodeStart(NbtOps.INSTANCE, sec.getBiomes()).getOrThrow());
         if (blockLight != null) s.putByteArray("BlockLight", blockLight);
         if (skyLight != null) s.putByteArray("SkyLight", skyLight);
         return s;
@@ -237,7 +236,7 @@ class SectionLightDefaultsTest {
         when(lightEngine.getLayerListener(LightLayer.BLOCK)).thenReturn(blockListener);
         when(lightEngine.getLayerListener(LightLayer.SKY)).thenReturn(skyListener);
         ServerLevel level = mock(ServerLevel.class);
-        when(level.getMinSectionY()).thenReturn(MIN_SECTION_Y);
+        when(level.getMinSection()).thenReturn(MIN_SECTION_Y);
         when(level.getLightEngine()).thenReturn(lightEngine);
         // C1: the produce-path v20 hook reads the level's registry access.
         when(level.registryAccess()).thenReturn(REGISTRY_ACCESS);

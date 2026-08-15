@@ -193,11 +193,15 @@ class MoveTraceHookContractTest {
             }
         }
         assertEquals(1, ensureCount, "exactly one ensureRunningOnSameThread INVOKE");
-        // Argument plumbing (this.player.level()) legitimately precedes the call; any
-        // OTHER preceding INVOKE means vanilla hoisted real work above the thread gate
-        // and the anchor's premise must be re-verified.
-        assertTrue(beforeEnsure.stream().allMatch(n -> n.equals("level")),
-                "only the level() argument getter may precede ensureRunningOnSameThread —"
+        // Argument plumbing legitimately precedes the call; any OTHER preceding INVOKE
+        // means vanilla hoisted real work above the thread gate and the anchor's premise
+        // must be re-verified. 1.21.1 line (per-line re-derivation of this census, the
+        // designed process): the javap disassembly of this line's handleMovePlayer shows
+        // exactly one preceding INVOKE — ServerPlayer.serverLevel() at insn 6, feeding
+        // ensureRunningOnSameThread's ServerLevel argument (26.2's getter is level();
+        // same plumbing, renamed). Nothing else precedes.
+        assertTrue(beforeEnsure.stream().allMatch(n -> n.equals("serverLevel")),
+                "only the serverLevel() argument getter may precede ensureRunningOnSameThread —"
                         + " the entry hook's thread-safety anchor (review A-1); saw: " + beforeEnsure);
     }
 

@@ -14,7 +14,7 @@ import java.util.function.ToLongFunction;
 
 /**
  * Decode-memoizing codec wrapper for the disk-read serve path (2026-07-29 profile:
- * per-palette-entry block-state decode — Identifier parsing, registry lookups,
+ * per-palette-entry block-state decode — ResourceLocation parsing, registry lookups,
  * DataResult/Pair churn — was ~25% of all server CPU during saturated LOD backfill).
  *
  * <p>Palette entries repeat enormously across sections and columns, and NBT tags hash and

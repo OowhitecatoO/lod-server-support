@@ -1,5 +1,6 @@
 plugins {
-    id 'net.fabricmc.fabric-loom' version "${loom_version}"
+    // 1.21.1 line: the classic remap toolchain (see the 1.21.11 sibling).
+    id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
 }
 
 version = project.mod_version
@@ -40,8 +41,9 @@ configurations {
 
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
-    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    mappings loom.officialMojangMappings()
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
     testImplementation "net.fabricmc:fabric-loader-junit:${project.loader_version}"
     // LOD-store Phase 0 experiment deps (docs/planning/lod-store-implementation-plan.md):
     // the codec/schema decision tool (LodStoreExperimentTool, gated on
@@ -61,8 +63,8 @@ dependencies {
     storeDeps "com.github.luben:zstd-jni:1.5.7-3"
     localRuntime "org.xerial:sqlite-jdbc:3.49.1.0"
     localRuntime "com.github.luben:zstd-jni:1.5.7-3"
-    compileOnly "maven.modrinth:sodium:mc26.2-0.9.1-beta.3-fabric"
-    compileOnly "maven.modrinth:modmenu:20.0.0-beta.4"
+    modCompileOnly "maven.modrinth:sodium:mc1.21.1-0.8.13-beta.2-fabric"
+    modCompileOnly "maven.modrinth:modmenu:11.0.3"
     // Compat validation arm: -Pbenchmark.moonrise=true puts Moonrise on the dev runtime
     // (the same Modrinth version issue #69 was reported against), so the soak harness can
     // drive the full dirty pipeline — the SerializableChunkData.copyOf hook, broadcast,
@@ -118,7 +120,10 @@ fabricApi {
         createSourceSet = true
         modId = "lss-test"
         enableGameTests = true
-        enableClientGameTests = true
+        // 1.21.1 line: fabric-api 0.116.x has no fabric-client-gametest-api-v1 —
+        // Tier 3 is CUT on this line (the planned best-effort feature-drop; the
+        // 1.20.1 support branch records the same shape).
+        enableClientGameTests = false
         eula = true
     }
 }
@@ -234,7 +239,7 @@ processResources {
 }
 
 tasks.withType(JavaCompile).configureEach {
-    it.options.release = 25
+    it.options.release = 21  // 1.21.x line
 }
 
 // ---- LOD store nested dependency jars (plan §3 packaging) -----------------------------
@@ -356,7 +361,7 @@ tasks.register('vssJar') {
     // This Loom version (1.17) has no separate remapJar — the `jar` task produces the final
     // remapped release jar directly (with the nested common JiJ + Fabric-Mapping-Namespace).
     // String dependency so it resolves at graph-build time, not config time.
-    dependsOn 'jar'
+    dependsOn 'remapJar'  // loom-remap emits the release jar
     def iconFile = rootProject.file('branding/vss/icon.png')
     def srcJar = layout.buildDirectory.file("libs/${lssFabricJarName}")
     def outFile = layout.buildDirectory.file("libs/${vssFabricJarName}")

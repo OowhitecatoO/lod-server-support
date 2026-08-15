@@ -18,7 +18,7 @@ config="lss.neoforge.mixins.json"
     type="required"
     # LINE DATA: per-line NeoForge loader floor (round-3 review NIT — the MC dep
     # above is templated from gradle.properties; this row is hand-edited per line)
-    versionRange="[26.2,)"
+    versionRange="[21.1,)"
     ordering="NONE"
     side="BOTH"
 

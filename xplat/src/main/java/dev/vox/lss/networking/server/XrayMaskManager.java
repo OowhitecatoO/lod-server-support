@@ -96,11 +96,11 @@ public final class XrayMaskManager {
         var manager = active;
         if (manager == null) return true; // no manager: "off" is a stable answer
         manager.entryFor(level);
-        return manager.byDimension.containsKey(level.dimension().identifier().toString());
+        return manager.byDimension.containsKey(level.dimension().location().toString());
     }
 
     public MaskEntry entryFor(ServerLevel level) {
-        return entryFor(level.dimension().identifier().toString(),
+        return entryFor(level.dimension().location().toString(),
                 () -> AntiXrayCompat.engineForLevel(level));
     }
 

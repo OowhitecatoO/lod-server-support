@@ -1,20 +1,20 @@
 package dev.vox.lss.platform;
 
 import net.minecraft.core.Holder;
+import net.minecraft.core.Registry;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
-import net.minecraft.world.level.chunk.PalettedContainerFactory;
 import net.minecraft.world.level.chunk.PalettedContainerRO;
 
 /**
  * The section-construction seam (V-2/S2, version-port-isolation-plan.md §3): the ONLY
  * main-source site that invokes a {@link LevelChunkSection} constructor in the
  * xplat/fabric/neoforge family — pinned by {@code SectionConstructionPinTest}. The ctor
- * family is per-MC-line churn ({@link PalettedContainerFactory} exists only on 26.x; the
- * 1.21.x lines use the {@code Registry<Biome>} family), so a port edits THIS file and its
- * Paper twin ({@code PaperSectionConstruction}) instead of every consumer.
+ * family is per-MC-line churn ({@code PalettedContainerFactory} exists only on 26.x/late
+ * 1.21.x; this line uses the {@code Registry<Biome>} family), so a port edits THIS file
+ * and its Paper twin ({@code PaperSectionConstruction}) instead of every consumer.
  *
  * <p><b>Constraint carried from the 1.21.11 branch (the plan's S2 note):</b> no flavor of
  * this helper may ever use the section DESERIALIZATION ctor — on 1.21.x, AntiXray 1.4.x's
@@ -24,19 +24,23 @@ import net.minecraft.world.level.chunk.PalettedContainerRO;
 public final class SectionConstruction {
     private SectionConstruction() {}
 
+    // 1.21.1 line: no PalettedContainerFactory on this MC — the seam's construction
+    // parameter is the biome Registry (the 1.20.1-family recorded shape); every ctor
+    // form below is javap-verified against the 1.21.1 artifact.
+
     /** An all-air section with default biomes (vanilla's empty-section fill). */
-    public static LevelChunkSection empty(PalettedContainerFactory factory) {
-        return new LevelChunkSection(factory);
+    public static LevelChunkSection empty(Registry<Biome> biomeRegistry) {
+        return new LevelChunkSection(biomeRegistry);
     }
 
     /**
-     * A section from parsed containers (the NBT serializers' object path). {@code factory}
-     * is unused on this line — the 26.x ctor accepts the read-only view — but the Paper
+     * A section from parsed containers (the NBT serializers' object path). {@code biomeRegistry}
+     * is unused on this line — the 1.21.1 ctor accepts the read-only view — but the Paper
      * twin needs it for its non-mutable-biomes fallback, and the twins keep one signature.
      */
     public static LevelChunkSection fromContainers(PalettedContainer<BlockState> states,
                                                    PalettedContainerRO<Holder<Biome>> biomes,
-                                                   PalettedContainerFactory factory) {
+                                                   Registry<Biome> biomeRegistry) {
         return new LevelChunkSection(states, biomes);
     }
 
