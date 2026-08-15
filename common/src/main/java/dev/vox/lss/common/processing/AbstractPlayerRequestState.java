@@ -86,8 +86,26 @@ public abstract class AbstractPlayerRequestState<T> {
     /** Last sampled outbound-buffer depth, and the session high-water. -1 = no signal. */
     private volatile long outboundPendingBytes = -1;
     private volatile long outboundPendingHighWater = -1;
-    /** Ticks on which the deference gate skipped the column flush. */
-    private volatile long sendDeferrals = 0;
+    // ---- Send pacing (enableSendPacing, send-pacing-plan.md v3) ----
+    /** Refill-floored proportional drain: an over-floor backlog spreads over this many
+     *  ticks (exponentially — each tick ships Q/HORIZON of what remains, clamped). */
+    static final int PACE_HORIZON_TICKS = 10;
+    /** Ceiling on the proportional term, in refill shares (the impl-review clamp): a
+     *  DEEP backlog (real-terrain waves reach ~2.5x allocation queued) would otherwise
+     *  let Q/HORIZON meet the bank and unbound the very first tick this mechanism
+     *  exists to bound — while the term itself stays load-bearing BELOW 20 TPS (the
+     *  floor is tick-denominated, the limiter wall-clock-denominated, so on a slow
+     *  server the queue term is what restores cap-rate delivery; 2 shares covers full
+     *  rate down to 10 TPS, and a server below that is degraded everywhere). Bounds:
+     *  bank-sized waves pace at ONE share (a ~5-tick slope — bank = 5 shares = the
+     *  client's fast-fire floor, cadence-neutral); deep backlogs at most TWO. */
+    static final int PACE_MAX_BURST_SHARES = 2;
+    /** Ticks the pace budget stopped a PARTIAL flush — the `paced=` diag receipt (a
+     *  mechanism counter beside deferred=/yielded=, never a loss signal). */
+    private volatile long pacedTicks = 0;
+
+    private static final dev.vox.lss.common.LogThrottle SEND_FAIL_WARN =
+            new dev.vox.lss.common.LogThrottle(60_000);
 
     // ---- Transport yield (lodYieldsToVanillaTransport, yield plan v2.1) ----
     /** 100 ticks = 5 s: the §1.4 starvation floor — bounds worst-case LOD at ~1 column/5 s
@@ -100,9 +118,20 @@ public abstract class AbstractPlayerRequestState<T> {
     private volatile long yieldedTicks = 0;
     private int yieldNoSendTicks = 0;
     private int flushTickCounter = 0;
-    /** One INFO per JVM the first time any player rides the floor — the log archive's
-     *  answer to an after-the-fact "LOD was slow" report (yield plan §5). */
-    private static volatile boolean sustainedYieldWarned;
+    /** One INFO per PLAYER SESSION the first time that player rides the floor — the log
+     *  archive's answer to an after-the-fact "LOD was slow for X" report (yield plan §5;
+     *  user decision 2026-08-13: was one-per-JVM, which hid every player after the
+     *  first). Instance field, so the latch lives exactly as long as this state: a
+     *  dimension change mid-session builds a fresh state and may log once more — the
+     *  accepted corner of state-scoped latching. */
+    private boolean sustainedYieldNoted;
+
+    // ---- The vanilla-ping backstop (adaptive-transfer-rate-plan.md Mechanism B) ----
+    // Per player per session by construction (dies with this state); observed on the
+    // service pump, applied to the flush allocation (the m12 plumbing).
+    private final PingBackstop pingBackstop = new PingBackstop();
+
+    public PingBackstop getPingBackstop() { return this.pingBackstop; }
 
     // ---- Want-set mailbox + backlog (protocol v17) ----
 
@@ -153,10 +182,14 @@ public abstract class AbstractPlayerRequestState<T> {
     // on a cycle where no new batch arrived (batches land at 1Hz; the pass runs at 20Hz).
     private IncomingBatch appliedWantSet;
 
-    // Admission slots: caps are immutable; held counts are derived from the pending map
-    // (single-writer: processing thread; volatile for /lsslod command reads).
+    // Admission slots: held counts are derived from the pending map (single-writer:
+    // processing thread; volatile for /lsslod command reads). The sync cap stays
+    // immutable; genSlotCap is VOLATILE since v0.11.0 stage C (/lsslod set): the tick
+    // pass writes it from the main/pump thread while tryAdmit reads it on the
+    // PROCESSING thread — a plain field has no happens-before and a runtime change
+    // could stay invisible forever (SET review MAJOR; matches the held-count volatiles).
     private final int syncSlotCap;
-    private final int genSlotCap;
+    private volatile int genSlotCap;
     private volatile int heldSyncSlots = 0;
     private volatile int heldGenSlots = 0;
 
@@ -586,28 +619,19 @@ public abstract class AbstractPlayerRequestState<T> {
      */
     public long[] flushSendQueue(long allocationBytes, SharedBandwidthLimiter globalLimiter,
                                   TickDiagnostics diag, PayloadSender<T> sender) {
-        return flushSendQueue(allocationBytes, globalLimiter, diag, sender, 0L);
-    }
-
-    /**
-     * Flush overload carrying the transport-deference ceiling (0 = disabled, the default —
-     * see {@code outboundBufferCeilingKB}). Above the ceiling this tick's column flush is
-     * skipped and the queue RETAINED, matching the router's "a full slot cap retains the
-     * entry" convention: nothing is dropped, and the next tick drains normally.
-     *
-     * <p>Short overloads pin the yield OFF (the S-9a defaults pin): only the full overload
-     * can arm it, and only the platform services call that with live config.
-     */
-    public long[] flushSendQueue(long allocationBytes, SharedBandwidthLimiter globalLimiter,
-                                  TickDiagnostics diag, PayloadSender<T> sender,
-                                  long outboundCeilingBytes) {
-        return flushSendQueue(allocationBytes, globalLimiter, diag, sender,
-                outboundCeilingBytes, false, 0);
+        // Short overloads pin the yield/prune/pacing OFF (the S-9a defaults pin): only
+        // the full overload can arm them, and only the platform services call that with
+        // live config. (The operator-fixed outbound ceiling that used to ride this chain
+        // was DELETED 2026-08-13 — deletion review #2: with the netty gauge capped at
+        // the high-water mark while writable and the ceiling floored at 64 KB, it could
+        // only ever fire while NOT_WRITABLE — exactly when the default-ON yield gate
+        // already skips the flush, with better semantics.)
+        return flushSendQueue(allocationBytes, globalLimiter, diag, sender, false, 0);
     }
 
     /**
      * Full flush overload carrying the transport-yield gate
-     * ({@code lodYieldsToVanillaTransport}, default false — vanilla-first-lod-yield-plan.md
+     * ({@code lodYieldsToVanillaTransport}, default true since v0.11.0 — vanilla-first-lod-yield-plan.md
      * v2.1) and the relevance-prune radius (0 = prune disabled). The gate IS netty's
      * writability flag: while the channel is writable the bandwidth limiter is the only
      * constraint; while it is not, this tick's column flush is skipped and the queue
@@ -617,8 +641,29 @@ public abstract class AbstractPlayerRequestState<T> {
      */
     public long[] flushSendQueue(long allocationBytes, SharedBandwidthLimiter globalLimiter,
                                   TickDiagnostics diag, PayloadSender<T> sender,
-                                  long outboundCeilingBytes, boolean yieldToTransport,
-                                  int pruneRadiusChunks) {
+                                  boolean yieldToTransport, int pruneRadiusChunks) {
+        return flushSendQueue(allocationBytes, globalLimiter, diag, sender,
+                yieldToTransport, pruneRadiusChunks, false);
+    }
+
+    /**
+     * Fullest overload adding send pacing (send-pacing-plan.md v3:
+     * {@code enableSendPacing}, default true — the refill-floored, BURST-CLAMPED
+     * proportional drain). While enabled, a tick's column flush writes at most
+     * {@code clamp(queuedRawBytes/PACE_HORIZON_TICKS, share, PACE_MAX_BURST_SHARES*share)}
+     * RAW bytes where share = allocation/20 (one
+     * payload minimum — the presence gate), so the bandwidth bank's burst ships as a
+     * ~5-tick slope instead of a one-tick cliff, and vanilla packets interleave every
+     * tick. The floor is the allocation's own refill share, so NOTHING is ever paced
+     * below the configured cap rate; the pingf-cut allocation shrinks the floor with
+     * it, and a backlog's {@code Q/HORIZON} above the cut share is merely non-binding
+     * (the limiter stays the authority — the budget only vetoes). Short overloads pin
+     * pacing OFF (the S-9a defaults pin).
+     */
+    public long[] flushSendQueue(long allocationBytes, SharedBandwidthLimiter globalLimiter,
+                                  TickDiagnostics diag, PayloadSender<T> sender,
+                                  boolean yieldToTransport, int pruneRadiusChunks,
+                                  boolean sendPacing) {
         QueuedPayload<T> ready;
         while ((ready = this.readyPayloads.poll()) != null) {
             this.sendQueue.add(ready);
@@ -657,27 +702,6 @@ public abstract class AbstractPlayerRequestState<T> {
         if (pending > this.outboundPendingHighWater) this.outboundPendingHighWater = pending;
 
         long[] dropped = prunedPositions;
-
-        // Transport deference. A deep outbound buffer means LSS payloads are already
-        // queued AHEAD of vanilla's chunk packets on the shared channel; writing more
-        // deepens that head-of-line delay. -1 (no signal) never throttles.
-        //
-        // Placement is load-bearing: this sits AFTER the readyPayloads drain and the
-        // sendQueueSizeSnapshot publish because that snapshot is the ONLY input to the
-        // router's retain-and-stop gate. Deferring above it would leave sendQueueFull()
-        // permanently false and the router happily dispatching disk reads for the whole
-        // deferral — inverting the backpressure this gate exists to create. The departed
-        // sweep below is for the same reason: it is the only GC of departedColumns, and
-        // skipping it leaks one entry per column ever sent.
-        if (outboundCeilingBytes > 0 && pending > outboundCeilingBytes) {
-            // Count only ticks that actually withheld work: `deferred=` is the operator's
-            // tripwire, and an idle-queue tick skipped nothing. Ceiling first, yield
-            // second (S-6) — and the ceiling path deliberately has NO floor (F2-7): an
-            // operator-armed ceiling keeps today's exact semantics.
-            if (!this.sendQueue.isEmpty()) this.sendDeferrals++;
-            sweepDepartedColumns();
-            return dropped;
-        }
 
         // The yield gate (§1.2): while the channel is NOT writable, skip this tick's
         // column flush and retain the queue — with the §1.4 starvation floor: after
@@ -725,11 +749,55 @@ public abstract class AbstractPlayerRequestState<T> {
                 sweepDepartedColumns();
                 return dropped;
             }
-        } else {
+        } else if (this.sendQueue.isEmpty()) {
+            // Round-2 reset rescope (design §Floor): an EMPTY queue at flush entry means
+            // nothing is withheld — trivially not starving; both floor counters reset.
+            // The pre-v2 else-branch reset (any non-yield tick) admitted an unbounded-
+            // starvation interleave: it fired BEFORE any send was attempted, so a
+            // zero-allocation tick erased the counter with nothing flowed. A tick with
+            // queued work now resets ONLY where a payload actually leaves (in the loop).
             this.yieldNoSendTicks = 0;
         }
+
+        // Send pacing (send-pacing-plan.md v3): the budget is a pure function of the
+        // queue and the allocation — no probe input, no arming state. Computed lazily
+        // only when armed and non-empty (zero drift risk vs a running counter; the
+        // O(queue) walk is bounded by sendQueueLimitPerPlayer and runs at most once
+        // per tick per player). RAW-denominated to match the limiter and the
+        // allocation the floor derives from (wire <= raw, so the socket-facing
+        // amplitude is bounded a fortiori). The clamp: bank-sized waves (Q <= the
+        // bank) pace at the refill-share floor — the ~5-tick slope; deep backlogs at
+        // most PACE_MAX_BURST_SHARES shares (the ceiling that keeps the first tick
+        // bounded on real-terrain waves, while still compensating a sub-20-TPS
+        // server's tick-denominated floor down to ~10 TPS).
+        long paceBudget = 0;
+        if (sendPacing && !this.sendQueue.isEmpty() && !floorSendThisTick) {
+            long queuedRawBytes = 0;
+            for (var entry : this.sendQueue) {
+                queuedRawBytes += entry.estimatedBytes();
+            }
+            long share = allocationBytes / LSSConstants.TICKS_PER_SECOND;
+            paceBudget = Math.clamp(queuedRawBytes / PACE_HORIZON_TICKS,
+                    share, Math.max(share, PACE_MAX_BURST_SHARES * share));
+        }
+        long paceWritten = 0;
+
         while (!this.sendQueue.isEmpty()) {
             if (!this.bandwidth.canSend(allocationBytes)) break;
+            // The pace budget vetoes sends 2+ once this tick's RAW bytes reach it —
+            // never the first payload (the presence gate: a legal oversized column
+            // ships whole — and at a degenerate budget of 0, the gate is what keeps
+            // one payload per tick flowing), and never the starvation-floor tick
+            // (structurally exempt — it breaks after one send; the budget is not even
+            // computed there). A budget-stopped tick is by construction PARTIAL (the
+            // loop condition holds), which is exactly what paced= counts; a
+            // limiter-stopped tick books nothing here.
+            if (sendPacing && !floorSendThisTick
+                    && paceWritten > 0 && paceWritten >= paceBudget) {
+                this.pacedTicks++;
+                diag.recordPacedTick();
+                break;
+            }
 
             var queued = this.sendQueue.peek();
             try {
@@ -746,29 +814,38 @@ public abstract class AbstractPlayerRequestState<T> {
                 decrementEnqueued(queued.packedPos());
                 this.bandwidth.recordSend(queued.estimatedBytes());
                 globalLimiter.recordSend(queued.estimatedBytes());
+                paceWritten += queued.estimatedBytes();
                 diag.recordSectionSent(queued.estimatedBytes());
                 // Shipped size (frame for codec-1 payloads) — the wire_bytes gauge that
                 // makes /lsslod diag match observed bandwidth (design §5: the limiter
                 // keeps charging raw; this counter is the observability half).
                 diag.recordWireSent(queued.wireBytes());
+                // Round-2 reset rescope (yield design §Floor): a payload actually LEFT,
+                // so the floor counter restarts — the ONLY reset besides the
+                // empty-queue-at-entry one. A refused/zero-allocation tick resets
+                // nothing (review A-1/B-5: a floor window must not be silently spent).
+                this.yieldNoSendTicks = 0;
                 if (floorSendThisTick) {
-                    // The starvation floor sends EXACTLY ONE payload (§1.4) — the yield
-                    // is still holding; this send only proves liveness. The counter and
-                    // the one-shot INFO fire only HERE, on a send that actually left
-                    // (review A-1/B-5).
-                    this.yieldNoSendTicks = 0;
-                    if (!sustainedYieldWarned) {
-                        sustainedYieldWarned = true;
-                        LSSLogger.info("Transport yield sustained for " + YIELD_FLOOR_TICKS
-                                + " ticks on " + getPlayerName() + " — LOD is running at the"
-                                + " starvation floor (~1 column/5 s) while vanilla traffic"
-                                + " drains; this is lodYieldsToVanillaTransport working");
+                    // The starvation floor sends EXACTLY ONE payload (§1.4) — the
+                    // holding governor is still holding; this send only proves liveness.
+                    if (!this.sustainedYieldNoted) {
+                        this.sustainedYieldNoted = true;
+                        LSSLogger.info("Limiting LOD delivery to " + getPlayerName()
+                                + ": the client or network cannot keep up, so game traffic"
+                                + " is prioritized and LODs will catch up once the"
+                                + " connection drains (logged once per session)");
                     }
                     break;
                 }
             } catch (Exception e) {
-                LSSLogger.error("Failed to send queued payload to " + getPlayerName()
-                        + ", dropping remaining queue (" + this.sendQueue.size() + " entries)", e);
+                // Throttled (log sweep): a closing/broken connection can throw here every
+                // tick until the disconnect lands — its sibling yield WARN is latched.
+                long n = SEND_FAIL_WARN.recordAndTryAcquire(System.nanoTime() / 1_000_000);
+                if (n > 0) {
+                    LSSLogger.error("Failed to send queued payload to " + getPlayerName()
+                            + ", dropping remaining queue (" + this.sendQueue.size()
+                            + " entries; " + n + " send failure(s) since the last report)", e);
+                }
                 // Seeded with any prune-cleared positions from this tick: both classes
                 // need the caller's clearDiskReadDone routing, and overwriting would
                 // leak the pruned ones' stale done-bits.
@@ -833,6 +910,8 @@ public abstract class AbstractPlayerRequestState<T> {
     }
 
     /** Cumulative ticks the transport yield withheld this player's column flush. */
+    public long getPacedTicks() { return this.pacedTicks; }
+
     public long getYieldedTicks() {
         return this.yieldedTicks;
     }
@@ -1112,13 +1191,17 @@ public abstract class AbstractPlayerRequestState<T> {
     public long getOutboundPendingBytes() { return this.outboundPendingBytes; }
     /** Session high-water of {@link #getOutboundPendingBytes()}; -1 = never measured. */
     public long getOutboundPendingHighWater() { return this.outboundPendingHighWater; }
-    /** Ticks whose column flush the deference gate skipped. Nonzero on a healthy link is
-     *  a red flag, not the gate working — see the plan's §11.4 standing warning. */
-    public long getSendDeferrals() { return this.sendDeferrals; }
     public int getHeldSyncSlots() { return this.heldSyncSlots; }
     public int getHeldGenSlots() { return this.heldGenSlots; }
     public int getSyncSlotCap() { return this.syncSlotCap; }
     public int getGenSlotCap() { return this.genSlotCap; }
+
+    /** Runtime cap change (v0.11.0 stage C): applied to EVERY registered state in the
+     *  same tick pass, removing the old "new joins only" split (registration captured
+     *  the boot value). Volatile write — see the field comment. */
+    public void updateGenSlotCap(int cap) {
+        this.genSlotCap = cap;
+    }
     public long getTotalSectionsSent() { return this.bandwidth.getTotalSectionsSent(); }
     public long getTotalBytesSent() { return this.bandwidth.getTotalBytesSent(); }
     public long getTotalRequestsReceived() { return this.totalRequestsReceived.get(); }

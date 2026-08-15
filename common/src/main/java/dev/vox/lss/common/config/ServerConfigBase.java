@@ -13,12 +13,24 @@ import java.util.List;
 public abstract class ServerConfigBase extends JsonConfig {
     protected static final String FILE_NAME = "lss-server-config.json";
 
+    /** Brand-preferred server-config filenames ({@code vss-server-config.json} first on a
+     *  VSS jar) with the other brand's file as the adoption fallback — the migration story
+     *  the old brand-INVARIANT rule demanded: {@code JsonConfig.load} adopts whichever file
+     *  EXISTS as the save target, so an LSS<->VSS jar swap keeps its config, and only a
+     *  genuinely fresh install creates the brand's own file. A METHOD, not a static field:
+     *  the candidate order must read the brand AFTER the platform's Brand.load, and a
+     *  class-init-time field would freeze whatever the classloading order happened to see.
+     *  (Folded from XANTHA's v0.10.0 VSS release patch, 2026-08-13.) */
+    protected static String[] serverConfigCandidates() {
+        return brandedConfigCandidates("server");
+    }
+
     public boolean enabled = true;
-    /** LOD radius in chunks. 512 by user decision 2026-08-08 (config rework) — this
-     *  REVERSES the 2026-08-02 same-day revert of 512: the D0 tile cache made the
-     *  derived footprint cheap (AUTO ~45 MB/dim at 512 vs ~109 MB pre-tile). Note what
-     *  scales with it — the timestamp cache (see effectiveTimestampCacheMB) and, with
-     *  the store on (its 2026-08-08 default), the warmed disk footprint. */
+    /** LOD radius in chunks. Back to 512 by user decision 2026-08-13 (reverting the
+     *  2026-08-12 stage-A cut to 300 — history: 256 → 512 (2026-08-08 rework) → 300 →
+     *  512). Note what scales with it — the timestamp cache (see
+     *  effectiveTimestampCacheMB, AUTO follows this automatically) and, with the
+     *  store on (a fresh install's default), the warmed disk footprint. */
     public int lodDistanceChunks = 512;
     /**
      * Per-player bandwidth cap. Went 20 -> 50 -> 25 MiB on 2026-08-02, 25 -> 15 MiB on
@@ -68,6 +80,34 @@ public abstract class ServerConfigBase extends JsonConfig {
      */
     public int diskReaderThreads = 0;
     /**
+     * Disk-read concurrency gate (disk-read-concurrency-gate-plan.md): at most this many
+     * reader-pool threads may run the EXPENSIVE serve phase (region read → zlib inflate →
+     * NBT parse → transcode → zstd compress — milliseconds of CPU per column) at any
+     * instant. Store-hit serves (~44 µs SQLite blob + frame reuse) never consume a
+     * permit. A read refused by the gate is a silent drop healed by the client's ≤1 s
+     * re-declaration (the standard transient-drop path, counted {@code disk.gated}).
+     *
+     * <p><b>The CPU-vs-bandwidth separation:</b> the bandwidth caps bound the CLIENT
+     * (raw bytes ≈ decode work); this bounds the SERVER (concurrent expensive reads ≈
+     * CPU). Before this key the bandwidth caps were the only throughput governor on the
+     * serve path, so raising them for fast warm store serves also uncapped the disk
+     * path's CPU bill on cold regions.
+     *
+     * <p><b>0 = AUTO (the default), store-conditional:</b> with a store attached, K =
+     * half the resolved reader pool (rounded up — pool 8 → 4, pool 3 → 2, pool 1 → 1),
+     * reserving the rest for store lookups; with NO store attached, K = the pool — a
+     * structural no-op, because there is no cheap path to protect and every upgrading
+     * (store-off) server would otherwise pay pure downside on fresh worlds. See
+     * {@link #effectiveMaxConcurrentDiskReads(int, boolean)}.
+     *
+     * <p><b>Disable idiom: set it ≥ the reader pool size</b> (e.g. 64) — a K at or above
+     * the pool cannot bind (the {@code lodColumnsPerSecondLimit} large-value-inert
+     * precedent). 0 is NOT off here — it is AUTO, exactly like the adjacent
+     * {@code diskReaderThreads}; nonzero clamps 1..64 and additionally to the resolved
+     * pool at derivation.
+     */
+    public int maxConcurrentDiskReads = 0;
+    /**
      * Per-player send-queue cap. The default is the wire batch cap: under v17 replace
      * semantics a player's backlog is at most ONE wire batch, and a payload only enqueues
      * for an admitted backlog position, so enqueued payloads per player structurally
@@ -85,22 +125,35 @@ public abstract class ServerConfigBase extends JsonConfig {
      * infrastructure, not dead weight.
      */
     public int sendQueueLimitPerPlayer = LSSConstants.MAX_BATCH_CHUNK_REQUESTS;
+    // outboundBufferCeilingKB DELETED 2026-08-13 (deletion review #2, user decision):
+    // the AUTO mode was live-falsified three times (adaptive-transfer-rate-plan.md), and
+    // the surviving operator-FIXED ceiling was structurally shadowed — the netty gauge
+    // caps at the high-water mark while writable and the ceiling floored at 64 KB, so it
+    // could only fire while NOT_WRITABLE, exactly when the default-ON transport yield
+    // already skips the flush with better semantics (starvation floor + relevance
+    // prune). Slow-link pacing is owned by the client transfer governor + the server
+    // ping backstop; an old config file's key is ignored and dropped on the next save.
     /**
-     * Transport deference (docs/planning/flight-cadence-and-transport-backpressure-plan.md
-     * §11.4): when a player's network outbound buffer holds more than this many KB, LSS
-     * skips that tick's column flush and retains its queue, so LSS payloads stop deepening
-     * the head-of-line delay ahead of vanilla's own chunk packets on the shared channel.
-     *
-     * <p><b>Default 0 = OFF, deliberately.</b> The elytra-wall investigation measured this
-     * mechanism ABSENT — flat 20–26 ms ping across a full flight is a direct and sensitive
-     * probe of shared-queue depth, and the server's send queue read empty throughout. The
-     * gate ships correct and tested so it can be armed the moment {@code obuf_hw} in
-     * {@code /lsslod diag} shows a real buffer building, and so that arming it does not
-     * confound the adaptive-cadence A/B it was written alongside. Nonzero {@code deferred=}
-     * on a healthy link is a red flag (the retired movement-cadence-debounce failure mode
-     * was "LOD silently stops during fast travel"), not the gate doing its job.
+     * The vanilla-ping backstop (adaptive-transfer-rate-plan.md, Mechanism B): when a
+     * player's keepalive ping rises >750 ms over its session baseline while LSS was
+     * actually sending to them, their LOD bandwidth allocation is cut (first cut lands
+     * below the observed send rate) and recovers slowly once ping normalizes. Coarse
+     * and universal — it protects ANY client on a congested link, including old ones
+     * without the client-side transfer governor. Runtime-mutable via
+     * {@code /lsslod set enablePingBackstop} (the live A/B lever).
      */
-    public int outboundBufferCeilingKB = 0;
+    public boolean enablePingBackstop = true;
+    /**
+     * Send pacing (send-pacing-plan.md v3 — the refill-floored, burst-clamped drain):
+     * spreads the bandwidth bank's one-tick burst into a ~5-tick slope so vanilla
+     * packets interleave during LOD resolution waves (join/rejoin/teleport). The
+     * budget floors at the allocation's own per-tick refill share, so sustained
+     * throughput is never paced below the configured cap — this is a burst SHAPER,
+     * never a rate governor (rate ownership is the client's, via want-set sizing).
+     * Runtime-mutable via {@code /lsslod set enableSendPacing} (the live A/B lever).
+     */
+    public boolean enableSendPacing = true;
+
     /**
      * Transport yield (vanilla-first-lod-yield-plan.md v2.1, v0.10.0 stage A2): while the
      * player's netty channel reports NOT WRITABLE, the per-tick column flush is skipped
@@ -108,14 +161,17 @@ public abstract class ServerConfigBase extends JsonConfig {
      * already backed up ahead of vanilla's chunk packets. A starvation floor sends one
      * payload per 5 s so a hard-yielding player is distinguishable from a dead one, and a
      * once-a-minute relevance prune drops queue entries the player has long left behind.
-     * <b>Default FALSE</b> — the mechanism ships unarmed (the project's recorded evidence
-     * discipline: the default flips only in a later release citing the live E3 A/B, whose
-     * metric is moved-wrongly/rejection EVENT RATES). Behind a buffering proxy
-     * (Velocity/Bungee) the gate sees the server→proxy hop and is best-effort: it can
-     * under-yield, never over-yield. While armed, expect flying players to ride the floor
-     * during sustained vanilla chunk bursts — that IS "vanilla first". No clamp (boolean).
+     * <b>Default TRUE since v0.11.0</b> (user decision 2026-08-13, superseding the
+     * v0.10.0 ships-unarmed stance and its planned live-A/B precondition — the flip
+     * rides the v0.11.0 Modrinth manual-testing pause as its live observation window).
+     * Behind a buffering proxy (Velocity/Bungee) the gate sees the server→proxy hop
+     * and is best-effort: it can under-yield, never over-yield. While armed, expect
+     * flying players to ride the floor during sustained vanilla chunk bursts — that
+     * IS "vanilla first". Loopback channels never go unwritable, so soaks/gametests
+     * are provably unaffected (the CI-inertness pin in TransportYieldFlushTest).
+     * No clamp (boolean).
      */
-    public boolean lodYieldsToVanillaTransport = false;
+    public boolean lodYieldsToVanillaTransport = true;
     /** Fleet-wide bandwidth ceiling. Raised 100 -> 256 MiB 2026-08-02 (config review
      *  section 3.2 — at 20 MiB/player the old value bound at FIVE concurrent LOD players),
      *  lowered 256 -> 60 MiB on 2026-08-05 (user decision, v0.9.1, alongside the 15 MiB
@@ -134,6 +190,20 @@ public abstract class ServerConfigBase extends JsonConfig {
     /** 32 -> 40 by user decision 2026-08-08 (config rework), matching the per-player cap. */
     public int generationConcurrencyLimitGlobal = 40;
     public int generationTimeoutSeconds = 60;
+    /**
+     * Seconds between dirty-column pushes to clients. <b>0 = dirty pushes DISABLED</b>
+     * (v0.11.0, dirty-broadcast-interval-zero-plan.md): no {@code DirtyColumnsS2CPayload}
+     * ever leaves the server, but the drain and the whole invalidation fan-out — LOD-store
+     * rows, the timestamp cache, in-flight taints, per-player done-bit/probe-stamp clears —
+     * keep running every {@link LSSConstants#DIRTY_DRAIN_ONLY_INTERVAL_SECONDS} seconds, so
+     * a rejoin or any mid-session re-ask re-resolves honestly. Consequences an operator
+     * accepts with 0: connected clients keep stale LOD until they re-ask (rejoin always
+     * heals), and {@code NOT_GENERATED}-parked positions lose their one mid-session revival
+     * path (the dirty broadcast) — they heal only on reconnect. Flipping back to nonzero is
+     * live (the broadcasters re-read per tick) but never retroactive: edits drained during
+     * an off window already left the tracker and surface via re-ask only. Negative values
+     * normalize to 0; 1 stays the nonzero floor, 300 the ceiling.
+     */
     public int dirtyBroadcastIntervalSeconds = 10;
     // The per-player SYNC (disk-read) slot cap is NOT config anymore — see
     // LSSConstants.SYNC_ON_LOAD_SLOT_CAP (shadowed by the disk-pool headroom gate at the
@@ -302,19 +372,19 @@ public abstract class ServerConfigBase extends JsonConfig {
      *
      * <p>Unknown values still normalize to "off" (a typo silently DISABLES the feature
      * instead of enabling a storage engine — predictable either way, and the config
-     * echo names the effective mode). "memory" remains one of those unknowns; the
-     * in-memory tier survives only as the SQLite-init degrade (see LodStores).
+     * echo names the effective mode). "memory" remains one of those unknowns — the
+     * in-memory tier itself is DELETED (2026-08-13); a failed SQLite init runs
+     * store-less (see LodStores).
      *
      * <p><b>Harness note:</b> the soak/benchmark stagings and gametest run dirs pin
      * this OFF explicitly (store scenarios excepted) — their law baselines and source
      * pins were calibrated store-off, and re-baselining them buys nothing.
      */
     public String lodStore = "off";
-    // NOTE: lodStoreMemoryMB is RETIRED (2026-08-02) along with the "memory" mode — the
-    // in-memory tier survives only as the boot-time degrade when SQLite cannot init, at
-    // a fixed budget (LodStores.DEGRADE_MAX_BYTES). GSON ignores the key on load and
-    // validate()'s next save drops it from the file, same as the retired
-    // syncOnLoadConcurrencyLimitPerPlayer.
+    // NOTE: lodStoreMemoryMB is RETIRED (2026-08-02) along with the "memory" mode, and
+    // the in-memory tier itself was DELETED 2026-08-13 (a failed SQLite init runs
+    // store-less). GSON ignores the key on load and validate()'s next save drops it
+    // from the file, same as the retired syncOnLoadConcurrencyLimitPerPlayer.
     /**
      * Periodic LOD-store freshness re-sweep (seconds; 0 = off). This is PAPER's stale
      * bound: its dirty detection is event-driven with documented unfired-event gaps
@@ -407,6 +477,32 @@ public abstract class ServerConfigBase extends JsonConfig {
     }
 
     /**
+     * Resolved disk-read gate capacity K, honouring the 0 = AUTO default
+     * (disk-read-concurrency-gate-plan.md — the {@code effectiveDiskReaderThreads}
+     * three-part pattern: field + runtime-parameter resolver + clamps-nonzero-only).
+     *
+     * @param resolvedReaderThreads the RESOLVED pool size (0=AUTO already applied via
+     *        {@link #effectiveDiskReaderThreads(boolean)}) — deriving from it inherits
+     *        the read-path-aware sizing, and an explicit override clamps to it (a K
+     *        above the pool cannot bind)
+     * @param storeAttached the POST-DEGRADE store state ({@code store != null} at the
+     *        service, never {@code lodStore != "off"}): a store that failed to init has
+     *        no cheap rung to protect, and half-pooling a store-less server is the
+     *        convergent-MAJOR regression both gate reviews carved out
+     */
+    public int effectiveMaxConcurrentDiskReads(int resolvedReaderThreads, boolean storeAttached) {
+        if (maxConcurrentDiskReads > 0) {
+            return Math.clamp(maxConcurrentDiskReads, LSSConstants.MIN_MAX_CONCURRENT_DISK_READS,
+                    resolvedReaderThreads);
+        }
+        if (!storeAttached) return resolvedReaderThreads; // AUTO, no store: no-op gate
+        return Math.clamp(
+                (resolvedReaderThreads + LSSConstants.AUTO_DISK_READ_GATE_DIVISOR - 1)
+                        / LSSConstants.AUTO_DISK_READ_GATE_DIVISOR, // ceil(pool/2)
+                LSSConstants.MIN_MAX_CONCURRENT_DISK_READS, resolvedReaderThreads);
+    }
+
+    /**
      * Resolved per-dimension timestamp-cache size in MB, honouring the 0 = AUTO default.
      *
      * <p>The scan is a Chebyshev (square) ring walk, so the tracked region is
@@ -458,14 +554,24 @@ public abstract class ServerConfigBase extends JsonConfig {
      *        native probe, not the config request — a probe-failed server ships raw for
      *        every session, and echoing the request would let compress_gate.sh compare
      *        two identical raw arms with both marked valid (B0 review M1)
+     * @param effectiveMaxConcurrentDiskReads the RESOLVED gate capacity K — 0=AUTO and
+     *        the store-conditional already applied via
+     *        {@link #effectiveMaxConcurrentDiskReads(int, boolean)}. Because K depends
+     *        on POST-DEGRADE store attachment, the echo call site sits AFTER store
+     *        attachment on both platforms (an earlier echo would report K computed
+     *        store-less on every store-armed server — the same resolved-not-requested
+     *        rule as the zstd argument; ordering source-pinned in
+     *        ChannelAccessorContractTest)
      */
     public String effectiveConfigEcho(int effectiveReaderThreads,
-                                      boolean effectiveCompressedColumns) {
+                                      boolean effectiveCompressedColumns,
+                                      int effectiveMaxConcurrentDiskReads) {
         return "Effective config: useNbtTranscode=" + useNbtTranscode
                 + ", diskReaderThreads=" + effectiveReaderThreads
                 + ", useCompressedColumns=" + effectiveCompressedColumns
                 + ", useBackgroundReadSplit=" + useBackgroundReadSplit
-                + ", useSelectiveNbtParse=" + useSelectiveNbtParse;
+                + ", useSelectiveNbtParse=" + useSelectiveNbtParse
+                + ", maxConcurrentDiskReads=" + effectiveMaxConcurrentDiskReads;
     }
     /**
      * LOD x-ray masking (docs/planning/antixray-compat-design.md §3). "auto" (default)
@@ -484,6 +590,33 @@ public abstract class ServerConfigBase extends JsonConfig {
      * means "hide nothing"; a malformed null restores this default.
      */
     public List<String> xrayHiddenBlocks = defaultXrayHiddenBlocks();
+
+    // ---- Far players (v0.11.0 — far-player-proxies-plan.md §3.4; ARMED since E2:
+    // ---- compiled default "on", clients send CAPABILITY_FAR_PLAYERS; serving is
+    // ---- always additionally gated on that bit, so vanilla/legacy clients cost 0).
+
+    /**
+     * Far-player proxies: {@code "off"} / {@code "opt-in"} / {@code "on"}. Server-
+     * authoritative privacy mode (the ESP-oracle fix over SeeU): {@code opt-in} serves
+     * only targets whose own client sent shareSelf=true; {@code on} serves everyone
+     * minus the exclude list / permission node / shareSelf opt-outs. COMPILED DEFAULT
+     * {@code "on"} since E2 for fresh AND upgrading installs (user decision
+     * 2026-08-12; E1 shipped it {@code "off"}/inert). Unknown values still fail SAFE
+     * to {@code off} — for a position-sharing feature the safe direction is private.
+     */
+    public String farPlayers = "on";
+    /** Broadcast cadence in ticks (default 10 = 2 Hz full-rate tier; far tiers halve). */
+    public int farPlayersUpdateIntervalTicks = 10;
+    /** Server cap on the visibility ring, blocks (client prefs intersect it). Default
+     *  2048 — deliberately NOT SeeU's 8192; admins raise it consciously (privacy). */
+    public int farPlayersMaxDistanceBlocks = 2048;
+    /** Inner ring in blocks (0 = none): players nearer than this are vanilla's job. */
+    public int farPlayersMinDistanceBlocks = 0;
+    /** Serve spectators as far players (default false — SeeU's proven default). */
+    public boolean farPlayersSendSpectators = false;
+    /** Names/UUIDs never served as far players regardless of mode (restart-only for
+     *  v0.11.0 — R-9 registers only the mode + max distance as runtime keys). */
+    public List<String> farPlayersExclude = List.of();
     /**
      * FALLBACK mask cutoff: only blocks below this world Y are masked (Paper's default 64).
      * At/above it the data already ships unobfuscated in vanilla chunk packets, so masking
@@ -509,12 +642,11 @@ public abstract class ServerConfigBase extends JsonConfig {
 
     @Override
     protected String getFileName() {
-        // Deliberately brand-INVARIANT: both LSS and VSS servers use lss-server-config.json.
-        // Unlike the client config (LSSClientConfig, which is brand-driven via
-        // brandedConfigCandidates), the server config was never brand-specific, so keeping one
-        // shared name is what makes an LSS<->VSS server jar swap trivially keep its config. Do
-        // NOT route this through brandedConfigCandidates("server") without a migration story.
-        return FILE_NAME;
+        // Brand-preferred since 2026-08-13 (XANTHA's release patch): the candidates
+        // mechanism IS the migration story the old brand-invariant comment demanded —
+        // an existing lss-server-config.json is adopted (read AND written) by a VSS jar,
+        // so a jar swap keeps its config; only a fresh VSS install creates vss-*.
+        return serverConfigCandidates()[0];
     }
 
     /** MiB — the mb* bandwidth keys' unit. */
@@ -567,37 +699,136 @@ public abstract class ServerConfigBase extends JsonConfig {
         lodStore = "on";
     }
 
+    // ---- Per-key clamp helpers (v0.11.0 stage C, runtime-settings-commands-plan.md +
+    // the mega plan's R-2 registry clamp rule): validate() and the /lsslod set registry
+    // share these EXACT functions, so a registry row can never clamp differently from
+    // boot validation (the review MAJOR: a bare (min,max) row would turn
+    // `set dirtyBroadcastIntervalSeconds 0` into 1 s — re-breaking DIRTY0 through the
+    // command surface one stage after it was fixed — and `set maxConcurrentDiskReads 0`
+    // into K=1 instead of AUTO). ----
+
+    public static int clampLodDistance(int v) {
+        return Math.clamp(v, LSSConstants.MIN_LOD_DISTANCE, LSSConstants.MAX_LOD_DISTANCE);
+    }
+
+    /** Negative = the file-absent sentinel → the compiled default; else the byte band. */
+    public static double clampMbPerPlayer(double v) {
+        if (v < 0) return DEFAULT_MB_PER_PLAYER;
+        return Math.clamp(v, LSSConstants.MIN_BYTES_PER_SECOND / MB,
+                LSSConstants.MAX_BYTES_PER_SECOND_PER_PLAYER / MB);
+    }
+
+    public static double clampMbGlobal(double v) {
+        if (v < 0) return DEFAULT_MB_GLOBAL;
+        return Math.clamp(v, LSSConstants.MIN_BYTES_PER_SECOND / MB,
+                LSSConstants.MAX_BYTES_PER_SECOND_GLOBAL_LIMIT / MB);
+    }
+
+    public static int clampGenGlobal(int v) {
+        return Math.clamp(v, LSSConstants.MIN_CONCURRENT_GENERATIONS, LSSConstants.MAX_CONCURRENT_GENERATIONS);
+    }
+
+    /** Cross-field: the per-player cap clamps against the CONFIGURED global (§9.1). */
+    public static int clampGenPerPlayer(int v, int configuredGlobal) {
+        return Math.clamp(v, LSSConstants.MIN_CONCURRENCY_LIMIT, configuredGlobal);
+    }
+
+    /** 0 (and negatives) = dirty pushes disabled — a first-class value (DIRTY0). */
+    public static int clampDirtyBroadcastInterval(int v) {
+        return v <= 0 ? 0 : Math.clamp(v,
+                LSSConstants.MIN_DIRTY_BROADCAST_INTERVAL, LSSConstants.MAX_DIRTY_BROADCAST_INTERVAL);
+    }
+
+    /** 0 (and negatives) = AUTO, store-conditional — never a tight gate. */
+    public static int clampMaxConcurrentDiskReads(int v) {
+        return v <= 0 ? 0 : Math.clamp(v,
+                LSSConstants.MIN_MAX_CONCURRENT_DISK_READS, LSSConstants.MAX_DISK_READER_THREADS);
+    }
+
+    /** Far-player mode normalization (E1): "off" / "opt-in" / "on"; unknown → the
+     *  compiled default "off" (E1 ships INERT — E2 flips the default to "on"). Static
+     *  per the R-2 registry clamp rule — the /lsslod set row (R-9) uses this exact
+     *  helper. */
+    public static String clampFarPlayersMode(String v) {
+        if (v == null) return "off";
+        return switch (v.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "on" -> "on";
+            case "opt-in", "optin", "opt_in" -> "opt-in";
+            default -> "off";
+        };
+    }
+
+    public static int clampFarPlayersUpdateInterval(int v) {
+        return Math.clamp(v, 2, 100);
+    }
+
+    public static int clampFarPlayersMaxDistance(int v) {
+        return Math.clamp(v, 128, 16384);
+    }
+
+    /** Min distance: 0 = no inner ring; clamps into [0, 16384] (validate() additionally
+     *  drags it under the max — an inverted ring would hide everyone). */
+    public static int clampFarPlayersMinDistance(int v) {
+        return Math.clamp(v, 0, 16384);
+    }
+
+    // R-5 log-on-change (stage C): validate() re-runs on every /lsslod set, so its
+    // advisory INFO lines must fire on TRANSITION, not per call — a runtime `set` would
+    // otherwise re-print the dirty-0 mode line (and Paper's Folia store warn) on every
+    // unrelated key change. Transient: never serialized, per-process state only.
+    private transient int lastAdvisedDirtyInterval = Integer.MIN_VALUE;
+
     @Override
     public void validate() {
-        lodDistanceChunks = Math.clamp(lodDistanceChunks, LSSConstants.MIN_LOD_DISTANCE, LSSConstants.MAX_LOD_DISTANCE);
+        lodDistanceChunks = clampLodDistance(lodDistanceChunks);
         resolveBandwidthKeys();
-        mbPerSecondLimitPerPlayer = Math.clamp(mbPerSecondLimitPerPlayer,
-                LSSConstants.MIN_BYTES_PER_SECOND / MB,
-                LSSConstants.MAX_BYTES_PER_SECOND_PER_PLAYER / MB);
+        mbPerSecondLimitPerPlayer = clampMbPerPlayer(mbPerSecondLimitPerPlayer);
         // 0 = AUTO is a first-class value (the default); only a nonzero explicit override
         // clamps into the supported band — the same shape as lodStoreMaxMB.
         diskReaderThreads = diskReaderThreads <= 0 ? 0 : Math.clamp(diskReaderThreads,
                 LSSConstants.MIN_DISK_READER_THREADS, LSSConstants.MAX_DISK_READER_THREADS);
+        // Same 0 = AUTO shape (negative normalizes to AUTO, mirroring diskReaderThreads —
+        // never to 1, which would be the TIGHTEST gate); the pool clamp applies at
+        // derivation, where the resolved pool size is known.
+        maxConcurrentDiskReads = clampMaxConcurrentDiskReads(maxConcurrentDiskReads);
         sendQueueLimitPerPlayer = Math.clamp(sendQueueLimitPerPlayer,
                 LSSConstants.MIN_SEND_QUEUE_SIZE, LSSConstants.MAX_SEND_QUEUE_SIZE);
         // 0 = disabled is a first-class value (the default); any nonzero opt-in clamps into
         // the supported band — same shape as lodStoreMaxMB.
-        outboundBufferCeilingKB = outboundBufferCeilingKB <= 0 ? 0 : Math.clamp(
-                outboundBufferCeilingKB, LSSConstants.MIN_OUTBOUND_BUFFER_CEILING_KB,
-                LSSConstants.MAX_OUTBOUND_BUFFER_CEILING_KB);
-        mbPerSecondLimitGlobal = Math.clamp(mbPerSecondLimitGlobal,
-                LSSConstants.MIN_BYTES_PER_SECOND / MB,
-                LSSConstants.MAX_BYTES_PER_SECOND_GLOBAL_LIMIT / MB);
-        generationConcurrencyLimitGlobal = Math.clamp(generationConcurrencyLimitGlobal, LSSConstants.MIN_CONCURRENT_GENERATIONS, LSSConstants.MAX_CONCURRENT_GENERATIONS);
+        mbPerSecondLimitGlobal = clampMbGlobal(mbPerSecondLimitGlobal);
+        // Far players (E1): mode normalizes through the shared helper (R-2/R-9); the
+        // ring stays well-formed (min dragged under max — an inverted ring hides
+        // everyone); a malformed null exclude list restores the empty default.
+        farPlayers = clampFarPlayersMode(farPlayers);
+        farPlayersUpdateIntervalTicks = clampFarPlayersUpdateInterval(farPlayersUpdateIntervalTicks);
+        farPlayersMaxDistanceBlocks = clampFarPlayersMaxDistance(farPlayersMaxDistanceBlocks);
+        farPlayersMinDistanceBlocks = Math.min(
+                clampFarPlayersMinDistance(farPlayersMinDistanceBlocks), farPlayersMaxDistanceBlocks);
+        if (farPlayersExclude == null) farPlayersExclude = List.of();
+        generationConcurrencyLimitGlobal = clampGenGlobal(generationConcurrencyLimitGlobal);
         generationTimeoutSeconds = Math.clamp(generationTimeoutSeconds, LSSConstants.MIN_GENERATION_TIMEOUT, LSSConstants.MAX_GENERATION_TIMEOUT);
-        dirtyBroadcastIntervalSeconds = Math.clamp(dirtyBroadcastIntervalSeconds, LSSConstants.MIN_DIRTY_BROADCAST_INTERVAL, LSSConstants.MAX_DIRTY_BROADCAST_INTERVAL);
+        // 0 (and negative nonsense) = dirty pushes disabled — the lodStoreMaxMB idiom; only a
+        // nonzero value clamps into the sending band. See the field javadoc for the semantics.
+        dirtyBroadcastIntervalSeconds = clampDirtyBroadcastInterval(dirtyBroadcastIntervalSeconds);
+        if (dirtyBroadcastIntervalSeconds == 0
+                && lastAdvisedDirtyInterval != dirtyBroadcastIntervalSeconds) {
+            // Precedent: PaperConfig's Folia store warn — the mode must be visible in the
+            // log. Log-on-CHANGE (R-5, stage C): validate() re-runs on every /lsslod set.
+            // (Still fires during the config suites' extreme-value clamp sweeps on the
+            // first transition; harmless.)
+            dev.vox.lss.common.LSSLogger.info("dirtyBroadcastIntervalSeconds is 0: dirty pushes to"
+                    + " clients are DISABLED. The invalidation drain still runs every "
+                    + LSSConstants.DIRTY_DRAIN_ONLY_INTERVAL_SECONDS + " s; connected clients pick"
+                    + " up terrain edits only on rejoin or their own re-asks.");
+        }
+        lastAdvisedDirtyInterval = dirtyBroadcastIntervalSeconds;
         // Config review section 9.1: the per-player ceiling used to be MAX_CONCURRENCY_LIMIT
         // (1000) while the GLOBAL ceiling is MAX_CONCURRENT_GENERATIONS — a per-player value
         // above the fleet-wide one is unreachable by construction (a player cannot hold more
         // generation slots than exist), so it validated to silent nonsense. Clamp against the
         // configured global, which is itself already clamped on the line above.
-        generationConcurrencyLimitPerPlayer = Math.clamp(generationConcurrencyLimitPerPlayer,
-                LSSConstants.MIN_CONCURRENCY_LIMIT, generationConcurrencyLimitGlobal);
+        generationConcurrencyLimitPerPlayer = clampGenPerPlayer(
+                generationConcurrencyLimitPerPlayer, generationConcurrencyLimitGlobal);
         // 0 = AUTO (derived from lodDistanceChunks); only an explicit value clamps.
         perDimensionTimestampCacheSizeMB = perDimensionTimestampCacheSizeMB <= 0 ? 0
                 : Math.clamp(perDimensionTimestampCacheSizeMB,

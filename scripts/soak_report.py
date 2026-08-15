@@ -57,6 +57,13 @@ SERVER_CONCERNING = {
     # drops mean the batcher can't keep up or the disk is full).
     "store errors": "store.errors",
     "store deposit drops": "store.deposit_drops",
+    # Far players (E1): ANY movement on a soak run is concerning — the client property
+    # gate keeps harness clients unsubscribed, so nonzero means the E1 baseline-
+    # neutrality contract broke (the checker's far-players-inert violation is the hard
+    # gate; this is the digest's mirror). The bytes ride a dedicated lane and are
+    # deliberately absent from the bytes_sent/wire_bytes cross-identity audits.
+    "far-player frames": "far_players.update_frames",
+    "far-player bytes": "far_players.bytes",
 }
 SERVER_MECHANISM = {
     "duplicate skips": "service.duplicate_skips",
@@ -69,6 +76,17 @@ SERVER_MECHANISM = {
     # (cap full / capacity reject / ghost delivery) — a transient silent drop, re-declared
     # at 1 Hz until a slot frees. The dedicated law-A5 term (subset of superseded events).
     "gen-miss drops": "service.miss_dropped",
+    # DiskReadGate park-overflow bounces (disk-read-concurrency-gate-plan.md, Amendment
+    # 2): RACE ARMOR — submissions already in flight when the park filled. The router's
+    # retention conjunct holds sustained pressure upstream, so expect ~0 even where the
+    # gate binds; every no-op-pinned scenario holds it at 0 via A7.
+    "gate-refused reads": "disk.gated",
+    # Router passes stopped by gate saturation (Amendment 2 retention): work HELD in the
+    # backlog and re-prioritized by the next declaration — the gate binding as designed,
+    # the exact family of want-set supersession above. Mechanism, not concern: nonzero
+    # is expected exactly where the gate binds (K < pool under cold-region load); the
+    # checker's A7 arm holds every no-op-pinned scenario at 0.
+    "router gate stops": "disk.gate_stops",
     # Declared positions outside the server's lodDistance (client/server distance-config
     # mismatch or a teleport mid-declaration) — dropped at backlog replace, healed like any
     # supersession. Persistent growth means a config mismatch, not data loss.
@@ -87,7 +105,6 @@ SERVER_MECHANISM = {
     # Deposits consumed but not applied (tombstoned by an edit race / lost
     # latest-wins) — ordinary machinery, closes deposits+drops+skips == enqueued.
     "store deposit skips": "store.deposit_skips",
-    "store memory-tier hits": "store.mem_hits",
     "store sweep drops": "store.sweep_drops",
     "store backfill reads": "store.backfill_reads",
     "store backfill deposits": "store.backfill_deposits",
@@ -137,7 +154,6 @@ HIGH_WATER = {
     # across snapshots, which is the honest high water at 5 s resolution.
     "store db bytes": "store.db_bytes",
     "store wal bytes": "store.wal_bytes",
-    "store mem bytes": "store.mem_bytes",
 }
 # Shared with the checker (section_margins already references CS.SERVER_MOVING the same
 # way) — never a hand-copy: the store.queue addition proved hand-sync drifts.
@@ -414,8 +430,21 @@ def section_identities(rep, d):
         out.append(f"  {label}: {a} vs {b}  {'ok' if ok else 'MISMATCH'}")
 
     audit("disk.successful == service.disk_resolved", "disk.successful", "service.disk_resolved")
-    audit("bandwidth.total_bytes ~ service.bytes_sent", "bandwidth.total_bytes",
-          "service.bytes_sent", tol=0)
+    # Far players (E1): the dedicated send lane charges the shared bandwidth governor,
+    # so the identity is total == column bytes + far-player bytes. All-zero while inert
+    # (check_soak's far-players-inert check pins that), but the audit must carry the
+    # term NOW or the E2 default-flip would red every report (the R-6 same-commit rule).
+    fp_bytes = _get(final, "far_players.bytes") or 0
+    a = _get(final, "bandwidth.total_bytes")
+    b = _get(final, "service.bytes_sent")
+    if a is None or b is None:
+        out.append("  bandwidth.total_bytes ~ service.bytes_sent + far_players.bytes: n/a (missing field)")
+    else:
+        ok = a == b + fp_bytes
+        if not ok:
+            rep["anomalies"] += 1
+        out.append(f"  bandwidth.total_bytes ~ service.bytes_sent + far_players.bytes: "
+                   f"{a} vs {b}+{fp_bytes}  {'ok' if ok else 'MISMATCH'}")
     return out
 
 

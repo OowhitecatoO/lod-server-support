@@ -38,7 +38,3 @@
 - An existing LOD store upgrades in place on first boot via a background pass
   — no rebuild, and serving continues meanwhile.
 - Folia support remains **experimental** (single-player validation only).
-- This is the MC 26.1 build of the v0.10.0 tri-release: all three lines (26.2,
-  26.1, 1.21.11) ship the same mod at the same feature level, differing only in
-  Minecraft bindings. Cross-version LOD serving works between any two of them
-  once both sides run v0.10.0.

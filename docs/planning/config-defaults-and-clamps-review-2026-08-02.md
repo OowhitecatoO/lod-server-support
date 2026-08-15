@@ -165,6 +165,23 @@ conservatism — above it the number would describe something the reader cannot 
 | `lodDistanceChunks` | `256` | 1..2048 | Generous already. The 2048 ceiling costs nothing now that the fast-rescan gate is predicted-walk-cost based rather than distance-based. |
 | Paper `updateEvents` | 7 events | — | Correct. Excluding `BlockFromToEvent` (fluid flow) by default is right. |
 
+> **Erratum (2026-08-13, v0.11.0 stage B):** a NEW key joins the audited set —
+> `maxConcurrentDiskReads` (default `0` = AUTO, store-conditional: store armed →
+> ceil(pool/2), store-less → pool = no-op; nonzero clamps `1..64` in validate() plus
+> to the resolved pool at derivation; disable idiom = set ≥ pool — 0 is AUTO, not
+> off). See `docs/planning/disk-read-concurrency-gate-plan.md`.
+
+> **Erratum (2026-08-13, v0.11.0 stage A):** two rows above are superseded.
+> `dirtyBroadcastIntervalSeconds`' clamp is now **`0` or `1..300`** — `0` disables
+> dirty pushes entirely (previously it clamped to 1 s, the *fastest* cadence — the
+> opposite of the operator's intent); the drain + invalidation fan-out keep running
+> every `DIRTY_DRAIN_ONLY_INTERVAL_SECONDS` (10 s), negatives normalize to 0
+> (`docs/planning/dirty-broadcast-interval-zero-plan.md`). And `lodDistanceChunks`'
+> default is **300** (user decision 2026-08-12): 256 → 512 in the 2026-08-08 rework
+> (see §11.4's earlier same-day history), then 512 → 300 for v0.11.0 as a middle
+> landing — the AUTO timestamp-cache derivation (§7.3 erratum) follows it
+> automatically.
+
 ### 3.2 `bytesPerSecondLimitGlobal`: 100 MiB → **256 MiB**
 
 At the 20 MiB per-player default, the global cap **starts binding at five concurrent
@@ -405,6 +422,14 @@ stays.
 
 ### 8.2 `outboundBufferCeilingKB` stays at 0 (off)
 
+> **ERRATUM (2026-08-13, twice — final state per adaptive-transfer-rate-plan.md):**
+> the AUTO mode that briefly occupied 0 (auto-outbound-ceiling-design.md) was
+> live-falsified three times the same day and DELETED — 0 means off again,
+> exactly this section's original verdict. What survives of that detour: the
+> fixed minimum re-clamped 4096 → 64 KB, and the key's `/lsslod set` row (0 =
+> off). Slow-link pacing now lives in the client transfer governor + the server
+> ping backstop (`enablePingBackstop`).
+
 This is not a performance feature — it is a protective gate for a condition that was
 **measured absent**. Flat 20–26 ms ping across a full elytra flight is a direct and
 sensitive probe of shared-queue depth, and the server's send queue read empty throughout.
@@ -556,3 +581,21 @@ that run.
   dirty-during-backfill rides these defaults: if a scenario reds on convergence timing
   after this change, the cut is the first suspect (re-baseline, don't chase phantoms).
   The §11.7 cap sweep remains the falsifiable check for both.
+
+- **2026-08-13 erratum (v0.11.0 stage E1 — far players)**: six new server keys join the
+  audited surface, all clamped by the shared static helpers (the stage-C R-2 rule from
+  the outset): `farPlayers` "off"/"opt-in"/"on" (compiled default **off** — E1 ships
+  inert; the E2 defaults decision owns any flip), `farPlayersUpdateIntervalTicks` 10
+  (2..100), `farPlayersMaxDistanceBlocks` 2048 (128..16384),
+  `farPlayersMinDistanceBlocks` 0 (0..; cross-field: dragged under max at validate,
+  excluded from the SHARED_BOUNDS sweep as a derived bound), `farPlayersSendSpectators`
+  false, `farPlayersExclude` empty list. `farPlayers` and `farPlayersMaxDistanceBlocks`
+  are `/lsslod set` rows (R-9) sharing those exact helpers. This file predates the keys;
+  the audit tables above deliberately do NOT enumerate them — this erratum is the record.
+
+- **2026-08-13 erratum (v0.11.0, user decision at the F pause): `lodYieldsToVanillaTransport`
+  default false → TRUE.** Supersedes the v0.10.0 A2 ships-unarmed stance and its planned
+  live-E3-A/B precondition — the v0.11.0 Modrinth manual-testing pause is the live
+  observation window instead. Soaks/gametests provably unaffected (loopback channels
+  never report unwritable — the CI-inertness pin in TransportYieldFlushTest); both
+  config-suite default pins flipped with the change.

@@ -59,6 +59,10 @@ class LodRequestManagerTickTest {
 
     private void setupManager(SessionConfigS2CPayload cfg, String serverAddress) {
         manager = new LodRequestManager();
+        // Slow start off for this suite (join-slow-start-plan.md §1.4 — the frontier-
+        // damping test pattern): these pins assert UNCAPPED first walks and cadence
+        // shapes; productionDefaultEnablesSlowStart pins the real default wiring.
+        manager.joinSlowStartEnabled = () -> false;
         manager.onSessionConfig(cfg, serverAddress);
         manager.markCacheLoadedForTest();
         sent.clear();
@@ -678,6 +682,158 @@ class LodRequestManagerTickTest {
         assertEquals(1, sent.size(), "a converged client stays silent throughout");
     }
 
+    // ---- transfer governor wiring (adaptive-transfer-rate-plan.md, impl review M1:
+    // ---- every one of these call sites could previously be unplugged with the whole
+    // ---- unit suite green) ----
+
+    /** Engage the manager's own governor directly with a known shape: measured
+     *  400 KB/s over 8 KB columns → desired 272 KB/s, R = 34, burst = ceil(34/4) = 9. */
+    private void engageGovernor() {
+        manager.transferGovernorEnabled = () -> true; // the local-config note above
+        manager.governor.tick(1, 0, 0, 0, 0, 1, false, 50, true);
+        manager.governor.tick(1 + TransferRateGovernor.INTERVAL_MILLIS,
+                800 * 1024, 100, 20_000, 20_000, 1, false, 2_000, true);
+        manager.governor.tick(1 + 2 * TransferRateGovernor.INTERVAL_MILLIS,
+                1600 * 1024, 200, 40_000, 40_000, 1, false, 2_000, true); // debounce
+        assertTrue(manager.governor.isEngaged(), "rig engagement");
+    }
+
+    @Test
+    void engagedGovernorShrinksTheDeclaredBatchThroughTheProductionWiring() {
+        // The ctor's two supplier bindings, THIS way round: the budget site must read
+        // the governed BURST (9), the spacing site the sustained R (34). Deleting
+        // either binding declares the full 24-position annulus; SWAPPING the lambdas
+        // declares min(24, 34) = 24 — both red here.
+        var overworld = dim("overworld");
+        enableAdaptiveSeam(); // the burst path is cadence-conditional (impl MAJOR-1)
+        engageGovernor();
+        plainTick(overworld);
+        assertEquals(1, sent.size());
+        assertEquals(9, sent.get(0).count(),
+                "the governed burst cap (ceil(R/4)) must reach the scanner's budget site");
+    }
+
+    @Test
+    void governorKillSwitchBindsThroughTheProductionConfigRead() {
+        // The production binding pin (the adaptive-cadence pattern): the manager's
+        // DEFAULT seam must read LSSClientConfig.CONFIG.enableAdaptiveTransferRate — a
+        // hardcoded true would keep a governed cap alive with the shipped kill switch off.
+        var overworld = dim("overworld");
+        boolean old = LSSClientConfig.CONFIG.enableAdaptiveTransferRate;
+        LSSClientConfig.CONFIG.enableAdaptiveTransferRate = false;
+        try {
+            manager.governor.tick(1, 0, 0, 0, 0, 1, false, 50, true);
+            manager.governor.tick(1 + TransferRateGovernor.INTERVAL_MILLIS,
+                    800 * 1024, 100, 20_000, 20_000, 1, false, 2_000, true);
+            manager.governor.tick(1 + 2 * TransferRateGovernor.INTERVAL_MILLIS,
+                    1600 * 1024, 200, 40_000, 40_000, 1, false, 2_000, true); // debounce
+            assertTrue(manager.governor.isEngaged(), "rig engagement");
+            plainTick(overworld); // the production tick reads config false → hard reset
+            assertFalse(manager.governor.isEngaged(),
+                    "config false must hard-reset through the DEFAULT seam");
+            assertEquals(24, sent.get(0).count(), "no governed cap: the full annulus declares");
+        } finally {
+            LSSClientConfig.CONFIG.enableAdaptiveTransferRate = old;
+        }
+    }
+
+    @Test
+    void legacySessionExcludesTheGovernor() {
+        // The v16 exclusion is a MANAGER conjunct (isLegacySession), not a governor
+        // param — a legacy-fallback session's pacing is the drip-feed's own.
+        setupManager(new SessionConfigS2CPayload(
+                LSSConstants.V16_COMPAT_PROTOCOL_VERSION, true, 2, true));
+        engageGovernor();
+        plainTick(dim("overworld"));
+        assertFalse(manager.governor.isEngaged(),
+                "a v16 session must exclude (and hard-reset) the governor");
+    }
+
+    @Test
+    void pingProbeFiresAtOneHertzOnlyWhileGovernorActive() {
+        // Live round 5: the governor's congestion signal moved off the 30 s tab ping
+        // onto our own 1 Hz probe — the traced runaway lasted exactly the tab-ping
+        // blind spot. Pins the cadence (per second, never per tick) and the active
+        // gate (an inactive governor sends no probes).
+        var overworld = dim("overworld");
+        long[] now = {5_000};
+        int[] probes = {0};
+        manager.governor.clock = () -> now[0];
+        manager.transferGovernorEnabled = () -> true;
+        manager.pingProbeSender = () -> probes[0]++;
+        plainTick(overworld);
+        plainTick(overworld);
+        plainTick(overworld);
+        assertEquals(1, probes[0], "same-millisecond ticks share one probe");
+        now[0] = 5_999;
+        plainTick(overworld);
+        assertEquals(1, probes[0], "sub-second elapse must not probe");
+        now[0] = 6_000;
+        plainTick(overworld);
+        assertEquals(2, probes[0], "the 1 Hz cadence fires on the second");
+        manager.transferGovernorEnabled = () -> false;
+        now[0] = 9_000;
+        plainTick(overworld);
+        assertEquals(2, probes[0], "an inactive governor sends no probes");
+    }
+
+    @Test
+    void liveMissingVanillaSampleReachesTheGovernorAtProbeCadence() {
+        // The vanilla-first wiring pin (round-5 shape): tickWithContext samples the
+        // LIVE missingVanilla supplier on the 1 Hz probe cadence and feeds the
+        // governor's floor/excess tracking — never the scanner's periodic cache
+        // (unbounded staleness under fast cadence; stale-dimension seeds). Unplugged,
+        // the final kept-up interval climbs (or movement-holds); wired, the 20→40
+        // excess forces the vanilla-first CUT.
+        var overworld = dim("overworld");
+        engageGovernor();
+        long engageEnd = 1 + 2 * TransferRateGovernor.INTERVAL_MILLIS;
+        long[] now = {engageEnd};
+        manager.governor.clock = () -> now[0];
+        // First probe second: the floor sample (20)...
+        manager.tickWithContext(0, 0, overworld, 0, 0, 0L, -1, () -> 20);
+        // ...next probe second: the excess view (40). Sub-second ticks in between
+        // must NOT sample (the cadence gate).
+        manager.tickWithContext(0, 0, overworld, 0, 0, 0L, -1, () -> 999_999);
+        now[0] = engageEnd + 1_000;
+        manager.tickWithContext(0, 0, overworld, 0, 0, 0L, -1, () -> 40);
+        long desired = manager.governor.getDesiredBytesPerSec();
+        // A kept-up interval (measured = desired over EXACTLY one interval from the
+        // engage evaluation, generous offer) evaluated directly: the wired governor
+        // cuts below desired; unplugged it reads kept-up and CLIMBS (a longer elapsed
+        // here would read as an offer-backed shortfall and cut unplugged too — the
+        // vacuity this timing avoids).
+        manager.governor.tick(engageEnd + TransferRateGovernor.INTERVAL_MILLIS,
+                1600 * 1024 + desired * 2, 300, 60_000, 60_000, 1, false, 2_000, true);
+        assertTrue(manager.governor.getDesiredBytesPerSec() < desired,
+                "the live missing-vanilla sample must reach the governor and cut");
+    }
+
+    @Test
+    void probeGateExcludesLegacySessionsAndHarnessJvms() {
+        // The other two arms of the probe gate (round-5 review n5): a v16 session and
+        // a harness JVM must both stay probe-silent.
+        int[] probes = {0};
+        setupManager(new SessionConfigS2CPayload(
+                LSSConstants.V16_COMPAT_PROTOCOL_VERSION, true, 2, true));
+        manager.transferGovernorEnabled = () -> true;
+        manager.pingProbeSender = () -> probes[0]++;
+        manager.governor.clock = () -> 5_000;
+        plainTick(dim("overworld"));
+        assertEquals(0, probes[0], "a legacy session never probes");
+        System.setProperty("lss.soak", "true");
+        try {
+            setupManager(config(2, true));
+            manager.transferGovernorEnabled = () -> true;
+            manager.pingProbeSender = () -> probes[0]++;
+            manager.governor.clock = () -> 5_000;
+            plainTick(dim("overworld"));
+            assertEquals(0, probes[0], "a harness JVM never probes");
+        } finally {
+            System.clearProperty("lss.soak");
+        }
+    }
+
     @Test
     void killSwitchBindsThroughTheProductionConfigRead() {
         // The production binding pin (the #71 config-gate pattern): the scanner's DEFAULT
@@ -696,6 +852,50 @@ class LodRequestManagerTickTest {
                     "config false must hold the periodic cadence through the DEFAULT seam");
         } finally {
             LSSClientConfig.CONFIG.enableAdaptiveScanCadence = old;
+        }
+    }
+    // ---- Join slow start: the production wiring pins (join-slow-start-plan.md §1.4) ----
+
+    @Test
+    void productionDefaultEnablesSlowStartAndClampsTheFirstWalk() {
+        // The productionDefaultEnablesOutwardDamping pattern: every other test in this
+        // suite disables slow start at setupManager; THIS one constructs the manager
+        // with the real config-backed supplier and proves the default wiring — the
+        // session starts ramped and the very first declaration is budget-clamped
+        // (64 KB/s over the 32 KB pre-sample seed -> 2 col/s -> quarter-batch burst
+        // cap 1), never the uncapped 800-position flood.
+        var m = new LodRequestManager();
+        m.onSessionConfig(config(8, true), "lss-slow-start-pin");
+        m.markCacheLoadedForTest();
+        var firstCounts = new java.util.ArrayList<Integer>();
+        m.setBatchSenderForTest(p -> firstCounts.add(p.count()));
+        m.tickWithContext(0, 0, dim("overworld"), 0, 0, 0L, -1, () -> 0);
+        org.junit.jupiter.api.Assertions.assertTrue(
+                m.getGovernedRateLabel().startsWith("ramp@"),
+                "a fresh production-wired session must start in RAMP, got '"
+                        + m.getGovernedRateLabel() + "'");
+        org.junit.jupiter.api.Assertions.assertFalse(firstCounts.isEmpty(),
+                "the ramped session still declares immediately (LODs begin at once)");
+        org.junit.jupiter.api.Assertions.assertTrue(firstCounts.get(0) <= 2,
+                "the first walk must be clamped by the ramp's burst cap, got "
+                        + firstCounts.get(0));
+        // Negative arm (impl review: without it a supplier hardcoded to true passes):
+        // the same production wiring with the shipped toggle OFF declares uncapped.
+        boolean old = LSSClientConfig.CONFIG.enableJoinSlowStart;
+        LSSClientConfig.CONFIG.enableJoinSlowStart = false;
+        try {
+            var m2 = new LodRequestManager();
+            m2.onSessionConfig(config(8, true), "lss-slow-start-pin-off");
+            m2.markCacheLoadedForTest();
+            var offCounts = new java.util.ArrayList<Integer>();
+            m2.setBatchSenderForTest(p -> offCounts.add(p.count()));
+            m2.tickWithContext(0, 0, dim("overworld"), 0, 0, 0L, -1, () -> 0);
+            org.junit.jupiter.api.Assertions.assertFalse(offCounts.isEmpty());
+            org.junit.jupiter.api.Assertions.assertTrue(offCounts.get(0) > 2,
+                    "toggle off: the first walk is uncapped (the supplier reads config,"
+                            + " not a constant), got " + offCounts.get(0));
+        } finally {
+            LSSClientConfig.CONFIG.enableJoinSlowStart = old;
         }
     }
 }

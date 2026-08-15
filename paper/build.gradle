@@ -57,8 +57,11 @@ test {
 
 processResources {
     inputs.property "version", project.version
+    inputs.property "api_version", project.minecraft_version
     filesMatching("plugin.yml") {
-        expand "version": project.version
+        // V-1/P3: api-version equals gradle.properties' minecraft_version on every
+        // recorded line — templated so a support cut never edits this resource.
+        expand "version": project.version, "api_version": project.minecraft_version
     }
 }
 
@@ -149,14 +152,17 @@ runPaper.folia.registerTask {
 // ---- Voxy Server Side (VSS) branded variant -------------------------------------------
 //
 // Same plugin, second Modrinth project (voxy-server-side). Byte-copies the built release
-// shadowJar and rewrites only USER-FACING + LOCAL surfaces in plugin.yml (description,
-// website, the command key lsslod->vsslod, the command/permission descriptions, and the
-// permission node lss.admin->vss.admin) plus the lss-brand.properties display resource.
-// Every class and the manifest (incl. paperweight's mappings-namespace stamp) are copied
-// verbatim, and `name: LodServerSupport` / `main:` / `api-version:` are DELIBERATELY kept
-// so the plugin identity / config folder are shared and an LSS server and a VSS client (and
-// vice versa) stay fully wire-compatible (the command name + permission are local, never on
-// the wire). Paper plugins have no embedded icon; the VSS icon lives on the Modrinth page.
+// shadowJar and rewrites only USER-FACING + LOCAL surfaces in plugin.yml (the plugin NAME
+// -> VoxyServerSide since 2026-08-13 — XANTHA's release patch; the data folder therefore
+// FORKS to plugins/VoxyServerSide/ — plus description, author, website, the command key
+// lsslod->vsslod, the command/permission descriptions, and the admin node
+// lss.admin->vss.admin; the farplayers privacy nodes are deliberately NOT renamed — both
+// spellings ship in both jars) plus the lss-brand.properties display resource. Every
+// class and the manifest (incl. paperweight's mappings-namespace stamp) are copied
+// verbatim, and `main:` / `api-version:` stay verbatim — the package/class + platform
+// contract; wire compatibility is untouched by any of this (the command name +
+// permission are local, never on the wire). Paper plugins have no embedded icon; the
+// VSS icon lives on the Modrinth page.
 // See docs/planning/ci-dual-publish.md. release_check.py pins the identity lines verbatim
 // and the command/permission/brand rewrites present.
 import java.util.zip.ZipFile
@@ -186,15 +192,22 @@ tasks.register('vssJar') {
                     def e = entries.nextElement()
                     if (e.name == 'plugin.yml') {
                         def text = zf.getInputStream(e).getText('UTF-8')
-                        // Rewrite the top-level description/website AND the LOCAL command +
-                        // permission branding. name/main/version/api-version and the
-                        // folia-supported ABSENCE are all preserved — those are the
-                        // interchangeability/identity contract. The command name and
-                        // permission node are LOCAL (an admin types /vsslod on their own
-                        // server), never on the wire, so LSS and VSS stay wire-compatible.
-                        // release_check.py's pair check pins this exact scope.
+                        // Rewrite the plugin NAME + top-level description/author/website AND
+                        // the LOCAL command + permission branding (name rebrand folded from
+                        // XANTHA's v0.10.0 release patch, 2026-08-13 — the VSS plugin now
+                        // presents as VoxyServerSide; its data folder therefore FORKS to
+                        // plugins/VoxyServerSide/, so a Paper-side jar swap starts a fresh
+                        // config folder — the config-filename candidates only adopt within
+                        // one folder. main/version/api-version and folia-supported are
+                        // preserved — identity + wire contract. Command name and permission
+                        // node are LOCAL, never on the wire, so LSS and VSS stay
+                        // wire-compatible. release_check.py's pair check pins this scope.
+                        text = text.replaceFirst(/(?m)^name:.*$/,
+                                'name: VoxyServerSide')
                         text = text.replaceFirst(/(?m)^description:.*$/,
-                                'description: Server-side backend for Voxy multiplayer LOD rendering. Identical to LOD Server Support (same plugin, second distribution channel) — fully interchangeable.')
+                                'description: Render distant Voxy LODs on servers')
+                        text = text.replaceFirst(/(?m)^author:.*$/,
+                                'author: Xantha, VoX')
                         text = text.replaceFirst(/(?m)^website:.*$/,
                                 'website: https://modrinth.com/plugin/voxy-server-side')
                         // Command key + usage: lsslod -> vsslod (both occurrences).
@@ -203,6 +216,12 @@ tasks.register('vssJar') {
                         text = text.replace('LOD Server Support admin commands', 'Voxy Server Side admin commands')
                         text = text.replace('Access to LSS admin commands', 'Access to VSS admin commands')
                         text = text.replace('lss.admin', 'vss.admin')
+                        // Far players privacy node: NOT renamed since 2026-08-13 — the
+                        // shipped plugin.yml declares BOTH brand spellings (default false)
+                        // and the Java enforcement dual-checks them, because Bukkit
+                        // resolves an UNDECLARED node to the op default (a rename here
+                        // plus the lss.* enforcement literal was silently hiding every
+                        // op on a VSS server). Both jars carry both nodes.
                         def ne = new ZipEntry('plugin.yml')
                         zos.putNextEntry(ne)
                         zos.write(text.getBytes('UTF-8'))

@@ -1,15 +1,33 @@
 name: Release
 
+# V-1/P1 (docs/planning/version-port-isolation-plan.md): this workflow body is
+# BRANCH-INVARIANT — every per-line value (MC tokens, game-version lists, loaders,
+# the NeoForge display name, make_latest, Java version, the tag-suffix guard token)
+# comes from .github/line.env. A support line edits line.env only; keep-ours merge
+# resolution for this file is retired.
+
 on:
   push:
-    # Scoped to THIS line's tags: a bare v* tag accidentally pushed from this branch must
-    # not publish (it would ship this line's jars under a mainline-shaped version). The
-    # mainline release.yml keeps the broad v* trigger; each support line owns its suffix.
-    # The glob deliberately has NO '+': GitHub's filter-pattern language treats '+' as a
-    # quantifier, so the old 'v*+mc26.1*' form was INVALID — it phantom-failed every push
-    # and a real tag push would have triggered NOTHING. The '*' swallows the literal '+';
-    # the exact-suffix check lives in the guard step below, where '+' is plain shell text.
-    tags: ['v*mc26.1*']
+    # Deliberately the broad v* glob ON EVERY LINE: GitHub's filter-pattern language
+    # treats '+' as a quantifier, so any pattern containing '*+' (e.g. '!v*+mc*') is
+    # INVALID and turns every push into a phantom failed run — worse, a real tag push
+    # would trigger NOTHING. And on: is evaluated before any context exists, so the
+    # scoping cannot be data-driven. The wrong-line protection lives in the guard step
+    # below instead (suffix equality against line.env), where '+' is literal shell text.
+    # Consequence, accepted (V-1 review): a wrong-line tag yields a RED GUARDED RUN
+    # instead of silence — strictly louder, publishes nothing.
+    tags: ['v*']
+  # The rehearsal lever (V-1/P1 review MAJOR: an irreversible-publish pipeline has no
+  # throwaway-tag test path — CLAUDE.md forbids smoke tags). A dispatch run exercises
+  # every resolved value end-to-end (line load, guard skip, builds, release gate) but
+  # NEVER publishes: the publish steps are push-event-gated, and a dispatch asking for
+  # dry_run=false is refused loudly rather than honored.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Rehearse the pipeline without publishing (dispatch can never real-publish; false fails loudly)'
+        type: boolean
+        default: true
 
 jobs:
   release:
@@ -17,20 +35,75 @@ jobs:
     permissions:
       contents: write
     steps:
-      # Exact-suffix guard (the trigger glob above cannot express the literal '+'): only
-      # this line's tags may publish from this branch's workflow.
-      - name: Refuse wrong-line tags
-        run: |
-          case "${GITHUB_REF_NAME}" in
-            v*+mc26.1*) ;;
-            *) echo "::error::${GITHUB_REF_NAME} is not a +mc26.1 tag — this support-line release.yml must not publish it"; exit 1 ;;
-          esac
-
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      # Line identity first: everything below reads these values. Comments/blank lines
+      # filtered ($GITHUB_ENV is a strict KEY=VALUE format).
+      - name: Load line identity
+        run: grep -vE '^\s*(#|$)' .github/line.env >> "$GITHUB_ENV"
+
+      # A wrong-line tag (v0.8.0+mc26.1 pushed onto main, or a bare v0.8.0 pushed onto a
+      # support branch) must not publish: it would ship this line's jars under another
+      # line's name. Guard = suffix equality with line.env. This is deliberately the
+      # FIRST step after checkout+load (V-1 re-pin: a data-driven guard cannot precede
+      # checkout; checkout and the env load publish nothing, and every build, gate, and
+      # publish step still sits behind the guard).
+      - name: Refuse wrong-line tags
+        if: github.ref_type == 'tag'
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          BASE="${TAG%%+*}"
+          SUFFIX="${TAG#"$BASE"}"
+          if [ "${SUFFIX}" != "${LINE_TAG_SUFFIX}" ]; then
+            echo "::error::tag ${TAG} carries line suffix '${SUFFIX}' but this branch's line.env declares '${LINE_TAG_SUFFIX}' — wrong-line tag, refusing"
+            exit 1
+          fi
+
+      - name: Refuse non-dry dispatch
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run == false
+        run: |
+          echo "::error::workflow_dispatch cannot real-publish (no tag, no notes, no version) — push an annotated tag instead"
+          exit 1
+
+      # The support lines' shape adopted mainline-wide (V-1): strip 'v' and any '+mc…'
+      # suffix so every later step speaks MOD_VERSION. On main the suffix strip is a
+      # provable no-op; on a dispatch rehearsal there is no tag to derive from.
+      - name: Derive mod version
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            V="${GITHUB_REF_NAME#v}"
+            MV="${V%%+*}"
+            # Round-3 review: any v-prefixed non-release tag (vsmoke) used to derive
+            # a garbage MOD_VERSION and publish under it. Releases start with a digit.
+            case "$MV" in
+              [0-9]*) ;;
+              *) echo "::error::tag '${GITHUB_REF_NAME}' does not derive a numeric mod version ('$MV') — refusing to publish"; exit 1 ;;
+            esac
+            echo "MOD_VERSION=$MV" >> "$GITHUB_ENV"
+          else
+            echo "MOD_VERSION=0.0.0-dryrun" >> "$GITHUB_ENV"
+          fi
+
+      # line.env values are single-line; mc-publish wants newline lists. Space-separated
+      # data expands here via the $GITHUB_ENV heredoc form.
+      - name: Expand line lists
+        run: |
+          expand() {
+            {
+              echo "$1<<LINE_LIST_EOF"
+              tr ' ' '\n' <<< "$2"
+              echo "LINE_LIST_EOF"
+            } >> "$GITHUB_ENV"
+          }
+          expand GV_FABRIC "${LINE_GAME_VERSIONS_FABRIC}"
+          expand GV_PAPER "${LINE_GAME_VERSIONS_PAPER}"
+          expand GV_NEOFORGE "${LINE_GAME_VERSIONS_NEOFORGE}"
+          expand PAPER_LOADERS "${LINE_PAPER_LOADERS}"
+
       - name: Extract release notes from tag
+        if: github.ref_type == 'tag'
         id: release_notes
         run: |
           set -euo pipefail
@@ -50,33 +123,23 @@ jobs:
             NOTES=""
           fi
 
-          # Fallback for lightweight tags: commit subjects as bullet list
-          # (support line: only this line's tags are meaningful ancestors; the FIRST tag of
-          # the line anchors to the mainline tag the branch was cut from, so the fallback
-          # can never dump the repo's full history into the release body + Modrinth
-          # changelogs. The -n bound is the last-resort cap if even that anchor is missing.)
+          # Fallback for lightweight tags: commit subjects as bullet list. PREV_TAG is scoped
+          # to THIS line: same-suffix tags only (main: no '+mc'; a support line: only its own
+          # suffix) — version-sort would otherwise slot other lines' tags adjacent to this
+          # line's and span the notes/compare across release lines.
           if [ -z "$NOTES" ]; then
-            PREV_TAG=$(git tag -l 'v*+mc26.1*' --sort=-v:refname | grep -v "^${TAG}$" | head -1 || true)
-            if [ -z "$PREV_TAG" ]; then
-              PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*' --exclude 'v*+mc*' "${TAG}^" 2>/dev/null || true)
-            fi
+            PREV_TAG=$(git tag -l "v*${LINE_TAG_SUFFIX}" --sort=-v:refname | if [ -z "${LINE_TAG_SUFFIX}" ]; then grep -v '+mc'; else cat; fi | grep -v "^${TAG}$" | head -1 || true)
             if [ -n "$PREV_TAG" ]; then
               NOTES=$(git log --format="- %s" "${PREV_TAG}..${TAG}")
             else
-              NOTES=$(git log -n 50 --format="- %s" "${TAG}")
+              NOTES=$(git log --format="- %s" "${TAG}")
             fi
           fi
 
-          # Append compare link
-          # `|| true`: under `set -euo pipefail`, grep -v exits 1 (aborting the step) when the
-          # pushed tag is the only v* tag — i.e. the first-ever release. Tolerate the empty result.
-          PREV_TAG=$(git tag -l 'v*+mc26.1*' --sort=-v:refname | grep -v "^${TAG}$" | head -1 || true)
-          # First tag of the line: compare against the mainline tag this branch was cut
-          # from (e.g. v0.10.0), so the Full Changelog link shows the backport delta rather
-          # than degrading to a full-history commit listing.
-          if [ -z "$PREV_TAG" ]; then
-            PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*' --exclude 'v*+mc*' "${TAG}^" 2>/dev/null || true)
-          fi
+          # Append compare link (same line scoping as above)
+          # `|| true`: under `set -euo pipefail`, grep exits 1 (aborting the step) when the
+          # pushed tag is the only tag on this line — i.e. the first-ever release. Tolerate it.
+          PREV_TAG=$(git tag -l "v*${LINE_TAG_SUFFIX}" --sort=-v:refname | if [ -z "${LINE_TAG_SUFFIX}" ]; then grep -v '+mc'; else cat; fi | grep -v "^${TAG}$" | head -1 || true)
           if [ -n "$PREV_TAG" ]; then
             COMPARE="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${PREV_TAG}...${TAG}"
           else
@@ -93,91 +156,95 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 25
+          java-version: ${{ env.LINE_JAVA_VERSION }}
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # Support-line tags carry SemVer build metadata (v0.10.0+mc26.1); strip it so Gradle's
-      # mod_version is the bare X.Y.Z. The jar name then appends +minecraft_version cleanly, and
-      # a stray '+' in mod_version would otherwise corrupt artifact names and release_check globs.
-      - name: Derive mod_version
-        run: |
-          MOD_VERSION="${GITHUB_REF_NAME#v}"; MOD_VERSION="${MOD_VERSION%%+*}"
-          echo "MOD_VERSION=$MOD_VERSION" >> "$GITHUB_ENV"
-
       - name: Build Fabric
-        run: ./gradlew :fabric:build -x runClientGameTest -Pmod_version="$MOD_VERSION"
+        run: ./gradlew :fabric:build -x runClientGameTest -Pmod_version=${MOD_VERSION}
 
       # :paper:test gates the publish — :paper:shadowJar alone has no test dependency,
       # and this pipeline ships the Paper jar to three loaders irreversibly.
       - name: Build Paper + Tier 1 tests
-        run: ./gradlew :paper:test :paper:shadowJar -Pmod_version="$MOD_VERSION"
+        run: ./gradlew :paper:test :paper:shadowJar -Pmod_version=${MOD_VERSION}
+
+      # Stage N (best-effort tier): :neoforge:build = xplat compile under MDG (the
+      # twin-contract enforcement) + the contract suite + shadowJar + the VSS repackage.
+      - name: Build NeoForge + contract tests
+        run: ./gradlew :neoforge:build -Pmod_version=${MOD_VERSION}
 
       # Gate the tag-versioned artifacts that actually ship (build.yml gates only the default-version
       # CI build). GitHub Actions exports CI=true, so the build steps above produced CI-named jars
       # that release_check's RELEASE_GLOBS match. Runs after the builds, before the irreversible publish.
       - name: Release-jar safety gate
-        run: python3 scripts/release_check.py --version "$MOD_VERSION"
+        run: python3 scripts/release_check.py --version "${MOD_VERSION}"
 
       - uses: softprops/action-gh-release@v2
+        if: github.event_name == 'push' && github.ref_type == 'tag'
         with:
           body: ${{ steps.release_notes.outputs.notes }}
-          # Support-line release: never steal the GitHub "Latest" badge from the main line.
-          make_latest: false
           # Without this, a glob matching nothing publishes an empty release silently;
           # failing here also stops the Modrinth steps from running against missing jars.
           fail_on_unmatched_files: true
-          # The LSS pair only. VSS publishing is disabled as of v0.8.0 on every line (the
-          # vssJar tasks still BUILD the branded byte-copies and release_check still gates
-          # the pair — only distribution is off).
+          # Data-driven (V-1): true on main (the Latest badge), false on support lines.
+          make_latest: ${{ env.LINE_MAKE_LATEST }}
+          # The LSS trio only. VSS publishing is disabled as of v0.8.0 (the vssJar tasks
+          # still BUILD the branded byte-copies and release_check still gates the pair —
+          # only distribution is off, matching the support branches).
           files: |
             fabric/build/libs/lod-server-support-fabric-*.jar
             paper/build/libs/lod-server-support-paper-*.jar
+            neoforge/build/libs/lod-server-support-neoforge-*.jar
 
       - name: Upload Fabric to Modrinth
+        if: github.event_name == 'push' && github.ref_type == 'tag'
         uses: Kir-Antipov/mc-publish@v3.3
         with:
           modrinth-id: lKiXKLvv
           modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
           files: fabric/build/libs/lod-server-support-fabric-*.jar
-          # Built from the bare MOD_VERSION (not the tag, which already carries +mc26.1):
-          # platform-first ordering matches main's published style (v0.10.0+fabric+mc26.2) and
-          # must stay unique project-wide on Modrinth across all release lines.
-          name: v${{ env.MOD_VERSION }} - Fabric (MC 26.1)
-          version: v${{ env.MOD_VERSION }}+fabric+mc26.1
+          name: v${{ env.MOD_VERSION }} - Fabric (MC ${{ env.LINE_MC_FABRIC }})
+          version: v${{ env.MOD_VERSION }}+fabric+mc${{ env.LINE_MC_FABRIC }}
           version-type: release
           loaders: fabric
-          # The Fabric jar targets the 26.1.x family (fabric.mod.json pins >=26.1 <26.2-).
-          game-versions: |
-            26.1
-            26.1.1
-            26.1.2
+          game-versions: ${{ env.GV_FABRIC }}
           changelog: ${{ steps.release_notes.outputs.notes }}
 
       - name: Upload Paper to Modrinth
+        if: github.event_name == 'push' && github.ref_type == 'tag'
         uses: Kir-Antipov/mc-publish@v3.3
         with:
           modrinth-id: lKiXKLvv
           modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
           files: paper/build/libs/lod-server-support-paper-*.jar
-          name: v${{ env.MOD_VERSION }} - Paper/Purpur/Folia (MC 26.1.2)
-          version: v${{ env.MOD_VERSION }}+paper+mc26.1.2
+          name: v${{ env.MOD_VERSION }} - Paper/Purpur/Folia (MC ${{ env.LINE_MC_PAPER }})
+          version: v${{ env.MOD_VERSION }}+paper+mc${{ env.LINE_MC_PAPER }}
           version-type: release
-          # One artifact serves all three Bukkit-family loaders (plugin.yml declares
-          # folia-supported: true; release_check.py gates it — Folia publishes 26.1.2 builds
-          # on this line). Folia support is experimental — release notes must say so
-          # (CLAUDE.md, Release Notes Format rules).
-          loaders: |
-            paper
-            purpur
-            folia
-          game-versions: |
-            26.1.2
+          # The loader list is per-line data (Folia's presence has flipped per line —
+          # re-added for v0.9.0 on 26.2 once Folia published 26.2-1 and the four
+          # SOAK_PLATFORM=folia scenarios passed; Folia remains EXPERIMENTAL, a
+          # release-notes caveat, not a reason to withhold a loadable jar).
+          loaders: ${{ env.PAPER_LOADERS }}
+          game-versions: ${{ env.GV_PAPER }}
           changelog: ${{ steps.release_notes.outputs.notes }}
 
-      # ---- Voxy Server Side: NOT published from any line since v0.8.0 -----------------------
-      # The VSS channel (Modrinth project 84zcagOb) stopped receiving versions at v0.8.0
-      # (user decision at the tri-release). The vssJar tasks still build the branded pair and
-      # release_check still gates the wire identity locally — deliberately kept so the branch
-      # stays a near-byte twin of main — but no VSS artifact is attached to the GitHub
-      # release or uploaded to Modrinth here.
+      # The version NAME carries each line's caveat prose (data-driven; on 26.2:
+      # "server-side" — no community Voxy build exists, the client half ships
+      # compiled-and-inert, and search results never render release notes). Kept under
+      # labrinth's 64-char cap — the contract test computes the RESOLVED length (N-4
+      # review MAJOR: an over-cap name 400s MID-PUBLISH). This step runs LAST so a
+      # best-effort-tier failure strands only the best-effort artifact, never
+      # Fabric/Paper (the full tier).
+      - name: Upload NeoForge to Modrinth
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        uses: Kir-Antipov/mc-publish@v3.3
+        with:
+          modrinth-id: lKiXKLvv
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+          files: neoforge/build/libs/lod-server-support-neoforge-*.jar
+          name: v${{ env.MOD_VERSION }} - ${{ env.LINE_NEOFORGE_NAME }}
+          version: v${{ env.MOD_VERSION }}+neoforge+mc${{ env.LINE_MC_NEOFORGE }}
+          version-type: release
+          loaders: neoforge
+          game-versions: ${{ env.GV_NEOFORGE }}
+          changelog: ${{ steps.release_notes.outputs.notes }}

@@ -2,12 +2,7 @@
 
 Streams LOD (Level of Detail) chunk data from your server to connected clients, so [Voxy](https://modrinth.com/mod/voxy) can render terrain hundreds of chunks out — including terrain the player has never visited.
 
-Supports **Fabric** clients, and **Fabric**, **Paper**, **Purpur** and **Folia** servers.
-
-> [!NOTE]
-> **This is the Minecraft 26.1.x support branch** (`support/mc26.1-v0.10` — the fresh v0.10.0
-> re-port; it supersedes the frozen v0.8.0-era `support/mc26.1`). Releases from here are
-> tagged `v<x.y.z>+mc26.1`; the Minecraft 26.2 mainline lives on `main`.
+Supports **Fabric** clients, and **Fabric**, **NeoForge**, **Paper**, **Purpur** and **Folia** servers. NeoForge support is best-effort tier (server works fully; the client half needs a community Voxy build for NeoForge, which doesn't exist on 26.2 yet).
 
 https://github.com/user-attachments/assets/721fb344-890e-4e03-ab36-539444427f7b
 
@@ -23,6 +18,7 @@ https://github.com/user-attachments/assets/721fb344-890e-4e03-ab36-539444427f7b
 | **Fabric client** | `lod-server-support-fabric.jar` | `mods/` | `config/lss-client-config.json` |
 | **Fabric server** | `lod-server-support-fabric.jar` | `mods/` | `config/lss-server-config.json` |
 | **Paper / Purpur / Folia** | `lod-server-support-paper.jar` | `plugins/` | `plugins/LodServerSupport/lss-server-config.json` |
+| **NeoForge server** | `lod-server-support-neoforge.jar` | `mods/` | `config/lss-server-config.json` |
 
 Restart after installing. Downloads are on [Modrinth](https://modrinth.com/plugin/lod-server-support); GitHub Releases mirror every version.
 
@@ -30,11 +26,11 @@ Restart after installing. Downloads are on [Modrinth](https://modrinth.com/plugi
 
 Each Minecraft version has its own build, versioned `v<x.y.z>+mc<version>`; only the latest of each is listed. Folia uses the same JAR as Paper (experimental).
 
-| Minecraft | LSS Version | Fabric | Paper | Folia | Voxy | Java |
-|---|---|---|---|---|---|---|
-| **26.2** | v0.10.0+mc26.2 | ✅ | ✅ | ✅ | 0.2.17-alpha+ | 25+ |
-| **26.1.x** | v0.10.0+mc26.1 | ✅ | ✅ | ✅ | 0.2.14-alpha+ | 25+ |
-| **1.21.11** | v0.10.0+mc1.21.11 | ✅ | ✅ | ✅ | 0.2.15-beta+ | 21+ |
+| Minecraft | LSS Version | Fabric | NeoForge | Paper | Folia | Voxy | Java |
+|---|---|---|---|---|---|---|---|
+| **26.2** | v0.11.0+mc26.2 | ✅ | ✅ (server) | ✅ | ✅ | 0.2.17-alpha+ | 25+ |
+| **26.1.x** | v0.11.0+mc26.1 | ✅ | — | ✅ | ✅ | 0.2.14-alpha+ | 25+ |
+| **1.21.11** | v0.11.0+mc1.21.11 | ✅ | — | ✅ | ✅ | 0.2.15-beta+ | 21+ |
 
 > [!IMPORTANT]
 > **Mixed versions are fine back to v0.4.x.** LSS translates between protocol versions in both directions, so old clients keep working against new servers and vice versa. Against anything older — or with the compat layers turned off — you simply get vanilla render distance and no error.
@@ -45,9 +41,11 @@ Voxy on its own can only build LOD data from chunks the client has already loade
 
 ## Commands
 
-**Server** — `/lsslod stats` for per-player transfer statistics, `/lsslod diag` for detailed diagnostics. With the LOD store: `/lsslod store status` (state, hit/miss counters, size), `/lsslod store invalidate all` (drop every stored column — they re-warm from normal serves), and on Fabric `/lsslod store backfill start|stop|status` to control the background pre-warm walk. Requires operator status (Fabric: gamemaster level; Paper: the `lss.admin` permission, default op).
+**Server** — `/lsslod stats` for per-player transfer statistics, `/lsslod diag` for detailed diagnostics, `/lsslod help` (also the bare `/lsslod`) for the full verb list. **Runtime settings**: `/lsslod set` lists the runtime-settable config keys with current values; `/lsslod set <key> <value>` applies a change immediately AND persists it to `lss-server-config.json` — values are clamped exactly like the config file, and a `lodDistanceChunks` change is pushed to connected current-version clients live (older clients pick it up on rejoin). With the LOD store: `/lsslod store status` (state, hit/miss counters, size), `/lsslod store invalidate all` (drop every stored column — they re-warm from normal serves), and on Fabric `/lsslod store backfill start|stop|status` to control the background pre-warm walk (`status` shows progress plus a remaining regions/columns estimate). Requires operator status (Fabric: gamemaster level; Paper: the `lss.admin` permission, default op).
 
-**Client** (Fabric only) — `/lss clearcache` re-requests every chunk, `/lss diag` shows connection and throughput, `/lss trace` toggles a debug log under `logs/`.
+**Client** (Fabric only) — `/lss clearcache` re-requests every chunk, `/lss reset` wipes Voxy's LOD store AND the LSS cache for the current server (LODs visibly disappear, then rebuild live as the server re-streams everything; if Voxy's ingest is disabled — its config toggle or a replay — LODs stay empty until it is re-enabled), `/lss diag` shows connection and throughput, `/lss trace` toggles a debug log under `logs/`. Without an active LSS session `/lss reset` requires `/lss reset confirm` — there is no server to re-stream from, so the wipe only refills from vanilla chunk loading (and the LSS cache is then cleared for ALL servers, not just one).
+
+The LSS client cache lives in a `.lss/` folder in the game directory on fresh installs (the `.voxy` convention); installs that already have a `config/lss/cache/` keep using it.
 
 ## Configuration
 
@@ -56,20 +54,24 @@ Config is generated on first run at the paths in the install table above. The ge
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `enabled` | `true` | Enable LOD distribution |
-| `lodDistanceChunks` | `512` | Max LOD distance in chunks |
+| `lodDistanceChunks` | `300` | Max LOD distance in chunks |
 | `mbPerSecondLimitPerPlayer` | `25.0` | Per-player bandwidth cap in MiB/s (decimals like `12.5` work), counted **before** compression |
 | `mbPerSecondLimitGlobal` | `75.0` | Total bandwidth cap across all players in MiB/s, counted **before** compression |
 | `enableChunkGeneration` | `true` | Generate missing chunks on demand, so players see terrain nobody has visited |
+| `dirtyBroadcastIntervalSeconds` | `10` | How often terrain edits are pushed to connected clients. `0` disables the pushes entirely — clients then refresh only on rejoin or their own re-requests |
 | `generationConcurrencyLimitGlobal` | `40` | Max chunks generating server-wide at once |
 | `generationConcurrencyLimitPerPlayer` | `40` | Max concurrently generating chunks per player |
 | `lodStore` | `"on"` (new installs) | Keeps a compressed copy of every served LOD column in `<world>/lss-lod/` and serves repeat requests from it — far less CPU and disk work per chunk. The cost: it roughly doubles your world folder. Generated as `"on"` for brand-new servers; on an upgraded server whose config file doesn't have the key, it stays `"off"` until you enable it. See **Tuning** |
 | `lodStoreBackfill` | `true` | Pre-warms the store with a low-priority background walk of your existing world, so the first player to arrive already gets fast serves. Inert unless `lodStore` is on. Yields to players, pauses under load, resumes across restarts. Fabric only |
 | `lodStoreMaxMB` | `0` | Size cap for the store. `0` = uncapped; set a value to bound it, and the oldest columns are evicted first |
+| `maxConcurrentDiskReads` | `0` (auto) | Caps how many expensive region-file reads (cold, un-stored chunks) run at once, so server CPU stays bounded no matter how high you raise bandwidth — store-served LODs never consume its capacity. Auto = half the reader pool with the store on, no limit with it off. Symptom when it binds: LOD holes fill at a steady bounded rate while `/lsslod diag` shows `read_gate=K/K` with `gate_stops=` climbing (`gated=` stays ~0 — it counts rare overflow races); raise the value if you have CPU headroom |
 | `enableV16Compat` | `true` | Serve legacy v0.4.x–v0.6.x clients through a built-in translation layer. `false` requires every client to match the server's protocol |
 | `enableV18Compat` | `true` | Serve v0.7.x–v0.8.x clients natively — a full session, minus only the features their client predates. `false` drops them to the `enableV16Compat` fallback |
 | `enableV19Compat` | `true` | Serve v0.9.x clients natively. `false` drops them to the `enableV16Compat` fallback |
 | `xrayObfuscation` | `"auto"` | Anti-xray masking for LOD data. `"auto"` mirrors your anti-xray engine's own hidden-block list and height cutoff whenever one is detected (Paper's built-in, per world; the DrexHD AntiXray mod on Fabric). `"on"` forces masking, `"off"` disables it — LOD data then carries real ore locations even on anti-xray servers |
 | `xrayHiddenBlocks` / `xrayMaxBlockHeight` | ore list / `64` | Fallback list and Y cutoff, used only when no engine settings can be adopted |
+
+**Far players (new in v0.11.0):** the server can stream distant players' positions to subscribed clients (`farPlayers` mode `off`/`opt-in`/`on`, max ring `farPlayersMaxDistanceBlocks` default 2048, plus a `farPlayersExclude` list and the Paper permission `lss.farplayers.hidden`). Privacy notes: even the 2048 default reveals player positions far beyond vanilla range — use `opt-in` mode if that matters on your server; and any player on an older LSS (or vanilla) client is a potential far-player *target* with no client-side opt-out — their protections are the server-side mode, exclude list, and permission node. The feature is **on by default** (server mode `on`, clients subscribe automatically); clients control their own participation with the "Share My Position" option (off = invisible beyond normal render distance while connected through LSS). Vanish plugins that publish the standard `"vanished"` metadata (SuperVanish, PremiumVanish, EssentialsX) are honored on Paper; plugins that hide players only via `hideEntity` are not detected — use the permission node or exclude list for those. Mounted players render with their mount (any vanilla entity type; modded mounts a client doesn't know degrade to an unmounted player model, never a crash). **SeeU coexistence:** if the SeeU mod is installed on the client, LSS stops drawing and receiving far players automatically to avoid showing every distant player twice (your own "Share My Position" setting still applies — SeeU's presence does not opt you out of being seen) — set `farPlayersWithSeeU: true` (or "Prefer LSS Far Players" in the Sodium screen) to use LSS instead; note that on an LSS-only server, SeeU alone shows no far players, so prefer LSS there.
 
 Masking applies to columns served after it activates — columns already cached by clients are not recalled, as with any anti-xray retrofit. Cave shapes and lighting are not hidden, matching packet-level anti-xray.
 

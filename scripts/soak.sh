@@ -36,7 +36,7 @@ RESULTS_ROOT="$PROJECT_ROOT/soak-results"
 WORLDS_DIR="$PROJECT_ROOT/soak-worlds"
 SCENARIOS_DIR="$PROJECT_ROOT/scripts/soak-scenarios"
 ALL_SCENARIOS=(fresh-backfill warm-rejoin dimension-trip dirty-broadcast
-               rate-limit-storm disk-saturation generation-disabled
+               rate-limit-storm disk-saturation disk-read-gate generation-disabled
                generation-capacity-stress bandwidth-throttle
                cold-restart-resync enabled-false teleport-prune
                dirty-range-filter dirty-during-backfill dirty-while-offline
@@ -114,6 +114,8 @@ esac
 # Base worlds are MC-version-specific; fresh-backfill stamps this marker when it saves one.
 # The version comes from gradle.properties so the guard and the stamp can never drift
 # apart (a drifted pair silently clears the base world on EVERY run).
+# (V-1/T3a — reverse-flow: this guard was independently re-invented on four support
+# branches; a base world from another line silently invalidates a soak.)
 MC_LINE_VERSION=$(grep -oP '^minecraft_version=\K.*' "$PROJECT_ROOT/gradle.properties")
 WORLD_VERSION_MARKER="$BASE_WORLD_DIR/mc-version"
 
@@ -153,7 +155,7 @@ fi
 
 case "$SCENARIO" in
     fresh-backfill|warm-rejoin|dimension-trip|dirty-broadcast) ;;
-    rate-limit-storm|disk-saturation|generation-disabled|generation-capacity-stress|bandwidth-throttle) ;;
+    rate-limit-storm|disk-saturation|disk-read-gate|generation-disabled|generation-capacity-stress|bandwidth-throttle) ;;
     cold-restart-resync|enabled-false|teleport-prune|dirty-range-filter) ;;
     dirty-during-backfill|dirty-while-offline|clearcache-mid-session|dimension-rejoin-warm) ;;
     store-second-join) ;;
@@ -199,6 +201,11 @@ case "$SCENARIO" in
     dirty-broadcast)            CLIENT_RUNS=1; EXPECTED_SECONDS=270 ;;
     rate-limit-storm)           CLIENT_RUNS=1; EXPECTED_SECONDS=370 ;;
     disk-saturation)            CLIENT_RUNS=1; EXPECTED_SECONDS=250 ;;
+    # K=1 over the prebuilt annulus: with the park list feeding the permit, healthy IO
+    # converges in seconds; degraded WSL2 IO (107-131 ms/read) serializes ~2112 reads
+    # to ~4-5 min — the 400 s timeline budgets that plus the >=25 s converged tail
+    # (v1.3 sizing decision + the stage-B park deviation's margin).
+    disk-read-gate)             CLIENT_RUNS=1; EXPECTED_SECONDS=450 ;;
     generation-disabled)        CLIENT_RUNS=1; EXPECTED_SECONDS=230 ;;
     generation-capacity-stress) CLIENT_RUNS=1; EXPECTED_SECONDS=330 ;;
     bandwidth-throttle)         CLIENT_RUNS=1; EXPECTED_SECONDS=290 ;;
@@ -289,20 +296,18 @@ echo "========================================="
 echo " LSS Soak: platform=$SOAK_PLATFORM, scenario=$SCENARIO, client runs=$CLIENT_RUNS, budget=${RUNTIME_BUDGET}s"
 echo "========================================="
 
-# Base worlds are MC-version-specific; another line's world will not downgrade (MC refuses
-# newer-DataVersion worlds). Clear a stale base BEFORE Step 1 so its '! -d .../world' check
-# regenerates naturally. Unstamped pre-marker bases also clear once and regenerate.
-# (Support-line guard, ported from the frozen support/mc26.1 branch's review round.)
-if [[ -d "$BASE_WORLD_DIR" && "$(cat "$WORLD_VERSION_MARKER" 2>/dev/null)" != "$MC_LINE_VERSION" ]]; then
-    echo "[soak] Base world at $BASE_WORLD_DIR is not for MC $MC_LINE_VERSION — clearing (will re-run fresh-backfill)"
-    rm -rf "$BASE_WORLD_DIR"
-fi
-
 # Step 1: Auto-run fresh-backfill first if a base world is required but missing
 # (fresh-world scenarios never need it). cold-restart-resync additionally needs the
 # client-cache snapshot taken at the same instant as the base world — a base world
 # saved by an older fresh-backfill (pre-snapshot) must be regenerated.
 if [[ " $FRESH_WORLD_SCENARIOS " != *" $SCENARIO "* ]]; then
+    # Another line's base world will not downgrade (MC refuses newer-DataVersion worlds).
+    # Clear a stale base so the '! -d .../world' check below regenerates it naturally;
+    # unstamped pre-marker bases also clear once and regenerate. (V-1/T3a.)
+    if [[ -d "$BASE_WORLD_DIR" && "$(cat "$WORLD_VERSION_MARKER" 2>/dev/null)" != "$MC_LINE_VERSION" ]]; then
+        echo "[soak] Base world at $BASE_WORLD_DIR is not for MC $MC_LINE_VERSION — clearing (will re-run fresh-backfill)"
+        rm -rf "$BASE_WORLD_DIR"
+    fi
     if [[ ! -d "$BASE_WORLD_DIR/world" ]]; then
         echo "[soak] No base world at $BASE_WORLD_DIR/world — running fresh-backfill first"
         "$SELF" fresh-backfill
@@ -361,10 +366,18 @@ fi
 # Provenance guard: the cache is keyed only by server address (localhost_25565), which
 # ALL platforms share — a kept cache populated against another platform's base world
 # carries stamps from a different world's clock and fails the warm-path expectations.
+# Stage D (cache relocation): the client cache may live at EITHER root — the legacy
+# config/lss/cache (adopted when it exists) or the game-root .lss/cache (fresh run
+# dirs). Clearing must cover both or a stale cache at the other root warms a run that
+# expects cold. NOTE the cold-restart-resync restore deliberately creates
+# config/lss/cache: under the adoption rule that FORCES the legacy root for the run,
+# which is load-bearing — the restored cache must be the one the client actually opens.
+LEGACY_CACHE_DIR="$CLIENT_RUN_DIR/config/lss/cache"
+DOTLSS_CACHE_DIR="$CLIENT_RUN_DIR/.lss/cache"
 CACHE_PLATFORM_MARKER="$CLIENT_RUN_DIR/config/lss/cache-platform"
 if [[ -f "$CACHE_PLATFORM_MARKER" && "$(cat "$CACHE_PLATFORM_MARKER")" != "$SOAK_PLATFORM" ]]; then
     echo "[soak] Client cache was populated on platform '$(cat "$CACHE_PLATFORM_MARKER")' — clearing for $SOAK_PLATFORM"
-    rm -rf "$CLIENT_RUN_DIR/config/lss/cache"
+    rm -rf "$LEGACY_CACHE_DIR" "$DOTLSS_CACHE_DIR"
 fi
 case "$SCENARIO" in
     dirty-broadcast)
@@ -372,13 +385,13 @@ case "$SCENARIO" in
         ;;
     cold-restart-resync)
         echo "[soak] Restoring client column cache from $BASE_WORLD_DIR/client-cache"
-        rm -rf "$CLIENT_RUN_DIR/config/lss/cache"
+        rm -rf "$LEGACY_CACHE_DIR" "$DOTLSS_CACHE_DIR"
         mkdir -p "$CLIENT_RUN_DIR/config/lss"
-        cp -r "$BASE_WORLD_DIR/client-cache" "$CLIENT_RUN_DIR/config/lss/cache"
+        cp -r "$BASE_WORLD_DIR/client-cache" "$LEGACY_CACHE_DIR"
         ;;
     *)
         echo "[soak] Clearing client column cache"
-        rm -rf "$CLIENT_RUN_DIR/config/lss/cache"
+        rm -rf "$LEGACY_CACHE_DIR" "$DOTLSS_CACHE_DIR"
         ;;
 esac
 mkdir -p "$CLIENT_RUN_DIR/config/lss"
@@ -558,10 +571,19 @@ if [[ "$SCENARIO" == "fresh-backfill" && -d "$SERVER_RUN_DIR/world" ]]; then
     rm -rf "$BASE_WORLD_DIR/world"
     cp -r "$SERVER_RUN_DIR/world" "$BASE_WORLD_DIR/world"
     printf '%s' "$MC_LINE_VERSION" > "$WORLD_VERSION_MARKER"
+    # Stage D: collect from whichever root the client actually used this run — a
+    # fresh run dir writes .lss/cache while a legacy dir adopts config/lss/cache;
+    # checking only the old path would silently turn every warm scenario cold.
+    COLLECT_CACHE_DIR=""
     if [[ -d "$CLIENT_RUN_DIR/config/lss/cache" ]]; then
-        echo "[soak] Saving client column cache snapshot to $BASE_WORLD_DIR/client-cache"
+        COLLECT_CACHE_DIR="$CLIENT_RUN_DIR/config/lss/cache"
+    elif [[ -d "$CLIENT_RUN_DIR/.lss/cache" ]]; then
+        COLLECT_CACHE_DIR="$CLIENT_RUN_DIR/.lss/cache"
+    fi
+    if [[ -n "$COLLECT_CACHE_DIR" ]]; then
+        echo "[soak] Saving client column cache snapshot from $COLLECT_CACHE_DIR"
         rm -rf "$BASE_WORLD_DIR/client-cache"
-        cp -r "$CLIENT_RUN_DIR/config/lss/cache" "$BASE_WORLD_DIR/client-cache"
+        cp -r "$COLLECT_CACHE_DIR" "$BASE_WORLD_DIR/client-cache"
     else
         echo "[soak] WARNING: No client cache to snapshot (cold-restart-resync will re-run fresh-backfill)"
     fi

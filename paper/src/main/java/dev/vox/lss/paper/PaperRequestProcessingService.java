@@ -63,6 +63,14 @@ public class PaperRequestProcessingService {
     // shim). Marked ONLY on the pump (the dialectFlip runnable) — see
     // docs/planning/v18-compat-design.md §2.3.
     private final WireDialectTracker dialects = new WireDialectTracker();
+    // Far players (E1, FARP §3.2): subscription identity at the service level (the
+    // dialect-tracker precedent) — subscribed on the PUMP in the Register drain (after
+    // the dialectFlip, so the CURRENT-dialect gate reads post-flip state), dropped at
+    // the quit-originated mailbox Remove, notified (never removed) on dimension change.
+    // Vanish bridge seam null until the reflective ladder lands (E2/E3).
+    private final dev.vox.lss.common.farplayers.FarPlayerBroadcastService farPlayerService =
+            new dev.vox.lss.common.farplayers.FarPlayerBroadcastService(null);
+    private int farPlayerTickCounter;
 
     private final long startTimeNanos = System.nanoTime();
     // Keyed by the lightweight ResourceKey (not ServerLevel): a ServerLevel key strongly
@@ -400,14 +408,8 @@ public class PaperRequestProcessingService {
                 wireCompressionLive = true;
             }
         }
-        // Script-consumed contract: the measurement harnesses assert their staged knobs
-        // against this line (ServerConfigBase.effectiveConfigEcho). Deliberately AFTER
-        // the zstd probe so the compression value echoed is the LIVE state, not the
-        // request (B0 review M1).
-        LSSLogger.info(config.effectiveConfigEcho(readerThreads, wireCompressionLive));
-
-        // LOD store: memory tier for "memory", memory + SQLite for "full" — attached to
-        // both consumers BEFORE the processor starts / any submit. Environment resolved
+        // LOD store: the SQLite engine for "on"/"full" (the memory tier is deleted) —
+        // attached to both consumers BEFORE the processor starts / any submit. Environment resolved
         // eagerly on the construction thread (levels loaded at plugin enable); the
         // periodic re-sweep (lodStoreResweepSeconds) is PAPER's stale bound for its
         // unfired-event dirty gaps. A failed codec/native probe degrades to store-off
@@ -451,15 +453,14 @@ public class PaperRequestProcessingService {
                                 + Long.toHexString(maskEntry.mask().fingerprint()));
             }
             var env = new dev.vox.lss.common.store.SqliteLodStore.Environment(
-                    worldRoot.resolve("lss-lod"), server.getServerVersion(),
+                    dev.vox.lss.common.store.LodStores.brandedStoreDir(worldRoot), server.getServerVersion(),
                     LSSConstants.PROTOCOL_VERSION, regionDirs::get, maskFingerprints::get,
                     config.lodStoreResweepSeconds, config.lodStoreMaxBytes(),
                     storeRegistryFingerprint(server));
             lodStore = dev.vox.lss.common.store.LodStores.createOrNull(env);
             if (lodStore == null) {
-                LSSLogger.warn("lodStore=" + storeMode.configValue() + " requested but the "
-                        + dev.vox.lss.common.store.StoreCodec.NAME + " codec native cannot "
-                        + "load on this platform — running WITHOUT the LOD store");
+                // LodStores.createOrNull logged the per-cause warn (codec vs SQLite init —
+                // final-review A-M1: one shared message here misattributed SQLite failures).
             } else {
                 diskReader.attachStore(lodStore);
                 // C4: pre-migration wirefmt=19 store rows translate to the canonical
@@ -471,6 +472,23 @@ public class PaperRequestProcessingService {
                 offThreadProcessor.attachStore(lodStore);
             }
         }
+
+        // Disk-read concurrency gate K (twin of the Fabric wiring): resolved against
+        // the POST-DEGRADE store state — `lodStore != null`, never the config string,
+        // or half-pool K would re-arm on exactly the store-less servers the
+        // store-conditional AUTO carves out (failed codec probe, enabled=false).
+        int gateCapacity = config.effectiveMaxConcurrentDiskReads(readerThreads,
+                lodStore != null);
+        diskReader.configureReadGate(gateCapacity);
+        // Script-consumed contract: the measurement harnesses assert their staged knobs
+        // against this line (ServerConfigBase.effectiveConfigEcho). Deliberately AFTER
+        // the zstd probe (the compression value echoed is the LIVE state, not the
+        // request — B0 review M1) and AFTER store attachment (the echoed K is the
+        // store-conditional resolution, which does not exist until the store's own
+        // degrade ladder has run — v1.3 review MAJOR).
+        LSSLogger.info(config.effectiveConfigEcho(readerThreads, wireCompressionLive,
+                gateCapacity));
+
         offThreadProcessor.start();
 
         var dirtyTracker = new DirtyColumnTracker();
@@ -571,6 +589,108 @@ public class PaperRequestProcessingService {
         this.lifecycleMailbox.add(new LifecycleEvent.Remove(uuid));
     }
 
+    // Runtime /lsslod set marshaling (v0.11.0 stage C): commands may arrive on a REGION
+    // thread on Folia, and the mutation path (config assign + validate + save + the
+    // re-push) touches pump-owned state — so the command surface enqueues here and the
+    // pump drains after the lifecycle mailbox (ordering: see the tick() comment).
+    private final ConcurrentLinkedQueue<Runnable> runtimeTasks = new ConcurrentLinkedQueue<>();
+
+    /** Any thread. Runs on the pump at the top of the next tick(), after the lifecycle
+     *  drain. Replies from inside the task reach the sender cross-thread (Bukkit
+     *  sendMessage is thread-safe for console and Adventure-backed players). A task
+     *  enqueued in the shutdown window (pump cancelled, queue never drained again) is
+     *  silently dropped — acceptable for admin commands: the config file write already
+     *  happened on the command thread, only the live-apply/reply is lost. */
+    public void enqueueRuntimeTask(Runnable task) {
+        this.runtimeTasks.add(task);
+    }
+
+    private void drainRuntimeTasks() {
+        Runnable task;
+        while ((task = this.runtimeTasks.poll()) != null) {
+            try {
+                task.run();
+            } catch (Exception e) {
+                // Exception, not Throwable: an Error (OOM, linkage) must propagate —
+                // swallowing it here would hide a dying JVM behind a log line.
+                LSSLogger.error("Runtime settings task failed", e);
+            }
+        }
+    }
+
+    // The tick-poll appliers (v0.11.0 stage C, twin of the Fabric block): each formerly
+    // capture-at-construction consumer re-applies config at the top of the tick on the
+    // pump. Change-guarded so the steady state costs a few field compares.
+    private int lastAppliedGenGlobal = -1;
+    private int lastAppliedGenPerPlayer = -1;
+
+    private void applyRuntimeConfig() {
+        this.bandwidthLimiter.reconfigure(this.config.bytesPerSecondGlobal());
+        this.diskReader.reapplyGateCapacity(this.config);
+        this.offThreadProcessor.updateSweepRadius(this.config.lodDistanceChunks
+                + LSSConstants.LOD_DISTANCE_BUFFER
+                + dev.vox.lss.common.processing.OffThreadProcessor.SWEEP_RADIUS_MARGIN_CHUNKS);
+        int genGlobal = this.config.generationConcurrencyLimitGlobal;
+        int genPerPlayer = this.config.generationConcurrencyLimitPerPlayer;
+        if (genGlobal != this.lastAppliedGenGlobal || genPerPlayer != this.lastAppliedGenPerPlayer) {
+            if (this.generationService != null) {
+                this.generationService.updateCaps(genGlobal, genPerPlayer);
+            }
+            for (var state : this.players.values()) {
+                state.updateGenSlotCap(genPerPlayer);
+            }
+            this.lastAppliedGenGlobal = genGlobal;
+            this.lastAppliedGenPerPlayer = genPerPlayer;
+        }
+    }
+
+    /**
+     * Push a fresh SessionConfig to every CURRENT-dialect (v20) session (twin of the
+     * Fabric method; SET plan §"Pushing the new distance"). PUMP-ONLY, and only via a
+     * runtime task drained AFTER the lifecycle mailbox — the ordering pin: a
+     * registered-but-flip-pending player must never be enumerated as CURRENT (the
+     * tracker defaults untracked to CURRENT, and the flip applies in the drain's
+     * beforeRegister). Legacy sessions (v19/v18/v16) are skipped; they keep the
+     * handshake distance until rejoin.
+     *
+     * @return {pushed, legacySkipped}
+     */
+    /** Test seam: sends one v20 SessionConfig frame. Production default is the raw
+     *  plugin-message send (the broadcaster's setDirtySender pattern). */
+    @FunctionalInterface
+    interface SessionConfigSender {
+        void send(ServerPlayer player, PaperConfig config) throws Exception;
+    }
+
+    private SessionConfigSender sessionConfigSender = (player, cfg) ->
+            PaperPayloadHandler.sendSessionConfig(player.getBukkitEntity(),
+                    LSSConstants.PROTOCOL_VERSION, cfg.enabled,
+                    cfg.lodDistanceChunks, cfg.enableChunkGeneration);
+
+    void setSessionConfigSender(SessionConfigSender sender) {
+        this.sessionConfigSender = sender;
+    }
+
+    public int[] repushSessionConfig() {
+        int pushed = 0;
+        int legacy = 0;
+        for (var state : this.players.values()) {
+            if (this.dialects.dialectOf(state.getPlayerUUID())
+                    != dev.vox.lss.common.HandshakeGate.WireDialect.CURRENT) {
+                legacy++;
+                continue;
+            }
+            try {
+                this.sessionConfigSender.send(state.getPlayer(), this.config);
+                pushed++;
+            } catch (Exception e) {
+                LSSLogger.error("Session-config re-push failed for "
+                        + state.getPlayer().getName().getString(), e);
+            }
+        }
+        return new int[]{pushed, legacy};
+    }
+
     private void drainLifecycleMailbox() {
         LifecycleEvent ev;
         while ((ev = this.lifecycleMailbox.poll()) != null) {
@@ -595,6 +715,20 @@ public class PaperRequestProcessingService {
                         r.beforeRegister().run();
                         try {
                             registerPlayer(r.player(), r.capabilities());
+                            // Far players: post-flip, so the CURRENT-dialect gate is
+                            // reliable (legacy layouts predate the capability bit).
+                            if ((r.capabilities() & LSSConstants.CAPABILITY_FAR_PLAYERS) != 0
+                                    && !this.dialects.isV16(r.player().getUUID())
+                                    && !this.dialects.isV18(r.player().getUUID())
+                                    && !this.dialects.isV19(r.player().getUUID())) {
+                                this.farPlayerService.subscribeViewer(r.player().getUUID());
+                            } else {
+                                // Re-handshake without the bit / on a legacy dialect
+                                // sheds any prior subscription (review: a same-session
+                                // downgrade must not keep streaming far-player frames
+                                // to a decoder that no longer expects them).
+                                this.farPlayerService.removeViewer(r.player().getUUID());
+                            }
                         } finally {
                             if (this.players.containsKey(r.player().getUUID())) {
                                 // State exists from this line on — the deferred SessionConfig
@@ -613,6 +747,7 @@ public class PaperRequestProcessingService {
                         // the network-disconnect semantics and cannot break the
                         // identity-survives-dim-change contract.
                         this.dialects.onDisconnect(r.uuid());
+                        this.farPlayerService.removeViewer(r.uuid());
                     }
                 }
             } catch (Exception e) {
@@ -832,11 +967,19 @@ public class PaperRequestProcessingService {
         // disabled is safe by construction: HandshakeGate never invokes the registrar when
         // disabled, and removePlayer of an unregistered UUID is a no-op.
         drainLifecycleMailbox();
+        // Runtime /lsslod set tasks (v0.11.0 stage C): drained AFTER the lifecycle
+        // mailbox, deliberately — the SessionConfig re-push enumerates dialects, and a
+        // registered-but-flip-pending player must have its dialect flip APPLIED before
+        // enumeration (the SET review's ordering MAJOR: an off-pump enumeration could
+        // read the untracked-defaults-to-CURRENT dialect and push a protocol-20 config
+        // at a legacy client, killing its session until rejoin).
+        drainRuntimeTasks();
         if (!this.config.enabled)
             return;
 
         this.diag.reset(this.offThreadProcessor.getDiagnostics());
 
+        applyRuntimeConfig();
         var generationReady = tickGenerationService();
         // v16 declares BEFORE the lifecycle pass: the sync probe reads the mailbox during
         // processPlayerLifecycle, and on Folia holdAndScheduleRegionProbe reads ONLY the
@@ -857,6 +1000,10 @@ public class PaperRequestProcessingService {
                 // sweep was the one removal path that leaked it).
                 this.dialects.onDisconnect(uuid);
                 this.v16Compat.onDisconnect(uuid);
+                // E1 review M1: the sweep must shed the far-player subscription like
+                // the other two identities, or a swept viewer's roster state leaks and
+                // keeps charging the broadcast loop until a same-UUID rejoin.
+                this.farPlayerService.removeViewer(uuid);
             }
         }
 
@@ -871,6 +1018,7 @@ public class PaperRequestProcessingService {
         this.drainGenerationTicketRequests();
         flushSendQueues(lifecycle.activeCount);
         this.dirtyBroadcaster.tick(this.config);
+        tickFarPlayers();
         tickDiagnosticsLog();
     }
 
@@ -955,6 +1103,9 @@ public class PaperRequestProcessingService {
                 int capabilities = state.getCapabilities();
                 removePlayer(changed.getUUID());
                 registerPlayer(changed, capabilities);
+                // Far players: identity SURVIVES the cycle (v18-rung checklist); the
+                // roster does not — a bumped-epoch full roster follows.
+                this.farPlayerService.onViewerDimensionChange(changed.getUUID());
                 continue;
             }
 
@@ -1004,18 +1155,39 @@ public class PaperRequestProcessingService {
         long perPlayerAllocation = this.bandwidthLimiter.getPerPlayerAllocation(activeCount);
         long perPlayerCap = Math.min(perPlayerAllocation, this.config.bytesPerSecondPerPlayer());
 
+        // The ping backstop's observe pass (Mechanism B) — the Fabric twin's comment:
+        // observed on the pump, applied to the flush allocation (m12), reset when the
+        // kill switch is off so a live flip cannot leave a stale cut.
+        if (this.config.enablePingBackstop) {
+            long now = System.currentTimeMillis();
+            for (var state : this.players.values()) {
+                int ping = -1;
+                try {
+                    ping = state.getPlayer().connection.latency();
+                } catch (Throwable ignored) {
+                }
+                state.getPingBackstop().observe(now, ping, state.getTotalBytesSent(),
+                        perPlayerCap);
+            }
+        } else {
+            for (var state : this.players.values()) {
+                state.getPingBackstop().resetFactor();
+            }
+        }
+
         for (var state : this.players.values()) {
             if (!state.hasCompletedHandshake())
                 continue;
-            long[] dropped = state.flushSendQueue(perPlayerCap, this.bandwidthLimiter, this.diag,
+            long[] dropped = state.flushSendQueue(
+                    state.getPingBackstop().apply(perPlayerCap), this.bandwidthLimiter, this.diag,
                     data -> this.columnPayloadSender.send(state, data),
-                    (long) this.config.outboundBufferCeilingKB * 1024L,
                     this.config.lodYieldsToVanillaTransport,
                     // Prune gated on the yield (review B-2) — the Fabric twin's comment.
                     this.config.lodYieldsToVanillaTransport
                             ? this.config.lodDistanceChunks + LSSConstants.LOD_DISTANCE_BUFFER
                                     + OffThreadProcessor.SWEEP_RADIUS_MARGIN_CHUNKS
-                            : 0);
+                            : 0,
+                    this.config.enableSendPacing);
             if (dropped.length > 0) {
                 // A send failure or the relevance prune discarded resolved-but-undelivered
                 // columns: clear their done-bits so the client's re-requests re-resolve
@@ -1265,6 +1437,72 @@ public class PaperRequestProcessingService {
 
     public V16CompatManager getV16CompatManager() {
         return this.v16Compat;
+    }
+
+    /** Far players (E1): one broadcast pass every farPlayersUpdateIntervalTicks while
+     *  armed and subscribed — mode "off" short-circuits
+     *  before any snapshot work. Pump thread (Folia: cross-region position/equipment
+     *  reads are stale-tolerant by design — accepted for display-only data, the
+     *  experimental label covers it). */
+    private void tickFarPlayers() {
+        if ("off".equals(this.config.farPlayers)
+                || this.farPlayerService.subscriberCount() == 0) {
+            return;
+        }
+        if (++this.farPlayerTickCounter < this.config.farPlayersUpdateIntervalTicks) return;
+        this.farPlayerTickCounter = 0;
+        try {
+            var online = new java.util.ArrayList<dev.vox.lss.common.farplayers
+                    .FarPlayerBroadcastService.PlayerSnapshot>();
+            for (var p : this.server.getPlayerList().getPlayers()) {
+                online.add(PaperFarPlayerSnapshots.snapshot(p));
+            }
+            this.farPlayerService.tick(System.currentTimeMillis(), online,
+                    new dev.vox.lss.common.farplayers.FarPlayerBroadcastService.Settings(
+                            this.config.farPlayers, this.config.farPlayersMaxDistanceBlocks,
+                            this.config.farPlayersMinDistanceBlocks,
+                            this.config.farPlayersSendSpectators,
+                            this.config.farPlayersExclude,
+                            this.config.farPlayersUpdateIntervalTicks),
+                    this::sendFarPlayerFrame);
+        } catch (Exception e) {
+            // Containment (review): a snapshot/encode bug must degrade far players,
+            // never the pump tick (which owns lifecycle + column serving).
+            if (!this.farPlayerTickErrorWarned) {
+                this.farPlayerTickErrorWarned = true;
+                LSSLogger.error("Far-player broadcast pass failed — contained (once per session)", e);
+            }
+        }
+    }
+
+    private boolean farPlayerTickErrorWarned;
+
+    /** The dedicated far-player send lane — twin of the Fabric sender: writability
+     *  consult (NOT_WRITABLE withholds) + bandwidth governor charge; NMS DiscardedPayload
+     *  (no outgoing Bukkit registration needed — the FARP §3.1 doctrine). */
+    private boolean sendFarPlayerFrame(UUID viewer, String channel, byte[] body) {
+        var player = this.server.getPlayerList().getPlayer(viewer);
+        if (player == null || player.connection == null) return false;
+        var snap = PaperChannelPressure.forPlayer(player).snapshot();
+        if (snap.writable() == dev.vox.lss.common.processing.ChannelPressureProbe
+                .Writability.NOT_WRITABLE) {
+            return false;
+        }
+        player.connection.send(new net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket(
+                new net.minecraft.network.protocol.common.custom.DiscardedPayload(
+                        FAR_PLAYER_CHANNEL_IDS.computeIfAbsent(channel,
+                                net.minecraft.resources.Identifier::parse), body)));
+        this.bandwidthLimiter.recordSend(body.length);
+        return true;
+    }
+
+    // Two entries ever (roster + updates) — parse once, not per frame (review NIT).
+    private static final java.util.concurrent.ConcurrentHashMap<String,
+            net.minecraft.resources.Identifier> FAR_PLAYER_CHANNEL_IDS =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    public dev.vox.lss.common.farplayers.FarPlayerBroadcastService getFarPlayerService() {
+        return this.farPlayerService;
     }
 
     public WireDialectTracker getDialectTracker() {

@@ -3,7 +3,7 @@
   "id": "lss",
   "version": "${version}",
   "name": "LOD Server Support",
-  "description": "Fabric client/server Mod that provides unofficial multiplayer support for Voxy.",
+  "description": "Voxy multiplayer support (unofficial). Enables players with Voxy to see fully rendered terrain out to hundreds of chunks on multiplayer servers without needing to explore the world first.",
   "authors": [
     "VoX"
   ],
@@ -41,12 +41,12 @@
     }
   ],
   "depends": {
-    "minecraft": ">=26.1 <26.2-",
+    "minecraft": "${minecraft_dependency}",
     "fabricloader": ">=0.18.4",
-    "fabric-api": ">=0.146.0"
+    "fabric-api": ">=0.152.1"
   },
   "suggests": {
-    "sodium": ">=0.8.12",
+    "sodium": ">=0.9.0",
     "modmenu": "*",
     "voxy": ">=0.2.17-alpha"
   }

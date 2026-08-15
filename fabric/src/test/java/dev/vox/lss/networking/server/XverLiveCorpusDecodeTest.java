@@ -19,18 +19,20 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 26.1-LINE FLAVOR — the D3 phase-7 CROSS-LINE arm of §9's fixture corpus (C6): every
- * checked-in {@code xver-live-corpus/} fixture is a v20 body captured from REAL played
- * terrain ON MC 26.2 by {@link XverLiveCorpusCaptureTool}, decoded here against THIS
- * line's (26.1.2) registries — the only automated coverage the actual issue-#85
- * scenario (cross-MC v20 serving) has anywhere. Verified at the D3 re-port
- * (2026-08-08): every 26.2-captured identity resolves STRICTLY on 26.1.2 — zero
- * fallbacks — so this arm keeps the strict resolvers and the voxel-level identity
- * comparison unchanged from main's same-line flavor. If a future corpus re-capture
- * (on a newer 26.2.x registry) introduces identities unknown here, that is legitimate
- * CROSS-LINE drift, not a broken capture: switch the affected identities to the
- * documented client fallback expectations ({@code unknownBlockFallback} /
- * ladder containment) rather than widening the strict resolvers silently.
+ * §9's cross-line fixture corpus (C6), LINE-NEUTRAL WORDING since V-1/T4: every
+ * checked-in {@code xver-live-corpus/} fixture — v20 bodies captured from REAL played
+ * terrain on the capture line (the 26.2 mainline) by {@link XverLiveCorpusCaptureTool}
+ * — must decode STRICTLY against the registries of the line this test RUNS ON: every
+ * dictionary identity resolves and the translated native body re-parses with identical
+ * section structure. On the capture line itself a miss means the capture and the
+ * registry drifted (an MC bump without a corpus re-capture). On a support line a miss
+ * is either registry drift on that line's own bump, or a re-captured corpus
+ * introducing genuinely new mainline identities — only the latter may move to the
+ * documented client fallback expectations ({@code unknownBlockFallback} / ladder
+ * containment), never a silent widening of the strict resolvers. This is the only
+ * automated coverage the actual issue-#85 scenario (cross-MC v20 serving) has
+ * anywhere; the standing rule is that this corpus is NEVER regenerated on a support
+ * line (decoding capture-line columns IS the cross-version claim).
  */
 class XverLiveCorpusDecodeTest {
 
@@ -108,18 +110,16 @@ class XverLiveCorpusDecodeTest {
             var column = WireSectionCursor.parse(v20, WireSectionCursor.Layout.V20);
             assertTrue(column.dictionary().size() > 0, fixture + ": empty dictionary");
 
-            // Strict resolvers, CROSS-LINE (26.1 flavor): the corpus was captured on
-            // 26.2 and every identity is verified to resolve on 26.1.2 too (the D3
-            // re-port measurement) — so a miss here is either registry drift on a
-            // future 26.1.x bump or a re-captured corpus introducing genuinely new
-            // 26.2 identities; only the latter may move to fallback expectations
-            // (see the class javadoc), never a silent widening.
+            // Strict resolvers, line-neutral (V-1/T4): every captured identity must
+            // resolve on the line this test runs on — see the class javadoc for what a
+            // miss means on the capture line vs a support line.
             byte[] nativeBody = V20ToNativeTranslator.translate(v20,
                     identity -> {
                         Integer id = blockIds.get(identity);
                         if (id == null) {
                             throw new AssertionError(fixture + ": block identity '"
-                                    + identity + "' (captured on 26.2) unknown on the 26.1 line");
+                                    + identity + "' (captured on the 26.2 mainline) is "
+                                    + "unknown on this line — see the class javadoc");
                         }
                         return id;
                     },
@@ -127,7 +127,8 @@ class XverLiveCorpusDecodeTest {
                         Integer id = biomeIds.get(identity);
                         if (id == null) {
                             throw new AssertionError(fixture + ": biome identity '"
-                                    + identity + "' (captured on 26.2) unknown on the 26.1 line");
+                                    + identity + "' (captured on the 26.2 mainline) is "
+                                    + "unknown on this line — see the class javadoc");
                         }
                         return id;
                     },
@@ -150,10 +151,21 @@ class XverLiveCorpusDecodeTest {
                 var sn = nativeColumn.sections().get(i);
                 String at = fixture + " section " + i;
                 assertEquals(sv.sectionY(), sn.sectionY(), at);
-                assertEquals(sv.nonEmptyBlockCount(), sn.nonEmptyBlockCount(),
-                        at + ": nonEmptyBlockCount must pass through the decode");
-                assertEquals(sv.fluidCount(), sn.fluidCount(),
-                        at + ": fluidCount must pass through the decode");
+                // Derived from the S1 descriptor: this native body is CURSOR-emitted
+                // (V20ToNativeTranslator), so a one-short line carries the LINE-level
+                // cursor fold (review MAJOR-1 — not the per-family serializer fold,
+                // which coincides on 1.21.11's fabric side but is a different field).
+                assertEquals(dev.vox.lss.common.wire.NativeSectionShape.NATIVE_COUNT_SHORTS == 2
+                                ? sv.nonEmptyBlockCount()
+                                : dev.vox.lss.common.wire.NativeSectionShape
+                                        .foldedCountForNativeHeader(sv.nonEmptyBlockCount(),
+                                                sv.fluidCount()),
+                        sn.nonEmptyBlockCount(),
+                        at + ": the native count header must match the family shape");
+                assertEquals(dev.vox.lss.common.wire.NativeSectionShape.NATIVE_COUNT_SHORTS == 2
+                                ? sv.fluidCount() : 0,
+                        sn.fluidCount(),
+                        at + ": fluidCount survives only where the line carries it");
                 int[] v20Blocks = resolvedValues(sv.blocks(), 4096);
                 int[] nativeBlocks = resolvedValues(sn.blocks(), 4096);
                 for (int v = 0; v < 4096; v++) {
@@ -196,5 +208,54 @@ class XverLiveCorpusDecodeTest {
             out[i] = c.palette()[values[i]];
         }
         return out;
+    }
+
+    // ---- M-3 (C6 follow-up, executed at D3): the drift arm ----
+
+    @Test
+    void driftedDictionaryDecodesViaTheFallbackLadderNotAnError() throws Exception {
+        // The strict arm above proves same-line captures never fall back — but the
+        // corpus exists for CROSS-line decode, where registry drift is the expected
+        // state, and no fixture exercised it (M-3). Derive a drift body from a real
+        // capture deterministically (swap one block identity for a valid-format
+        // name no registry carries) and drive it through the CLIENT resolver ladder:
+        // it must decode cleanly with the drifted voxels on the terminal fallback,
+        // never throw, and count exactly one distinct fallback.
+        Path base = fixtures().get(0);
+        var column = WireSectionCursor.parse(Files.readAllBytes(base),
+                WireSectionCursor.Layout.V20);
+        int swapIdx = -1;
+        for (int i = 0; i < column.dictionary().size(); i++) {
+            if (blockIds.containsKey(column.dictionary().get(i))) {
+                swapIdx = i;
+                break;
+            }
+        }
+        assertTrue(swapIdx >= 0, "premise: the capture has at least one block identity");
+        var drifted = new java.util.ArrayList<>(column.dictionary());
+        drifted.set(swapIdx, "lss_drift:absent_block[facing=north]");
+        byte[] driftBody = WireSectionCursor.emit(
+                new WireSectionCursor.WireColumn(drifted, column.sections()),
+                WireSectionCursor.Layout.V20);
+
+        long[] fallbacks = {0};
+        byte[] nativeBody = V20ToNativeTranslator.translate(driftBody,
+                identity -> {
+                    Integer id = blockIds.get(identity);
+                    if (id == null) {
+                        fallbacks[0]++;
+                        return blockIds.get(
+                                "minecraft:stone"); // the terminal ladder's direction
+                    }
+                    return id;
+                },
+                identity -> biomeIds.getOrDefault(identity, 0),
+                blockRegistrySize, biomeRegistrySize);
+        assertEquals(1, fallbacks[0],
+                "exactly the one drifted identity falls back (memoized per palette entry)");
+        var nativeColumn = WireSectionCursor.parse(nativeBody,
+                WireSectionCursor.Layout.NATIVE);
+        assertEquals(column.sections().size(), nativeColumn.sections().size(),
+                "a drifted dictionary must never cost sections — only substituted voxels");
     }
 }

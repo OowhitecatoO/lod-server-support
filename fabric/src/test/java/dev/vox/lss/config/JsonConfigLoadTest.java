@@ -85,6 +85,8 @@ class JsonConfigLoadTest {
         assertEquals(512, c.lodDistanceChunks);
         assertEquals(25.0, c.mbPerSecondLimitPerPlayer);
         assertEquals(26_214_400, c.bytesPerSecondPerPlayer());
+        assertEquals(0, c.maxConcurrentDiskReads,
+                "the disk-read gate ships at 0 = AUTO (store-conditional)");
         assertTrue(Files.isRegularFile(configDir.resolve(FILE)));
 
         JsonObject saved = savedJson(configDir);
@@ -464,7 +466,7 @@ class JsonConfigLoadTest {
         TestServerConfig c = assertDoesNotThrow(() -> TestServerConfig.load(configDir));
 
         // The overflow dies in the PARSER, before validate() ever runs: the result is the
-        // compiled default (512), not the clamp ceiling (2048) a successful bind would produce.
+        // compiled default (300), not the clamp ceiling (2048) a successful bind would produce.
         assertEquals(512, c.lodDistanceChunks);
         assertEquals(broken, Files.readString(configDir.resolve(FILE)));
     }

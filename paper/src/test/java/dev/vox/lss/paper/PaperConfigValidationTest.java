@@ -42,6 +42,10 @@ class PaperConfigValidationTest {
         assertTrue(new PaperConfig().enableV18Compat);
         assertTrue(new PaperConfig().enableV19Compat);
         assertTrue(new PaperConfig().enableViaMismatchGuard);
+        // The ping backstop ships ON (adaptive-transfer-rate-plan.md Mechanism B —
+        // it protects ANY client on a congested link, including pre-governor ones).
+        assertTrue(new PaperConfig().enablePingBackstop);
+        assertTrue(new PaperConfig().enableSendPacing);
     }
 
     @Test
@@ -72,27 +76,24 @@ class PaperConfigValidationTest {
         assertEquals(LSSConstants.MIN_LOD_STORE_MAX_MB, c.lodStoreMaxMB);
     }
 
-    /** Transport deference ships OFF (0) on both platforms — the elytra-wall investigation
-     *  measured the head-of-line mechanism ABSENT (flat ping, empty send queue), so the gate
-     *  exists to be armed from measurement, not by default. The 4096 KB floor binds only
-     *  nonzero opt-ins, and is deliberately well above one maximum-size column so a single
-     *  legal payload can never trip the gate on its own. */
+    /** Paper twin of the Fabric named test (v0.11.0, dirty-broadcast-interval-zero-plan.md):
+     *  0 = dirty pushes disabled survives validate() through the Paper subclass, negatives
+     *  normalize to 0, and 1 stays the floor for a nonzero (sending) interval. */
     @Test
-    void outboundBufferCeilingShipsOffAndKeepsItsNonzeroFloor() {
-        assertEquals(0, new PaperConfig().outboundBufferCeilingKB,
-                "transport deference must ship disabled");
+    void dirtyBroadcastIntervalZeroDisablesSendsAndNonzeroFloorsAt1() {
         PaperConfig c = new PaperConfig();
-        c.outboundBufferCeilingKB = 1;
+        c.dirtyBroadcastIntervalSeconds = 0;
         c.validate();
-        assertEquals(LSSConstants.MIN_OUTBOUND_BUFFER_CEILING_KB, c.outboundBufferCeilingKB,
-                "a nonzero opt-in must clamp up to the floor through the Paper subclass");
-        assertTrue((long) LSSConstants.MIN_OUTBOUND_BUFFER_CEILING_KB * 1024L
-                        > LSSConstants.MAX_SECTIONS_SIZE,
-                "the floor must exceed one maximum-size column, or a single legal payload"
-                        + " could self-trip the gate");
-        c.outboundBufferCeilingKB = 0;
+        assertEquals(0, c.dirtyBroadcastIntervalSeconds, "0 = sends off, must survive validate");
+
+        c.dirtyBroadcastIntervalSeconds = -5;
         c.validate();
-        assertEquals(0, c.outboundBufferCeilingKB, "0 stays 0 — it is the off switch");
+        assertEquals(0, c.dirtyBroadcastIntervalSeconds,
+                "negative nonsense must mean sends off, not a 1 s cadence");
+
+        c.dirtyBroadcastIntervalSeconds = 1;
+        c.validate();
+        assertEquals(1, c.dirtyBroadcastIntervalSeconds, "1 is the nonzero floor, kept exactly");
     }
 
     /** The lodStore SPLIT default (user decision, 2026-08-08 second round), through the
@@ -115,9 +116,9 @@ class PaperConfigValidationTest {
 
     /** Paper inherits the shared yield default: unarmed until the live E3 A/B (§4). */
     @Test
-    void transportYieldDefaultsOff() {
-        assertFalse(new PaperConfig().lodYieldsToVanillaTransport,
-                "lodYieldsToVanillaTransport must default FALSE (Fabric parity)");
+    void transportYieldDefaultsOn() {
+        assertTrue(new PaperConfig().lodYieldsToVanillaTransport,
+                "lodYieldsToVanillaTransport defaults TRUE since v0.11.0 (Fabric parity)");
     }
 
     /** Paper inherits the shared transcode default: disk serves transcode NBT straight to
@@ -148,10 +149,26 @@ class PaperConfigValidationTest {
                     new Bounds(LSSConstants.MIN_GENERATION_TIMEOUT, LSSConstants.MAX_GENERATION_TIMEOUT)),
             Map.entry("missMemoTtlSeconds",
                     new Bounds(LSSConstants.MIN_MISS_MEMO_TTL_SECONDS, LSSConstants.MAX_MISS_MEMO_TTL_SECONDS)),
+            // dirtyBroadcastIntervalSeconds' legal floor is 0 (= dirty pushes off, v0.11.0);
+            // the real 1 s floor applies to nonzero (sending) intervals only, pinned by the
+            // named test below — same shape as the lodStoreMaxMB/outboundBufferCeilingKB rows.
             Map.entry("dirtyBroadcastIntervalSeconds",
-                    new Bounds(LSSConstants.MIN_DIRTY_BROADCAST_INTERVAL, LSSConstants.MAX_DIRTY_BROADCAST_INTERVAL)),
+                    new Bounds(0, LSSConstants.MAX_DIRTY_BROADCAST_INTERVAL)),
             Map.entry("sendQueueLimitPerPlayer",
                     new Bounds(LSSConstants.MIN_SEND_QUEUE_SIZE, LSSConstants.MAX_SEND_QUEUE_SIZE)),
+            // maxConcurrentDiskReads' legal floor is 0 (= AUTO, store-conditional —
+            // disk-read-concurrency-gate-plan.md); the 1 floor applies to nonzero
+            // explicit values only, and the pool clamp lives at derivation (named
+            // resolver tests in both twins).
+            Map.entry("maxConcurrentDiskReads",
+                    new Bounds(0, LSSConstants.MAX_DISK_READER_THREADS)),
+            // Far players (E1): interval 2..100, max ring 128..16384.
+            // farPlayersMinDistanceBlocks is NOT here: its effective ceiling is the
+            // CONFIGURED max (validate() drags it under — an inverted ring hides
+            // everyone), so like generationConcurrencyLimitPerPlayer it has no fixed
+            // both-ends bounds; the named cross-field test lives in the Fabric twin.
+            Map.entry("farPlayersUpdateIntervalTicks", new Bounds(2, 100)),
+            Map.entry("farPlayersMaxDistanceBlocks", new Bounds(128, 16384)),
             // generationConcurrencyLimitPerPlayer and perDimensionTimestampCacheSizeMB left the
             // table-driven sweep 2026-08-02: the first clamps to the CONFIGURED global (§9.1) and
             // the second treats 0 as AUTO, so neither has fixed both-ends bounds. Named tests in
@@ -160,10 +177,6 @@ class PaperConfigValidationTest {
             // applies only to nonzero opt-in caps, pinned by the named test below.
             Map.entry("lodStoreMaxMB",
                     new Bounds(0, LSSConstants.MAX_LOD_STORE_MAX_MB)),
-            // outboundBufferCeilingKB's legal floor is 0 (= transport deference off, the
-            // default); the 4096 floor applies only to nonzero opt-ins, pinned below.
-            Map.entry("outboundBufferCeilingKB",
-                    new Bounds(0, LSSConstants.MAX_OUTBOUND_BUFFER_CEILING_KB)),
             Map.entry("lodStoreResweepSeconds",
                     new Bounds(LSSConstants.MIN_LOD_STORE_RESWEEP_SECONDS,
                             LSSConstants.MAX_LOD_STORE_RESWEEP_SECONDS)),
@@ -186,6 +199,10 @@ class PaperConfigValidationTest {
         // tests in the Fabric twin cover all three.
         var derived = java.util.Set.of("diskReaderThreads", "perDimensionTimestampCacheSizeMB",
                 "generationConcurrencyLimitPerPlayer",
+                // Far players (E1): the min ring's effective ceiling is the CONFIGURED
+                // max (validate() drags it under — an inverted ring hides everyone), so
+                // no fixed both-ends bounds; named cross-field test in the Fabric twin.
+                "farPlayersMinDistanceBlocks",
                 // The 2026-08-08 bandwidth rename: the mb doubles have their own exact-bounds
                 // arm below; the legacy byte ints re-sentinel instead of clamping (also below).
                 "mbPerSecondLimitPerPlayer", "mbPerSecondLimitGlobal",
@@ -287,8 +304,23 @@ class PaperConfigValidationTest {
         c.useCompressedColumns = false;
         assertEquals("Effective config: useNbtTranscode=false, diskReaderThreads=7,"
                         + " useCompressedColumns=true, useBackgroundReadSplit=true,"
-                        + " useSelectiveNbtParse=true",
-                c.effectiveConfigEcho(7, true));
+                        + " useSelectiveNbtParse=true, maxConcurrentDiskReads=4",
+                c.effectiveConfigEcho(7, true, 4));
+    }
+
+    /** Twin of the Fabric store-conditional K resolver pins (the shared resolver runs
+     *  through the Paper subclass; the SHARED_BOUNDS row covers the validate clamp). */
+    @Test
+    void effectiveMaxConcurrentDiskReadsResolvesThroughThePaperSubclass() {
+        PaperConfig c = new PaperConfig();
+        c.maxConcurrentDiskReads = 0;
+        assertEquals(8, c.effectiveMaxConcurrentDiskReads(8, false),
+                "AUTO, no store: the pool (no-op gate)");
+        assertEquals(4, c.effectiveMaxConcurrentDiskReads(8, true),
+                "AUTO, store armed: half the pool");
+        c.maxConcurrentDiskReads = 64;
+        assertEquals(8, c.effectiveMaxConcurrentDiskReads(8, true),
+                "override >= pool clamps to the pool — the disable idiom");
     }
 
     /** Phase 4 twin of the Fabric default pin (shared key, Fabric-only in effect). */

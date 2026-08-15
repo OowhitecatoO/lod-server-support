@@ -102,6 +102,17 @@ test {
     }
 }
 
+// Stage N-1a (neoforge-support-plan.md §2): loader-neutral MC logic lives in the
+// xplat/ shared SOURCE SET (not a Gradle project — it has MC deps, so each loader
+// module compiles it against its own toolchain; packages unchanged).
+sourceSets {
+    main {
+        java {
+            srcDir '../xplat/src/main/java'
+        }
+    }
+}
+
 fabricApi {
     configureTests {
         createSourceSet = true
@@ -168,7 +179,10 @@ loom {
             vmArg "-Dlss.soak.clientActionAt=${findProperty('soak.clientActionAt') ?: ''}"
             vmArg "-Dlss.soak.dialect=${findProperty('soak.dialect') ?: ''}"
             programArg "--quickPlayMultiplayer"
-            programArg "localhost:25565"
+            // Overridable so the same task doubles as the FARP live-gate dummy against
+            // a test-server.sh instance (harness runs keep the default and are
+            // byte-unchanged): -Psoak.server=localhost:25564
+            programArg "${findProperty('soak.server') ?: 'localhost:25565'}"
         }
     }
 }
@@ -194,8 +208,11 @@ afterEvaluate {
             task.doFirst {
                 def cfgDir = new File(project.file(dir ?: "run"), "config")
                 cfgDir.mkdirs()
+                // maxConcurrentDiskReads: a large no-op (>= any pool) — the parity and
+                // fault gametests expect every submitted read to resolve; a surprise
+                // gate drop would flake them (disk-read-concurrency-gate-plan.md).
                 new File(cfgDir, "lss-server-config.json").text =
-                        '{\n  "lodStore": "off",\n  "lodStoreBackfill": false\n}\n'
+                        '{\n  "lodStore": "off",\n  "lodStoreBackfill": false,\n  "maxConcurrentDiskReads": 64\n}\n'
             }
         }
     }
@@ -203,9 +220,13 @@ afterEvaluate {
 
 processResources {
     inputs.property "version", project.version
+    inputs.property "minecraft_dependency", project.minecraft_dependency
 
     filesMatching("fabric.mod.json") {
-        expand "version": inputs.properties.version
+        // V-1/P3: the MC depends range is per-line DATA (gradle.properties
+        // minecraft_dependency) — a support cut edits the data, never this resource.
+        expand "version": inputs.properties.version,
+               "minecraft_dependency": inputs.properties.minecraft_dependency
     }
 }
 
@@ -333,9 +354,11 @@ tasks.register('vssJar') {
     // remapped release jar directly (with the nested common JiJ + Fabric-Mapping-Namespace).
     // String dependency so it resolves at graph-build time, not config time.
     dependsOn 'jar'
+    def iconFile = rootProject.file('branding/vss/icon.png')
     def srcJar = layout.buildDirectory.file("libs/${lssFabricJarName}")
     def outFile = layout.buildDirectory.file("libs/${vssFabricJarName}")
     inputs.file(srcJar)
+    inputs.file(iconFile)
     outputs.file(outFile)
     doLast {
         def src = srcJar.get().asFile
@@ -350,11 +373,14 @@ tasks.register('vssJar') {
                     if (e.name == 'fabric.mod.json') {
                         // Read the BUILT descriptor (Loom already injected `version` + `jars`);
                         // change ONLY the branding fields, preserving everything else.
+                        // Field values folded from XANTHA's v0.10.0 release patch (2026-08-13);
+                        // the dedicated VSS icon is RESTORED (branding/vss/icon.png, injected
+                        // below as assets/lss/icon-vss.png).
                         def json = new groovy.json.JsonSlurper().parse(zf.getInputStream(e))
                         json.name = 'Voxy Server Side'
-                        json.description = 'Server-side backend for Voxy multiplayer LOD rendering. Identical to LOD Server Support (same mod, second distribution channel) — fully interchangeable.'
-                        // The dedicated VSS icon was DELETED (user decision 2026-08-08);
-                        // the descriptor keeps the standard LSS icon already in the jar.
+                        json.description = 'Render distant Voxy LODs on servers'
+                        json.authors = ['Xantha', 'VoX']
+                        json.icon = 'assets/lss/icon-vss.png'
                         if (json.contact instanceof Map) {
                             json.contact.homepage = 'https://modrinth.com/plugin/voxy-server-side'
                         }
@@ -373,6 +399,26 @@ tasks.register('vssJar') {
                         zos.putNextEntry(ne)
                         zos.write(props.getBytes('UTF-8'))
                         zos.closeEntry()
+                    } else if (e.name.startsWith('assets/lss/lang/') && e.name.endsWith('.json')) {
+                        // Display-string rebrand in EVERY lang file's VALUES only (keys stay
+                        // lss.* — they are addressed by the untouched mod id). Without this
+                        // the VSS Sodium pages read "LOD Server Support"/"LSS" mid-sentence
+                        // (path-prefix match, not the en_us literal, so added locales —
+                        // zh_cn/zh_tw — rebrand too; Java's ASCII \b is CJK-safe here).
+                        def lang = new groovy.json.JsonSlurper().parse(zf.getInputStream(e))
+                        def rebranded = lang.collectEntries { k, v ->
+                            [k, v.toString()
+                                    .replace('LOD Server Support', 'Voxy Server Side')
+                                    // Word-boundary: never corrupt 'LSS' inside a longer
+                                    // token (review-wave V-M2).
+                                    .replaceAll(/\bLSS\b/, 'VSS')]
+                        }
+                        byte[] lb = groovy.json.JsonOutput.prettyPrint(
+                                groovy.json.JsonOutput.toJson(rebranded)).getBytes('UTF-8')
+                        def ne = new ZipEntry(e.name)
+                        zos.putNextEntry(ne)
+                        zos.write(lb)
+                        zos.closeEntry()
                     } else {
                         // Byte-preserving copy: keep the original compression method, and for
                         // STORED entries (e.g. the nested common jar) carry size/crc so the
@@ -389,6 +435,11 @@ tasks.register('vssJar') {
                         zos.closeEntry()
                     }
                 }
+                // The restored VSS icon rides as a NEW entry beside the LSS icon (the
+                // descriptor above points at it); nothing else in the jar changes.
+                zos.putNextEntry(new ZipEntry('assets/lss/icon-vss.png'))
+                zos.write(iconFile.bytes)
+                zos.closeEntry()
             }
         } finally {
             zf.close()

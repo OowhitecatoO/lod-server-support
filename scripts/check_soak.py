@@ -93,6 +93,11 @@ ANOMALY_OPT_INS = {
     "store-save-storm": frozenset({"saturated"}),
     "store-save-storm-off": frozenset({"saturated"}),
     "dimension-rejoin-warm": frozenset({"saturated"}),
+    # The gate's own scenario (Amendment 2 retention): gate_stops>0 is its PREMISE
+    # (K=1 under a threads:2 flood must saturate and stop router passes), and gated
+    # (park-overflow race armor) may legitimately fire small-or-zero during the same
+    # flood, so BOTH are opted in; saturated stays UN-opted — its named check requires 0.
+    "disk-read-gate": frozenset({"gated", "gate_stops"}),
     # Paper/Folia (SOAK_PLATFORM=paper|folia): cold-cache disc resync from the base world, like
     # warm-rejoin run 1, so the same load-shaped opt-ins apply.
     "paper-dirty-falling-block": frozenset({"saturated"}),
@@ -114,6 +119,10 @@ MIN_CLIENT_WINDOWS = {
     "dirty-broadcast": {(1, 0): 5},
     "rate-limit-storm": {(1, 0): 3},
     "disk-saturation": {(1, 0): 3},
+    # K=1 on degraded WSL2 IO can spend ~4-5 min converging the annulus (healthy IO:
+    # seconds, since the park list keeps the permit fed); the floor only needs the
+    # >=25 s converged tail (>=4 quiescent 5 s pairs) the 400 s timeline budgets.
+    "disk-read-gate": {(1, 0): 4},
     "generation-disabled": {(1, 0): 3},
     "generation-capacity-stress": {(1, 0): 3},
     "bandwidth-throttle": {(1, 0): 3},
@@ -151,6 +160,13 @@ SERVER_CONFIG_BOOL_KEYS = frozenset({"enabled", "enableChunkGeneration", "useBac
                                      # NBT->wire transcode kill switch (round 2, 2026-07-29):
                                      # scenarios may pin it off for object-path A/Bs.
                                      "useNbtTranscode",
+                                     # The ping backstop's kill switch (Mechanism B) and the
+                                     # send pacer's (send-pacing-plan.md) — both structurally
+                                     # inert on loopback; listed so live-shaped A/B scenarios
+                                     # can pin them (the S-8 same-commit rule; enablePingBackstop
+                                     # was briefly MISFILED in the int set — a bool here would
+                                     # have failed --validate as "must be a JSON integer").
+                                     "enablePingBackstop", "enableSendPacing",
                                      # LOD-store backfill opt-in (Phase 4) — the key was
                                      # missing from this allowlist, so a backfill soak
                                      # scenario could not be written (4-agent round R4).
@@ -182,13 +198,33 @@ SERVER_CONFIG_BOOL_KEYS = frozenset({"enabled", "enableChunkGeneration", "useBac
                                      # allowlist rule. Soaks run without Via, so the
                                      # probe is no-signal and either value is provably
                                      # inert (an A/B pins exactly that).
-                                     "enableViaMismatchGuard"})
+                                     "enableViaMismatchGuard",
+                                     # Far players (E1, FARP §3.4) — registered with the
+                                     # knobs (the R4 lesson). E1 soaks stay mode-off;
+                                     # the E2/E3 coexist scenarios arm these.
+                                     "farPlayersSendSpectators"})
 SERVER_CONFIG_INT_KEYS = frozenset({
     "lodDistanceChunks", "bytesPerSecondLimitPerPlayer", "diskReaderThreads",
+    # Disk-read concurrency gate K (disk-read-concurrency-gate-plan.md; 0 = AUTO,
+    # store-conditional). Registered WITH the knob (the R4 lesson): every pre-existing
+    # scenario pins it to a no-op (its diskReaderThreads value / the resolved default
+    # pool) so their law baselines stay gate-free; disk-read-gate arms it. Precision
+    # note (stage-B review ACC-5): store-offline-mutate's pin of 3 equals the FABRIC
+    # vanilla AUTO pool; a >=8-core Paper standalone run of that phase resolves a
+    # larger prioritized pool, where 3 would nominally bind — inert there
+    # (enabled=false, no read traffic) and the A7 gated/gate_stops arms flag any leak
+    # (since Amendment 2 the gate_stops arm fires FIRST — saturation binds before
+    # overflow — so arming that phase, or copying its K pin into a new scenario on a
+    # box whose AUTO pool exceeds it, needs the opt-in or a K=pool pin).
+    "maxConcurrentDiskReads",
     "sendQueueLimitPerPlayer", "bytesPerSecondLimitGlobal",
-    # Transport deference (0 = off, the shipped default). Listed so an A/B scenario can
-    # arm it — the R4 lesson below is exactly this omission.
-    "outboundBufferCeilingKB",
+    # Canonical bandwidth spellings since the 2026-08-08 key rename (staleness-sweep
+    # finding: only the legacy byte spellings were listed, so a scenario written with
+    # the modern keys would be rejected — the R4 lesson again). Values are MiB/s
+    # doubles in the mod; scenarios may still write ints (validated as numeric below
+    # via the int allowlist — a fractional override belongs in a new float set if ever
+    # needed).
+    "mbPerSecondLimitPerPlayer", "mbPerSecondLimitGlobal",
     "generationConcurrencyLimitGlobal", "generationTimeoutSeconds",
     "dirtyBroadcastIntervalSeconds",
     "generationConcurrencyLimitPerPlayer", "perDimensionTimestampCacheSizeMB",
@@ -208,15 +244,22 @@ SERVER_CONFIG_INT_KEYS = frozenset({
     # lodStoreBackfillTickCeilingMillis was retired to a constant 2026-08-02: its clamp band
     # was 20..50 and both ends were degenerate by its own documentation.
     "lodStoreBackfillColumnsPerSecond",
+    # Far players (E1): cadence + the distance ring (FARP §3.4).
+    "farPlayersUpdateIntervalTicks", "farPlayersMaxDistanceBlocks",
+    "farPlayersMinDistanceBlocks",
 })
 # X-ray masking tri-state ("auto"/"on"/"off"), the LOD-store switch ("off"/"full" —
 # scenarios A/B store gates against it; "memory" retired 2026-08-02), + hidden-block
 # id list — the only
 # non-bool non-int server config keys; validated loosely (any string / list of strings).
-SERVER_CONFIG_STRING_KEYS = frozenset({"xrayObfuscation", "lodStore"})
+SERVER_CONFIG_STRING_KEYS = frozenset({"xrayObfuscation", "lodStore",
+                                       # Far players mode ("off"/"on"/"opt-in", E1).
+                                       "farPlayers"})
 # updateEvents is Paper-only (the Bukkit event class names driving dirty detection);
 # it was absent here, so no Paper scenario could pin its dirty-detection surface.
-SERVER_CONFIG_STRING_LIST_KEYS = frozenset({"xrayHiddenBlocks", "updateEvents"})
+SERVER_CONFIG_STRING_LIST_KEYS = frozenset({"xrayHiddenBlocks", "updateEvents",
+                                            # Far players per-name/UUID privacy list (E1).
+                                            "farPlayersExclude"})
 SERVER_CONFIG_KEYS = (SERVER_CONFIG_BOOL_KEYS | SERVER_CONFIG_INT_KEYS
                       | SERVER_CONFIG_STRING_KEYS | SERVER_CONFIG_STRING_LIST_KEYS)
 
@@ -273,18 +316,39 @@ SERVER_MONOTONIC = (
     # drop, dedup-primary departure), healed by the client's 1 Hz re-declaration;
     # range_filtered = dropped by the Chebyshev ingress guard (the movement race).
     "service.superseded", "service.range_filtered",
+    # Send-pacer receipt (budget-stopped partial flush ticks) — attribution-only, but a
+    # counter, so monotonicity is free armor (final-review consistency note).
+    "service.paced_ticks",
     # Compressed columns (protocol 19, compressed-columns-implementation-plan.md §4):
     # wire_bytes = SHIPPED payload volume (zstd frames for capable sessions) — the
     # observed-bandwidth match next to the raw-denominated bytes_sent (law A2 stays
     # raw==raw); cols_zstd/cols_raw = per-payload codec outcomes at build. Monotonic
     # counters; no law consumes them yet — the compress-gate harness reads them.
     "service.wire_bytes", "service.cols_zstd", "service.cols_raw",
+    # Far players (E1, FARP §3.2): a dedicated send lane with its OWN counters —
+    # deliberately NOT part of service.bytes_sent/wire_bytes (the cross-identity
+    # audits). Monotonic; the E1 baseline-neutrality check additionally requires them
+    # to stay ZERO on every soak run (the client property gate keeps harness clients
+    # unsubscribed — a nonzero here means the gate broke and the baselines shifted).
+    "far_players.roster_frames", "far_players.update_frames",
+    "far_players.entries", "far_players.suppressed", "far_players.bytes",
     # Server-owned generation: disk misses resolved into transient silent drops (law A5's
     # dedicated term — a subset of superseded events, counted separately because
     # backlog-replace supersession never touches disk).
     "service.miss_dropped",
     "disk.submitted", "disk.completed", "disk.not_found", "disk.all_air",
     "disk.errors", "disk.saturated", "disk.successful",
+    # DiskReadGate refusals (disk-read-concurrency-gate-plan.md): a read bounced at the
+    # expensive-path permit check. NEVER part of the submitted/completed partition (the
+    # store-hit exclusion precedent), so A5's derived-successful identity is untouched;
+    # A7 flags any increase unless the scenario opts in ("gated" — only disk-read-gate).
+    "disk.gated",
+    # Router passes stopped by gate saturation (Amendment 2 retention): one event per
+    # stopped player-pass; retained entries carry NO disposition (the queue_full
+    # precedent), so no conservation law reads this. Monotonic, still at convergence;
+    # membership here also makes it required-present on every snapshot (both exporters
+    # emit it unconditionally). A7 flags any increase unless opted in (disk-read-gate).
+    "disk.gate_stops",
     # Miss-memo rung hits (v0.7.1 miss memo): a fresh memoized absence skipped the redundant
     # disk re-read and escalated straight to the generation ladder. Law A5 counts these as
     # VIRTUAL not-founds on its left side — each hit is dispositioned exactly like a real
@@ -313,11 +377,11 @@ SERVER_MONOTONIC = (
     "service.grace_skipped",
     # LOD store (docs/planning/lod-store-implementation-plan.md): monotonic counter half
     # of the store family (all-zero while lodStore=off — the kill-switch A/B arm shape).
-    # The gauges (store.queue is a SERVER_DRAIN; mem_bytes/db_bytes/wal_bytes/
+    # The gauges (store.queue is a SERVER_DRAIN; db_bytes/wal_bytes/
     # checkpoint_ms_max/read_avg_us) are deliberately absent from this whitelist.
     "store.hits", "store.misses", "store.deposits", "store.deposit_drops",
     "store.deposit_skips",
-    "store.errors", "store.mem_hits", "store.mem_evictions", "store.sweep_drops",
+    "store.errors", "store.sweep_drops",
     "store.backfill_reads", "store.backfill_deposits", "store.backfill_skips",
 )
 CLIENT_MONOTONIC = (
@@ -339,7 +403,7 @@ KNOWN_SERVER_KEYS = {
     # additions (sampled per tick by the driver); probe_hashes appears only when the server
     # JVM runs with -Dlss.soak.probes. All are observational — no law requires their presence.
     "snapshot": {"event", "wallMs", "tick", "service", "disk", "generation", "dirty",
-                 "bandwidth", "players", "dedup", "jvm", "tscache", "store",
+                 "bandwidth", "players", "dedup", "jvm", "tscache", "store", "far_players",
                  "mailbox_depth_hw", "mspt_avg_window", "probe_hashes"},
     # mapped appears only on Folia runs, only when true: the driver acknowledged a timeline
     # command Folia unregisters (save-all) as a deliberate no-op instead of executing it.
@@ -833,6 +897,15 @@ def law_A7_server(prev, cur, window, opt_ins):
     _anomaly(prev, cur, "disk.errors", window, "disk.errors", opt_ins, None, out)
     _anomaly(prev, cur, "generation.timeouts", window, "generation.timeouts", opt_ins, None, out)
     _anomaly(prev, cur, "disk.saturated", window, "disk.saturated", opt_ins, "saturated", out)
+    # The DiskReadGate's refusals: the no-op pins on every pre-existing scenario mean a
+    # nonzero delta there is a PERMIT LEAK (or a missing pin) — a stronger signal than
+    # the saturated arm, same design. Only disk-read-gate opts in.
+    _anomaly(prev, cur, "disk.gated", window, "disk.gated", opt_ins, "gated", out)
+    # Router retention stops (Amendment 2): a nonzero delta on a no-op-pinned scenario
+    # (K=pool) is structurally impossible unless the predicate leaked — same design as
+    # the gated arm. Only disk-read-gate opts in.
+    _anomaly(prev, cur, "disk.gate_stops", window, "disk.gate_stops", opt_ins,
+             "gate_stops", out)
     return out
 
 
@@ -930,9 +1003,19 @@ def evaluate_laws(ctx):
     for run, csnaps in sorted(ctx.runs.items()):
         violations += law_A6_client(run, csnaps)
 
-    # B2 over raw series, armed by the scenario's bandwidth cap override.
-    cap = ctx.config.get("bytesPerSecondLimitGlobal")
-    if isinstance(cap, int) and not isinstance(cap, bool) and cap > 0:
+    # B2 over raw series, armed by the scenario's bandwidth cap override — either
+    # spelling, with MB WINNING when both are present (final-review C-M3: this mirrors
+    # the mod's resolveBandwidthKeys ladder exactly; the checker preferring bytes would
+    # arm B2 at a value the server is not enforcing).
+    cap = None
+    mb = ctx.config.get("mbPerSecondLimitGlobal")
+    if isinstance(mb, (int, float)) and not isinstance(mb, bool):
+        cap = int(mb * 1024 * 1024)
+    if cap is None:
+        b = ctx.config.get("bytesPerSecondLimitGlobal")
+        if isinstance(b, int) and not isinstance(b, bool):
+            cap = b
+    if isinstance(cap, int) and cap > 0:
         violations += law_B2(snaps, cap)
 
     # Quiescent-pair windows. Client-law endpoints use each qpoint's BOUNDED at-or-before
@@ -1049,7 +1132,29 @@ def evaluate_laws(ctx):
                                     "no client-laws window carried nonzero request deltas — "
                                     "conservation laws never fired on real traffic",
                                     {"client_windows": sum(client_windows.values())}))
+    violations += far_players_inert_violations(ctx.server_snaps)
     return violations, windows, sum(client_windows.values())
+
+
+def far_players_inert_violations(snapshots):
+    """E1 baseline neutrality (FARP §3.3 property gate): soak clients must NEVER
+    subscribe to far players — their capability bit is property-gated off — so every
+    far_players counter must read zero on every scenario. A nonzero here means the gate
+    broke and every soak baseline silently shifted. Presence-tolerant: pre-E1
+    recordings without the block pass vacuously. Scans EVERY snapshot (review NIT):
+    ``subscribers`` is a gauge, so a viewer that subscribed mid-run and quit before
+    scenario end would read 0 in the final snapshot alone."""
+    snaps = snapshots if isinstance(snapshots, list) else [snapshots]
+    moved = {}
+    for snap in snaps:
+        for k, v in snap.get("far_players", {}).items():
+            if isinstance(v, (int, float)) and v != 0:
+                moved[k] = max(moved.get(k, 0), v)
+    if moved:
+        return [Violation("far-players-inert", "entire run",
+                          "far_players counters moved on a soak run — the client "
+                          "property gate must keep harness clients unsubscribed", moved)]
+    return []
 
 
 # ----------------------------------------------------------------------- named checks
@@ -1362,6 +1467,59 @@ def check_disk_saturation(ctx):
                         "backlog never drained)", {"wallMs": last["wallMs"]})
 
 
+@named_check("disk-read-gate", ["server.disk.gate_stops", "server.disk.saturated",
+                               "server.service.superseded"])
+def check_disk_read_gate(ctx):
+    """The DiskReadGate's own scenario (disk-read-concurrency-gate-plan.md, as amended
+    by the stage-B park deviation and Amendment 2's router retention): a prebuilt
+    superflat annulus read at diskReaderThreads=2 with maxConcurrentDiskReads=1 —
+    every column is a real region read (lodStore off, base world pre-generated).
+    Permit-less misses PARK (bounded at threads*32=64) and drain on release; the
+    2112-position flood far exceeds the park, so the gate must SATURATE (permits
+    exhausted AND the park + permit-less in-flight work at its bound) and the router
+    must answer with RETENTION — gate_stops counts one event per stopped player-pass,
+    so gate_stops > 0 is the premise — while the v17 headroom gate keeps the POOL
+    itself un-saturated (distinct mechanisms: saturated = pool-queue rejection at
+    submit; gate_stops = router hold at admission). disk.gated survives as the
+    park-overflow race-armor tier and is deliberately UNPINNED here (0 or small are
+    both legitimate — it counts submissions already in flight when the park filled).
+    Retained entries are replaced wholesale by each fresh declaration, so the churn
+    shows as superseded: a static floor (the disk-saturation precedent) replaces the
+    old `superseded >= gated` floor, which is vacuous at gated ~0."""
+    last = ctx.server_snaps[-1]
+    if last["disk"]["gate_stops"] <= 0:
+        yield Violation("disk-read-gate", "final snapshot",
+                        "disk.gate_stops never fired — the premise did not hold (K=1 "
+                        "under a 2-thread pool over a full annulus of real reads must "
+                        "saturate the gate and stop at least one router pass), so this "
+                        "run proves nothing about retention; check the scenario config "
+                        "staged maxConcurrentDiskReads=1",
+                        {"expected": "> 0", "actual": last["disk"]["gate_stops"]})
+    if last["disk"]["saturated"] != 0:
+        yield Violation("disk-read-gate", "final snapshot",
+                        "disk.saturated fired — the pool-queue headroom gate leaked "
+                        "(the router retention must hold pressure before the pool "
+                        "queue can reject a submit in this scenario)",
+                        {"expected": "== 0", "actual": last["disk"]["saturated"]})
+    # Retained entries are superseded by each fresh declaration during the flood — the
+    # retention churn loop's floor. STATIC (the disk-saturation precedent): the old
+    # `superseded >= gated` floor is vacuous when gated reads ~0 under retention.
+    if last["service"]["superseded"] < 100:
+        yield Violation("disk-read-gate", "final snapshot",
+                        "superseded < 100 — the retention churn loop never ran "
+                        "(retained entries must be superseded by each fresh "
+                        "declaration during the flood)",
+                        {"expected": ">= 100", "actual": last["service"]["superseded"]})
+    if ctx.final_client(1) is None:
+        yield Violation("disk-read-gate", "run1", "no client snapshots in run 1", {})
+        return
+    if (len(ctx.server_snaps) - 1) not in ctx.quiescent_server:
+        yield Violation("disk-read-gate", "final snapshot",
+                        "last server snapshot is not verified-quiescent (the retained "
+                        "entries never converged — K >= 1 must always drain)",
+                        {"wallMs": last["wallMs"]})
+
+
 @named_check("generation-disabled", ["server.generation.submitted", "server.disk.not_found",
                                      "client.responses.not_generated", "client.received_columns"])
 def check_generation_disabled(ctx):
@@ -1457,9 +1615,11 @@ def check_bandwidth_throttle(ctx):
     send-queue breaker); only the recovery mechanism changed — a want dropped by a
     queue-full break is re-declared by the client's 1 Hz want-set, not rescued by the
     deleted 10 s in-flight timeout sweep."""
-    if "bytesPerSecondLimitGlobal" not in ctx.config:
+    if ("bytesPerSecondLimitGlobal" not in ctx.config
+            and "mbPerSecondLimitGlobal" not in ctx.config):
         yield Violation("bandwidth-throttle", "config",
-                        "scenario config must set bytesPerSecondLimitGlobal or B2 stays unarmed", {})
+                        "scenario config must set a global bandwidth cap (either spelling)"
+                        " or B2 stays unarmed", {})
     last = ctx.server_snaps[-1]
     if last["service"]["queue_full"] < 1:
         yield Violation("bandwidth-throttle", "final snapshot",
@@ -2669,6 +2829,9 @@ CHECKS = {
     "disk-saturation": [check_disk_saturation,
                         make_handshake_check("disk-saturation"),
                         make_disc_completeness("disk-saturation")],
+    "disk-read-gate": [check_disk_read_gate,
+                       make_handshake_check("disk-read-gate"),
+                       make_disc_completeness("disk-read-gate")],
     "generation-disabled": [check_generation_disabled,
                             make_handshake_check("generation-disabled"),
                             make_disc_completeness("generation-disabled")],
@@ -3084,21 +3247,24 @@ def _srv(wall=1000, seg=0, over=None):
                         "duplicate_skips": 0, "queue_full": 0, "up_to_date": 0,
                         "in_memory": 0, "disk_resolved": 0, "gen_drained": 0,
                         "superseded": 0, "range_filtered": 0, "re_resolved": 0,
+                        "paced_ticks": 0,
                         "grace_skipped": 0, "miss_dropped": 0},
             "disk": {"submitted": 0, "completed": 0, "not_found": 0, "all_air": 0,
                      "errors": 0, "saturated": 0, "successful": 0, "pending": 0,
-                     "memo_hits": 0},
+                     "memo_hits": 0, "gated": 0, "gate_stops": 0},
             "generation": {"submitted": 0, "completed": 0, "timeouts": 0,
                            "removed_in_flight": 0, "active": 0,
                            "order_gated": 0, "inversions": 0},
             "dirty": {"pending": 0, "broadcast_positions": 0, "marked_total": 0,
                       "suppressed_total": 0},
+            "far_players": {"subscribers": 0, "roster_frames": 0, "update_frames": 0,
+                            "entries": 0, "suppressed": 0, "bytes": 0},
             "store": {"hits": 0, "misses": 0, "deposits": 0, "deposit_drops": 0,
                       "deposit_skips": 0,
-                      "errors": 0, "mem_hits": 0, "mem_evictions": 0, "sweep_drops": 0,
+                      "errors": 0, "sweep_drops": 0,
                       "backfill_reads": 0, "backfill_deposits": 0, "backfill_skips": 0,
                       "queue": 0,
-                      "mem_bytes": 0, "db_bytes": 0, "wal_bytes": 0,
+                      "db_bytes": 0, "wal_bytes": 0,
                       "checkpoint_ms_max": 0, "read_avg_us": 0, "read_p95_us": 0},
             "bandwidth": {"total_bytes": 0}, "players": []}
     for k, v in (over or {}).items():
@@ -3296,6 +3462,23 @@ def selftest():
     clean("A7 saturated with opt-in", law_A7_server(
         _srv(1000), _srv(6000, over={"disk.saturated": 1}), "selftest",
         frozenset({"saturated"})))
+    # The DiskReadGate arm (disk-read-concurrency-gate-plan.md): every no-op-pinned
+    # scenario self-verifies its pin here — gated>0 without the opt-in is a permit leak.
+    hits("A7 gated w/o opt-in", law_A7_server(
+        _srv(1000), _srv(6000, over={"disk.gated": 1}), "selftest",
+        frozenset({"saturated"})), "A7")
+    clean("A7 gated with opt-in", law_A7_server(
+        _srv(1000), _srv(6000, over={"disk.gated": 1}), "selftest",
+        frozenset({"gated"})))
+    # The retention arm (Amendment 2): gate_stops>0 on a no-op-pinned (K=pool) scenario
+    # means the saturation predicate leaked — structurally impossible there (the park
+    # stays pigeonhole-empty). Only disk-read-gate opts in.
+    hits("A7 gate_stops w/o opt-in", law_A7_server(
+        _srv(1000), _srv(6000, over={"disk.gate_stops": 1}), "selftest",
+        frozenset({"gated"})), "A7")
+    clean("A7 gate_stops with opt-in", law_A7_server(
+        _srv(1000), _srv(6000, over={"disk.gate_stops": 1}), "selftest",
+        frozenset({"gate_stops"})))
 
     # --- A7 client: dropped is the only client anomaly at v17, and is never optable
     # (the responses.rate_limited arm left with the wire response; law B1 is deleted) ---
@@ -3417,6 +3600,14 @@ def selftest():
     hits("disc one orphaned position", list(disc(disc_ctx(2000, 111, {"lodDistanceChunks": 24}))),
          "disc-completeness")
     hits("disc config missing lod", list(disc(disc_ctx(99999, 0, {}))), "disc-completeness")
+
+    # --- Far-players baseline neutrality (E1) ---
+    clean("far players inert", far_players_inert_violations([_srv(1000)]))
+    hits("far players moved", far_players_inert_violations(
+        [_srv(1000, over={"far_players.roster_frames": 3})]), "far-players-inert")
+    hits("far players gauge moved mid-run only", far_players_inert_violations(
+        [_srv(1000, over={"far_players.subscribers": 1}), _srv(2000)]),
+        "far-players-inert")
 
     # --- Window floors (vacuous-pass guard) ---
     clean("floors met", check_window_floors({(1, 0): 3}, {(1, 0): 3}))
@@ -4129,6 +4320,13 @@ def selftest():
     cases[0] += 1
     assert validate_config_overrides({"lodDistanceChunks": True}), \
         "config allowlist: bool-for-int must be rejected"
+    cases[0] += 1
+    assert validate_config_overrides({"maxConcurrentDiskReads": 5}) == [], \
+        "config allowlist: the gate key must validate (the R4 lesson — every no-op pin " \
+        "depends on this registration)"
+    cases[0] += 1
+    assert validate_config_overrides({"maxConcurrentDiskReads": "5"}), \
+        "config allowlist: string-for-int gate key must be rejected"
     cases[0] += 1
     assert validate_config_overrides({"xrayObfuscation": "on",
                                       "xrayHiddenBlocks": ["diamond_ore"],

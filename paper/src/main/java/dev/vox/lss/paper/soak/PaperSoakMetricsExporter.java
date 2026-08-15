@@ -189,6 +189,9 @@ public final class PaperSoakMetricsExporter {
         serviceMap.put("superseded", diag.getTotalSuperseded());
         serviceMap.put("range_filtered", diag.getTotalRangeFiltered());
         serviceMap.put("miss_dropped", diag.getTotalMissDropped());
+        // send-pacing-plan.md v3: the pacer's soak-visible receipt — inertness on
+        // loopback is EMPIRICAL, so a moved guard-soak baseline needs attribution.
+        serviceMap.put("paced_ticks", service.getTickDiag().getPacedTicksTotal());
         result.put("service", serviceMap);
 
         var diskMap = new LinkedHashMap<String, Object>();
@@ -200,6 +203,10 @@ public final class PaperSoakMetricsExporter {
             diskMap.put("all_air", dd.getAllAirCount());
             diskMap.put("errors", dd.getErrorCount());
             diskMap.put("saturated", dd.getSaturationCount());
+            // DiskReadGate refusals (disk-read-concurrency-gate-plan.md): never part of
+            // the submitted/completed partition — its own monotonic counter.
+            diskMap.put("gated", dd.getGatedCount());
+            diskMap.put("gate_stops", dd.getGateStopsCount());
             diskMap.put("successful", dd.getSuccessfulReadCount());
             diskMap.put("pending", diskReader.getPendingResultCount());
             diskMap.put("pending_hw", DISK_PENDING_HW.get());
@@ -277,6 +284,19 @@ public final class PaperSoakMetricsExporter {
         dedupMap.put("groups", internals.dedupGroups());
         result.put("dedup", dedupMap);
 
+        // Far players — verbatim twin of the Fabric exporter's group (same keys, same
+        // order; the shared contract pins parity). All-zero on every soak run (the
+        // client property gate — E1 baseline neutrality).
+        var farPlayers = service.getFarPlayerService();
+        var farMap = new LinkedHashMap<String, Object>();
+        farMap.put("subscribers", (long) farPlayers.subscriberCount());
+        farMap.put("roster_frames", farPlayers.rosterFramesSent());
+        farMap.put("update_frames", farPlayers.updateFramesSent());
+        farMap.put("entries", farPlayers.entriesSent());
+        farMap.put("suppressed", farPlayers.suppressedUnchanged());
+        farMap.put("bytes", farPlayers.bytesSent());
+        result.put("far_players", farMap);
+
         // LOD store — verbatim twin of the Fabric exporter's group (same keys, same
         // order; the shared server-snapshot.contract pins parity). All-zero while
         // lodStore=off.
@@ -288,14 +308,11 @@ public final class PaperSoakMetricsExporter {
         storeMap.put("deposit_drops", storeDiag.getDepositDrops());
         storeMap.put("deposit_skips", storeDiag.getDepositSkips());
         storeMap.put("errors", storeDiag.getErrors());
-        storeMap.put("mem_hits", storeDiag.getMemHits());
-        storeMap.put("mem_evictions", storeDiag.getMemEvictions());
         storeMap.put("sweep_drops", storeDiag.getSweepDrops());
         storeMap.put("backfill_reads", storeDiag.getBackfillReads());
         storeMap.put("backfill_deposits", storeDiag.getBackfillDeposits());
         storeMap.put("backfill_skips", storeDiag.getBackfillSkips());
         storeMap.put("queue", storeDiag.getQueueDepth());
-        storeMap.put("mem_bytes", storeDiag.getMemBytes());
         storeMap.put("db_bytes", storeDiag.getDbBytes());
         storeMap.put("wal_bytes", storeDiag.getWalBytes());
         storeMap.put("checkpoint_ms_max", storeDiag.getCheckpointMsMax());
