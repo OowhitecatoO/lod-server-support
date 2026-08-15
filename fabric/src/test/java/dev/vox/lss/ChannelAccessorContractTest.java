@@ -29,8 +29,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ChannelAccessorContractTest {
 
     private static String source(String simpleName) throws Exception {
-        Path p = Path.of("src/main/java/dev/vox/lss/mixin/" + simpleName + ".java");
-        assertTrue(Files.exists(p), "missing mixin source: " + p.toAbsolutePath());
+        // Accessor INTERFACES live in xplat since N-1b (shared with neoforge);
+        // @Inject shims stay per-loader — SourcePaths resolves either tree.
+        Path p = dev.vox.lss.testutil.SourcePaths.mainSource(
+                "dev/vox/lss/mixin/" + simpleName + ".java");
         return Files.readString(p);
     }
 
@@ -73,26 +75,67 @@ class ChannelAccessorContractTest {
     }
 
     @Test
-    void bothPlatformsWireTheConfiguredCeilingIntoTheFlush() throws Exception {
-        // Source-regex wiring pin (the StoreEnvironmentContractTest pattern). The only test
-        // that touches the flush glue goes through the overload that hard-codes 0L, so a
-        // revert of either production call site to 0L — or a dropped *1024 — would ship
-        // green and turn outboundBufferCeilingKB into a silent no-op an operator could only
-        // diagnose by noticing deferred= never moves.
-        String fabric = Files.readString(Path.of(
-                "src/main/java/dev/vox/lss/networking/server/RequestProcessingService.java"));
-        assertTrue(fabric.contains("config.outboundBufferCeilingKB * 1024L"),
-                "Fabric must pass the CONFIGURED ceiling, in bytes, into flushSendQueues");
+    void bothPlatformsPlumbThePingFactorThroughTheFlushAllocation() throws Exception {
+        // The m12 plumbing pin (adaptive-transfer-rate-plan.md): the ping backstop's
+        // factor must ride the ALLOCATION argument into flushSendQueue — the
+        // per-player bucket clamps its banked burst to allocation/4, so only this
+        // placement shrinks the bank (up to ~6.25 MB at default caps) on the FIRST
+        // post-cut tick. Applied anywhere else, a cut leaves the old-cap bank intact
+        // for one full burst.
+        String fabric = Files.readString(dev.vox.lss.testutil.SourcePaths.mainSource(
+                "dev/vox/lss/networking/server/RequestProcessingService.java"));
+        assertTrue(fabric.contains("state.getPingBackstop().apply(perPlayerCap)"),
+                "Fabric must apply the ping factor to the flush allocation");
         String paper = Files.readString(Path.of(
                 "../paper/src/main/java/dev/vox/lss/paper/PaperRequestProcessingService.java"));
-        assertTrue(paper.contains("this.config.outboundBufferCeilingKB * 1024L"),
-                "Paper twin must pass the same configured ceiling in bytes");
+        assertTrue(paper.contains("state.getPingBackstop().apply(perPlayerCap)"),
+                "Paper twin must apply the ping factor to the flush allocation");
+        // The OBSERVE pass (impl review: with it deleted, the factor stays 1.0 forever
+        // and the apply pin above stays green — Mechanism B silently inert), plus the
+        // diag plumb (the golden constructs PlayerDiag through the compat ctor, so a
+        // literal 1.0 in fromStates would keep every rendering test green).
+        assertTrue(fabric.contains("state.getPingBackstop().observe("),
+                "Fabric must run the backstop observe pass");
+        assertTrue(paper.contains("state.getPingBackstop().observe("),
+                "Paper twin must run the backstop observe pass");
+        String formatter = Files.readString(Path.of(
+                "../common/src/main/java/dev/vox/lss/common/DiagnosticsFormatter.java"));
+        assertTrue(formatter.contains("state.getPingBackstop().factor()"),
+                "the diag builder must read the LIVE factor into pingf=");
+    }
+
+    @Test
+    void bothPlatformsWireTheSendPacingConfigIntoTheFlush() throws Exception {
+        // send-pacing-plan.md v2: only the fullest overload arms pacing (S-9a), so a
+        // dropped config pass-through reverts the fleet to unpaced bank dumps with
+        // every unit test green. Plus the paced= diag plumb (the golden constructs
+        // PlayerDiag through the compat ctor, so a literal 0 would stay green).
+        String fabric = Files.readString(dev.vox.lss.testutil.SourcePaths.mainSource(
+                "dev/vox/lss/networking/server/RequestProcessingService.java"));
+        assertTrue(fabric.contains("config.enableSendPacing"),
+                "Fabric must pass enableSendPacing into the flush");
+        String paper = Files.readString(Path.of(
+                "../paper/src/main/java/dev/vox/lss/paper/PaperRequestProcessingService.java"));
+        assertTrue(paper.contains("this.config.enableSendPacing"),
+                "Paper twin must pass enableSendPacing into the flush");
+        String formatter = Files.readString(Path.of(
+                "../common/src/main/java/dev/vox/lss/common/DiagnosticsFormatter.java"));
+        assertTrue(formatter.contains("state.getPacedTicks()"),
+                "the diag builder must read the LIVE paced counter");
+        // The move-tracer boot-row echoes both transport-shaping kill switches (the
+        // m5 partition-the-collections rationale) — deletable with every unit test
+        // green otherwise.
+        String bootstrap = Files.readString(Path.of(
+                "src/main/java/dev/vox/lss/trace/MoveTraceBootstrap.java"));
+        assertTrue(bootstrap.contains("enablePingBackstop")
+                        && bootstrap.contains("enableSendPacing"),
+                "the boot row must echo both transport-shaping kill switches");
     }
 
     @Test
     void bothPlatformsInstallTheChannelPressureProbeAtRegistration() throws Exception {
-        String fabric = Files.readString(Path.of(
-                "src/main/java/dev/vox/lss/networking/server/RequestProcessingService.java"));
+        String fabric = Files.readString(dev.vox.lss.testutil.SourcePaths.mainSource(
+                "dev/vox/lss/networking/server/RequestProcessingService.java"));
         assertTrue(fabric.contains("setChannelPressureProbe(FabricChannelPressure.forPlayer(player))"),
                 "Fabric must install the probe on the state it creates, or the gauge is dead");
         String paper = Files.readString(Path.of(
@@ -121,7 +164,7 @@ class ChannelAccessorContractTest {
         // config — a dropped argument leaves lodYieldsToVanillaTransport silently inert
         // on one platform, which no Tier 1 state test can see.
         String fabric = Files.readString(
-                Path.of("src/main/java/dev/vox/lss/networking/server/RequestProcessingService.java"));
+                dev.vox.lss.testutil.SourcePaths.mainSource("dev/vox/lss/networking/server/RequestProcessingService.java"));
         assertTrue(fabric.contains("config.lodYieldsToVanillaTransport"),
                 "the Fabric flush wiring must pass config.lodYieldsToVanillaTransport");
         Path paperPath = Path.of("../paper/src/main/java/dev/vox/lss/paper/PaperRequestProcessingService.java");
@@ -139,17 +182,34 @@ class ChannelAccessorContractTest {
         // starts failing its arm_valid check (or worse: two identical arms compare as
         // a valid A/B). Pin the call sites: resolved thread count + the LIVE post-probe
         // compression state, on both platforms.
+        // Stage B (disk-read gate): the third argument is the RESOLVED store-conditional
+        // K — gateCapacity is computed from effectiveMaxConcurrentDiskReads against the
+        // post-degrade store right above the echo, so pinning the argument NAME pins the
+        // resolution path.
         var echoCall = java.util.regex.Pattern.compile(
                 "LSSLogger\\.info\\(config\\.effectiveConfigEcho\\(readerThreads,\\s*"
-                        + "wireCompressionLive\\)\\)");
+                        + "wireCompressionLive,\\s*gateCapacity\\)\\)");
         String fabric = Files.readString(
-                Path.of("src/main/java/dev/vox/lss/networking/server/RequestProcessingService.java"));
+                dev.vox.lss.testutil.SourcePaths.mainSource("dev/vox/lss/networking/server/RequestProcessingService.java"));
         assertTrue(echoCall.matcher(fabric).find(),
-                "Fabric must echo effectiveConfigEcho(readerThreads, wireCompressionLive)");
+                "Fabric must echo effectiveConfigEcho(readerThreads, wireCompressionLive, gateCapacity)");
         String paper = Files.readString(
                 Path.of("../paper/src/main/java/dev/vox/lss/paper/PaperRequestProcessingService.java"));
         assertTrue(echoCall.matcher(paper).find(),
-                "Paper twin must echo effectiveConfigEcho(readerThreads, wireCompressionLive)");
+                "Paper twin must echo effectiveConfigEcho(readerThreads, wireCompressionLive, gateCapacity)");
+        // Ordering half (v1.3 review MAJOR): the echo must sit AFTER store attachment on
+        // both platforms — an echo before LodStores.createOrNull reports K computed
+        // store-less on every store-armed server, in a script-consumed contract (the
+        // same bug class the echo's "deliberately AFTER the zstd probe" comment covers).
+        for (var entry : java.util.Map.of("Fabric", fabric, "Paper", paper).entrySet()) {
+            String src = entry.getValue();
+            int storeAttach = src.indexOf("LodStores.createOrNull");
+            var echoAt = echoCall.matcher(src);
+            assertTrue(echoAt.find() && storeAttach >= 0, entry.getKey() + " source anchors");
+            assertTrue(echoAt.start() > storeAttach,
+                    entry.getKey() + ": the config echo must run AFTER store attachment"
+                            + " (the echoed K is the store-conditional resolution)");
+        }
     }
 
     @Test
@@ -191,8 +251,8 @@ class ChannelAccessorContractTest {
         // literal or wrong field at the ctor call site ships a permanently inert split
         // with every test green (the echo call site has the same pin for the same
         // reason).
-        String fabric = Files.readString(Path.of(
-                "src/main/java/dev/vox/lss/networking/server/RequestProcessingService.java"));
+        String fabric = Files.readString(dev.vox.lss.testutil.SourcePaths.mainSource(
+                "dev/vox/lss/networking/server/RequestProcessingService.java"));
         assertTrue(fabric.contains("config.useBackgroundReadSplit"),
                 "the ChunkDiskReader construction must pass config.useBackgroundReadSplit");
         assertTrue(fabric.contains("config.useSelectiveNbtParse"),
@@ -208,8 +268,8 @@ class ChannelAccessorContractTest {
         var yieldAttach = java.util.regex.Pattern.compile(
                 "withYieldLine\\(DiagnosticsFormatter\\.yieldDiagLineOrNull\\(\\s*"
                         + "config\\.lodYieldsToVanillaTransport", java.util.regex.Pattern.DOTALL);
-        String fabric = Files.readString(
-                Path.of("src/main/java/dev/vox/lss/networking/server/LSSServerCommands.java"));
+        String fabric = Files.readString(dev.vox.lss.testutil.SourcePaths.mainSource(
+                "dev/vox/lss/networking/server/LSSServerCommands.java"));
         assertTrue(yieldAttach.matcher(fabric).find(),
                 "LSSServerCommands must feed the LIVE config flag to yieldDiagLineOrNull");
         String paper = Files.readString(

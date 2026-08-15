@@ -64,10 +64,13 @@ class NativeToV20TranslatorTest {
                 "minecraft:plains"), column.dictionary());
         var s = column.sections().get(0);
         assertEquals(-4, s.sectionY());
-        // 1.21.11 line: the native body carries ONE count short (100+5 folded at emit),
-        // so v20's neutral pair reads (105, 0) — see WireSectionCursor's NATIVE flavor.
-        assertEquals(105, s.nonEmptyBlockCount());
-        assertEquals(0, s.fluidCount());
+        // Derived from the S1 descriptor (fold, not drop — review MAJOR-1): the native
+        // SOURCE bytes carry the line fold in their single short on a 1-short line, so
+        // the translation reads (fold, 0) there.
+        assertEquals(NativeSectionShape.NATIVE_COUNT_SHORTS == 2
+                        ? 100 : NativeSectionShape.foldedCountForNativeHeader(100, 5),
+                s.nonEmptyBlockCount());
+        assertEquals(NativeSectionShape.NATIVE_COUNT_SHORTS == 2 ? 5 : 0, s.fluidCount());
         assertEquals(4, s.blocks().bits());
         assertArrayEquals(new int[] { 0, 1, 2 }, s.blocks().palette());
         assertArrayEquals(blocks.data(), s.blocks().data(), "packed longs must ship verbatim");
@@ -164,9 +167,10 @@ class NativeToV20TranslatorTest {
                 nativeBody(new WireSection(5, 1234, 77, single, biome, blLight, skyLight)),
                 BLOCKS, BIOMES);
         var s = WireSectionCursor.parse(v20, Layout.V20).sections().get(0);
-        // 1.21.11 line: (1234+77) folded into the one native count short, fluid slot 0.
-        assertEquals(1311, s.nonEmptyBlockCount());
-        assertEquals(0, s.fluidCount());
+        assertEquals(NativeSectionShape.NATIVE_COUNT_SHORTS == 2
+                        ? 1234 : NativeSectionShape.foldedCountForNativeHeader(1234, 77),
+                s.nonEmptyBlockCount());
+        assertEquals(NativeSectionShape.NATIVE_COUNT_SHORTS == 2 ? 77 : 0, s.fluidCount());
         assertArrayEquals(blLight, s.blockLight());
         assertArrayEquals(skyLight, s.skyLight());
     }
@@ -518,10 +522,7 @@ class NativeToV20TranslatorTest {
         var dict = new IdentityDictionary();
         var sections = new java.util.ArrayList<WireSection>();
         for (var s : shapes) {
-            // 1.21.11 line: the direct route mirrors the production direct emit — the
-            // folded single count in the nonEmpty slot, fluid 0 (byte-identity with the
-            // translate route, whose NATIVE parse reads (sum, 0)).
-            sections.add(new WireSection(s.sectionY(), s.nonEmptyBlockCount() + s.fluidCount(), 0,
+            sections.add(new WireSection(s.sectionY(), s.nonEmptyBlockCount(), s.fluidCount(),
                     NativeToV20Translator.convertIndexed(s.blocks().bits(), s.blocks().palette(),
                             s.blocks().data(), true, dict, BLOCKS),
                     NativeToV20Translator.convertIndexed(s.biomes().bits(), s.biomes().palette(),

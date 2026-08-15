@@ -39,14 +39,10 @@ import java.util.concurrent.atomic.AtomicLong;
  * Used by {@link PaperChunkDiskReader} for async disk reads.
  *
  * <p>Headless serve path (2026-07-29 profile — mirrors the Fabric twin exactly): the
- * UNMASKED path never constructs a {@link LevelChunkSection}. The wire count header
- * (1.21.11-LINE FLAVOR: one short, and Paper's Moonrise block-counting recalc counts
- * ONLY non-air cells — no fluid term, unlike this line's vanilla whose single short sums
- * both, so the header here is {@code nonEmpty} alone and the cross-module corpus parity
- * exempts this short) comes from {@link #countNonEmptyAndFluid}'s palette histogram
- * instead of the ctor's per-cell recount (on Paper the ctor is even costlier —
- * Moonrise's recalc also builds per-state coordinate lists the wire never needs), and
- * the containers write themselves.
+ * UNMASKED path never constructs a {@link LevelChunkSection}. The two wire count headers
+ * come from {@link #countNonEmptyAndFluid}'s palette histogram instead of the ctor's
+ * per-cell recount (on Paper the ctor is even costlier — Moonrise's recalc also builds
+ * per-state coordinate lists the wire never needs), and the containers write themselves.
  * Palette-entry block-state decode goes through {@link PaperMemoizedNbtCodec}. The MASKED
  * path still constructs real sections: mask semantics rely on the counting ctor for the
  * masked headers (see PaperXrayMaskFilter).
@@ -295,12 +291,10 @@ final class PaperNbtSectionSerializer {
             for (int i = 0; i < parsed.size(); i++) {
                 var p = parsed.get(i);
                 if (p.transcoded() != null) continue;
-                // Paper's (Moonrise) ctor takes the RW container — unpack always returns
-                // one, so the instanceof matches for parsed AND default biomes (the
-                // pre-headless code had the same shape).
-                var section = p.biomes() instanceof PalettedContainer<Holder<Biome>> biomeContainer
-                        ? new LevelChunkSection(p.states(), biomeContainer)
-                        : new LevelChunkSection(p.states(), factory.createForBiomes());
+                // Construction (incl. the RW-narrow + factory fallback) lives in the
+                // S2 seam — see PaperSectionConstruction.fromContainers.
+                var section = PaperSectionConstruction.fromContainers(
+                        p.states(), p.biomes(), factory);
                 var masked = PaperXrayMaskFilter.mask(section, p.sectionY(),
                         maskEntry.mask(), maskEntry.kind(), factory, replacedCells);
                 maskedSections[i] = masked;
@@ -334,13 +328,11 @@ final class PaperNbtSectionSerializer {
         for (int i = 0; i < parsed.size(); i++) {
             var p = parsed.get(i);
             size += 1 // sectionY byte
-                    // 1.21.11 line: ONE count short (2 bytes) — getSerializedSize's own
-                    // leading iconst_2 already matches on the masked branch.
                     + (p.transcoded() != null
-                            ? 2 + p.transcoded().serializedSize()
+                            ? dev.vox.lss.common.wire.NativeSectionShape.NATIVE_COUNT_SHORTS * 2 + p.transcoded().serializedSize()
                             : maskedSections != null
                                     ? maskedSections[i].getSerializedSize()
-                                    : 2 + p.states().getSerializedSize() + p.biomes().getSerializedSize())
+                                    : dev.vox.lss.common.wire.NativeSectionShape.NATIVE_COUNT_SHORTS * 2 + p.states().getSerializedSize() + p.biomes().getSerializedSize())
                     + 1 + (p.litByBlock() ? 2048 : 0)
                     + 1 + (p.litBySky() ? 2048 : 0);
         }
@@ -354,19 +346,14 @@ final class PaperNbtSectionSerializer {
                 if (p.transcoded() != null) {
                     // Headless transcoded write — LevelChunkSection.write's shape with the
                     // container bytes emitted straight from the disk descriptors.
-                    // 1.21.11 line: ONE count short. Paper's Moonrise block-counting patch
-                    // counts ONLY non-air cells (no fluid term — unlike this line's vanilla,
-                    // whose recalc sums both), so the disk header is nonEmpty alone for
-                    // disk/live byte parity within Paper. The cross-module corpus parity
-                    // test exempts this short (Fabric's vanilla semantics include fluid).
-                    buf.writeShort(p.nonEmptyCount());
+                    writeNativeCountHeader(buf, p.nonEmptyCount(), p.fluidCount());
                     p.transcoded().write(buf);
                 } else if (maskedSections != null) {
                     maskedSections[i].write(buf);
                 } else {
                     // Headless section write — exactly LevelChunkSection.write's shape:
-                    // the one 1.21.11 count short (Paper semantics), then the two containers.
-                    buf.writeShort(p.nonEmptyCount());
+                    // the two count shorts, then the two containers.
+                    writeNativeCountHeader(buf, p.nonEmptyCount(), p.fluidCount());
                     p.states().write(buf);
                     p.biomes().write(buf);
                 }
@@ -820,10 +807,15 @@ final class PaperNbtSectionSerializer {
             sections.add(new dev.vox.lss.common.wire.WireSectionCursor.WireSection(
                     // (byte) cast — see the Fabric twin: the native route's writeByte
                     // truncates out-of-range sectionY; the direct route must match.
-                    // 1.21.11 line: v20's neutral count pair carries this line's single
-                    // native count (Paper semantics: nonEmpty only) with fluid 0 —
-                    // byte-identical to the translate route's NATIVE parse (count, 0).
-                    (byte) p.sectionY(), p.nonEmptyCount(), 0,
+                    (byte) p.sectionY(),
+                    // Derived (V-2 review MAJOR-2) — the PAPER-family twin of the
+                    // fabric direct-route rule: (familyFold, 0) on a 1-short line.
+                    dev.vox.lss.common.wire.NativeSectionShape.NATIVE_COUNT_SHORTS == 2
+                            ? p.nonEmptyCount()
+                            : dev.vox.lss.common.wire.NativeSectionShape
+                                    .foldedCountPaperFamily(p.nonEmptyCount(), p.fluidCount()),
+                    dev.vox.lss.common.wire.NativeSectionShape.NATIVE_COUNT_SHORTS == 2
+                            ? p.fluidCount() : 0,
                     dev.vox.lss.common.wire.NativeToV20Translator.convertIndexed(
                             t.blockBits(), t.blockIds(), t.blockData(), true, dict, blockIdentity),
                     dev.vox.lss.common.wire.NativeToV20Translator.convertIndexed(
@@ -881,4 +873,20 @@ final class PaperNbtSectionSerializer {
         factoryMemo = java.util.Map.entry(new java.lang.ref.WeakReference<>(registryAccess), scoped);
         return scoped;
     }
+    /** V-2/S1 headerDerivation, PAPER family: the native count header this family's
+     *  (Moonrise-patched) vanilla writes, derived from {@code NativeSectionShape} —
+     *  26.x: the two-short pair verbatim; a 1-short line writes the family fold
+     *  (1.21.11: {@code nonEmpty} alone — Moonrise's recalc, a DIFFERENT fold from
+     *  Fabric's on the same line). Both headless write sites route here. */
+    private static void writeNativeCountHeader(net.minecraft.network.FriendlyByteBuf buf,
+                                               int nonEmpty, int fluid) {
+        if (dev.vox.lss.common.wire.NativeSectionShape.NATIVE_COUNT_SHORTS == 2) {
+            buf.writeShort(nonEmpty);
+            buf.writeShort(fluid);
+        } else {
+            buf.writeShort(dev.vox.lss.common.wire.NativeSectionShape
+                    .foldedCountPaperFamily(nonEmpty, fluid));
+        }
+    }
+
 }

@@ -12,22 +12,16 @@ import java.util.List;
 public final class DiagnosticsFormatter {
 
     /** {@code outboundPending}/{@code outboundHighWater} are netty outbound-buffer depths
-     *  in bytes, -1 = no signal (never "empty"); {@code sendDeferrals} counts ticks the
-     *  transport-deference gate skipped. See the elytra-wall investigation §8.3. */
+     *  in bytes, -1 = no signal (never "empty"). See the elytra-wall investigation §8.3.
+     *  (The {@code sendDeferrals}/{@code ceilBytes} components died with the fixed
+     *  outbound ceiling, 2026-08-13 — deletion review #2.) */
     public record PlayerDiag(
             String name, int sendQueue, int maxSendQueue,
             int pendingSync, int pendingGen,
             long sent, long bytes,
-            long outboundPending, long outboundHighWater, long sendDeferrals,
-            long yielded
+            long outboundPending, long outboundHighWater,
+            long yielded, double pingFactor, long paced
     ) {
-        /** Pre-transport-yield shape — keeps existing constructions/tests intact. */
-        public PlayerDiag(String name, int sendQueue, int maxSendQueue, int pendingSync,
-                          int pendingGen, long sent, long bytes, long outboundPending,
-                          long outboundHighWater, long sendDeferrals) {
-            this(name, sendQueue, maxSendQueue, pendingSync, pendingGen, sent, bytes,
-                    outboundPending, outboundHighWater, sendDeferrals, 0L);
-        }
     }
 
     public record DiagData(
@@ -48,6 +42,7 @@ public final class DiagnosticsFormatter {
             String xrayLine,
             String moveTraceLine,
             String yieldLine,
+            String farPlayersLine,
             long wireTotal, long colsZstd, long colsRaw
     ) {
         /** Pre-move-tracer full shape (no MoveTrace line) — keeps existing
@@ -66,7 +61,7 @@ public final class DiagnosticsFormatter {
                     cumInMem, cumUtd, cumGen, cumReResolved, cumGraceSkipped, diskCompleted,
                     tickDiagnostics, diskReaderDiagnostics, generationDiagnostics,
                     generationEnabled, genOrderGated, genInversions, bwTotal, bwWindowRate,
-                    players, v16Line, v18Line, xrayLine, null, null, wireTotal, colsZstd, colsRaw);
+                    players, v16Line, v18Line, xrayLine, null, null, null, wireTotal, colsZstd, colsRaw);
         }
         /** Pre-compressed-columns full shape (wire counters zero) — keeps existing
          *  constructions/tests intact. */
@@ -110,7 +105,7 @@ public final class DiagnosticsFormatter {
                     totalBytes, cumInMem, cumUtd, cumGen, cumReResolved, cumGraceSkipped,
                     diskCompleted, tickDiagnostics, diskReaderDiagnostics, generationDiagnostics,
                     generationEnabled, genOrderGated, genInversions, bwTotal, bwWindowRate,
-                    players, line, v18Line, xrayLine, moveTraceLine, yieldLine, wireTotal, colsZstd, colsRaw);
+                    players, line, v18Line, xrayLine, moveTraceLine, yieldLine, farPlayersLine, wireTotal, colsZstd, colsRaw);
         }
 
         /** Attach the v18 compat rung's one-line summary (null when the rung is untouched —
@@ -120,7 +115,7 @@ public final class DiagnosticsFormatter {
                     totalBytes, cumInMem, cumUtd, cumGen, cumReResolved, cumGraceSkipped,
                     diskCompleted, tickDiagnostics, diskReaderDiagnostics, generationDiagnostics,
                     generationEnabled, genOrderGated, genInversions, bwTotal, bwWindowRate,
-                    players, v16Line, line, xrayLine, moveTraceLine, yieldLine, wireTotal, colsZstd, colsRaw);
+                    players, v16Line, line, xrayLine, moveTraceLine, yieldLine, farPlayersLine, wireTotal, colsZstd, colsRaw);
         }
 
         /** Attach the x-ray masking one-line summary (always shown when non-null — the off
@@ -131,7 +126,7 @@ public final class DiagnosticsFormatter {
                     diskCompleted, tickDiagnostics, diskReaderDiagnostics,
                     generationDiagnostics, generationEnabled, genOrderGated, genInversions,
                     bwTotal, bwWindowRate, players, v16Line, v18Line, line, moveTraceLine,
-                    yieldLine, wireTotal, colsZstd, colsRaw);
+                    yieldLine, farPlayersLine, wireTotal, colsZstd, colsRaw);
         }
 
         /** Attach the move-desync tracer's one-line summary (null while the tracer is
@@ -143,7 +138,7 @@ public final class DiagnosticsFormatter {
                     diskCompleted, tickDiagnostics, diskReaderDiagnostics,
                     generationDiagnostics, generationEnabled, genOrderGated, genInversions,
                     bwTotal, bwWindowRate, players, v16Line, v18Line, xrayLine, line,
-                    yieldLine, wireTotal, colsZstd, colsRaw);
+                    yieldLine, farPlayersLine, wireTotal, colsZstd, colsRaw);
         }
 
         /** Attach the transport yield's one-line summary (null while the gate is unarmed
@@ -155,7 +150,19 @@ public final class DiagnosticsFormatter {
                     diskCompleted, tickDiagnostics, diskReaderDiagnostics,
                     generationDiagnostics, generationEnabled, genOrderGated, genInversions,
                     bwTotal, bwWindowRate, players, v16Line, v18Line, xrayLine, moveTraceLine,
-                    line, wireTotal, colsZstd, colsRaw);
+                    line, farPlayersLine, wireTotal, colsZstd, colsRaw);
+        }
+
+        /** Attach the far-player one-line summary (E1 — null while the feature is inert
+         *  or untouched: no subscribers ever, no frames sent; the line is omitted, so
+         *  soak/benchmark diag output is byte-unchanged). Renders after the yield slot. */
+        public DiagData withFarPlayersLine(String line) {
+            return new DiagData(enabled, lodDist, bwPerPlayer, bwGlobal, uptimeSec, totalSent,
+                    totalBytes, cumInMem, cumUtd, cumGen, cumReResolved, cumGraceSkipped,
+                    diskCompleted, tickDiagnostics, diskReaderDiagnostics,
+                    generationDiagnostics, generationEnabled, genOrderGated, genInversions,
+                    bwTotal, bwWindowRate, players, v16Line, v18Line, xrayLine, moveTraceLine,
+                    yieldLine, line, wireTotal, colsZstd, colsRaw);
         }
     }
 
@@ -234,6 +241,9 @@ public final class DiagnosticsFormatter {
         if (d.yieldLine != null) {
             lines.add(d.yieldLine);
         }
+        if (d.farPlayersLine != null) {
+            lines.add(d.farPlayersLine);
+        }
 
         // Bandwidth. total = the RAW-denominated counted volume (the limiter's charge —
         // client decode work scales with it); wire = SHIPPED payload bytes (codec-1
@@ -247,13 +257,17 @@ public final class DiagnosticsFormatter {
         for (var p : d.players) {
             double pRate = d.uptimeSec > 0 ? (double) p.sent / d.uptimeSec : 0;
             lines.add(String.format(
-                    "  %s: sq=%d/%d, psync=%d, pgen=%d, sent=%d (%s), rate=%s/s, obuf=%s/%s, deferred=%d, yielded=%d",
+                    "  %s: sq=%d/%d, psync=%d, pgen=%d, sent=%d (%s), rate=%s/s, obuf=%s/%s, pingf=%.2f, yielded=%d, paced=%d",
                     p.name, p.sendQueue, p.maxSendQueue,
                     p.pendingSync, p.pendingGen,
                     p.sent, formatBytes(p.bytes),
                     formatRate(pRate),
                     formatOutbound(p.outboundPending), formatOutbound(p.outboundHighWater),
-                    p.sendDeferrals, p.yielded
+                    // pingf= : Mechanism B's receipt — 1.00 = no cut.
+                    p.pingFactor,
+                    // yielded/paced: transport-yield + send-pacer receipts (mechanism
+                    // counters, never loss signals).
+                    p.yielded, p.paced
             ));
         }
 
@@ -306,7 +320,9 @@ public final class DiagnosticsFormatter {
                     state.getHeldSyncSlots(), state.getHeldGenSlots(),
                     state.getTotalSectionsSent(), state.getTotalBytesSent(),
                     state.getOutboundPendingBytes(), state.getOutboundPendingHighWater(),
-                    state.getSendDeferrals(), state.getYieldedTicks()
+                    state.getYieldedTicks(),
+                    state.getPingBackstop().factor(),
+                    state.getPacedTicks()
             ));
         }
 

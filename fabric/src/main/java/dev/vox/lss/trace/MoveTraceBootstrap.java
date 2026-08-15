@@ -92,7 +92,10 @@ public final class MoveTraceBootstrap {
         config.put("bytesPerSecondLimitGlobal", cfg.bytesPerSecondGlobal());
         config.put("lodDistanceChunks", cfg.lodDistanceChunks);
         config.put("lodStore", cfg.lodStore);
-        config.put("outboundBufferCeilingKB", cfg.outboundBufferCeilingKB);
+        // A live ping-backstop cut shifts the LOD send envelope the same way an armed
+        // yield does — analysis must never mix backstop-on and backstop-off boots.
+        config.put("enablePingBackstop", cfg.enablePingBackstop);
+        config.put("enableSendPacing", cfg.enableSendPacing);
         // The §4.5 partition key: an armed-yield collection period shifts the envelope
         // obuf distribution by design — analysis must never mix armed and unarmed boots.
         config.put("lodYieldsToVanillaTransport", cfg.lodYieldsToVanillaTransport);

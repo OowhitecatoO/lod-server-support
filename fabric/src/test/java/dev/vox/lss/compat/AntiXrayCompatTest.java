@@ -2,36 +2,41 @@ package dev.vox.lss.compat;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.concurrent.atomic.AtomicBoolean;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * AntiXray compat pins for the 1.21.11 support line. The 26.x crash-shim ladder tests are
- * deliberately gone with the shim itself: on 1.21.11 AntiXray threads its obfuscation
- * context through ThreadLocals (unset get() == null, the benign skip value), so
- * {@code callSerializing} is a documented pass-through — pinned here — and the engine
- * probe (unchanged from the 26.2 primary line, incl. the mode-2/3 ReplacementNoise
- * discrimination and the transient-null re-probe rung) keeps its full ladder below.
+ * Pins the AntiXray ENGINE-PROBE ladder (docs/planning/antixray-compat-design.md §3)
+ * plus the {@code callSerializing} delegate. The crash-shim/carrier half moved to
+ * {@link ScopedCarrierTest} with the V-2/S5 split — these five probe pins are
+ * line-invariant and stay with the shared xplat class.
  */
 class AntiXrayCompatTest {
 
     @Test
-    void callSerializingIsAPassThrough() {
-        // The 1.21.11 contract: no binding, no wrapping, the body's value returned as-is
-        // (see AntiXrayCompat's class doc for why no shim exists on this line).
+    void callSerializingDelegatesThroughTheCarrierSplit() {
+        // This JVM has no antixray mod, so the carrier is inactive by construction —
+        // pins the delegate pass-through (the S5 split must not orphan the xplat
+        // entry point every serialize call site uses).
         assertEquals("through", AntiXrayCompat.callSerializing(() -> "through"));
     }
 
     @Test
-    void callSerializingIsExceptionTransparent() {
-        // A serialize that throws for any reason must reach the probe containment
-        // unchanged — same transparency the 26.x carrier guaranteed.
-        var thrown = assertThrows(IllegalStateException.class,
-                () -> AntiXrayCompat.callSerializing(() -> {
-                    throw new IllegalStateException("serialize failed");
-                }));
-        assertEquals("serialize failed", thrown.getMessage());
+    void delegationLinkIsWiredInTheCompiledClass() throws Exception {
+        // V-2 review: the behavioral pin above cannot see a de-wired delegate — with
+        // no mod installed, "return ScopedCarrier.callSerializing(body)" and
+        // "return body.get()" are indistinguishable, and the de-wire silently
+        // disables the crash shim on every live AntiXray server. Constant-pool
+        // substring over the compiled class (the FoliaWiringContractTest idiom).
+        var url = AntiXrayCompat.class.getResource("AntiXrayCompat.class");
+        assertNotNull(url, "compiled AntiXrayCompat.class must be resource-loadable");
+        byte[] bytes;
+        try (var in = url.openStream()) {
+            bytes = in.readAllBytes();
+        }
+        String pool = new String(bytes, java.nio.charset.StandardCharsets.ISO_8859_1);
+        assertTrue(pool.contains("dev/vox/lss/compat/ScopedCarrier"),
+                "callSerializing must delegate to ScopedCarrier — a simplified"
+                        + " pass-through disables the AntiXray crash shim invisibly");
     }
 
     // ---- engine probe (design §3 Detection) ----

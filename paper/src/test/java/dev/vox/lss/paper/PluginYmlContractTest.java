@@ -95,14 +95,30 @@ class PluginYmlContractTest {
     }
 
     @Test
+    void bothFarPlayerPrivacyNodesAreDeclaredDefaultFalse() {
+        // Review-wave V-M1 (the load-bearing dual declaration): the enforcement
+        // dual-checks lss.* OR vss.*, and Bukkit resolves an UNDECLARED node to the op
+        // default — deleting EITHER declaration (or flipping a default) silently hides
+        // every op from far players on the jars where that spelling is undeclared.
+        // Both spellings ship in BOTH jars; the vssJar rewrite must not rename them.
+        assertEquals("false", yml.getString("permissions/lss.farplayers.hidden/default"),
+                "lss.farplayers.hidden must be declared default false");
+        assertEquals("false", yml.getString("permissions/vss.farplayers.hidden/default"),
+                "vss.farplayers.hidden must be declared default false");
+    }
+
+    @Test
     void apiVersionMatchesTheDevBundleMinecraftVersion() throws Exception {
-        String apiVersion = yml.getString("api-version");
-        assertNotNull(apiVersion);
+        // V-1/P3: the SOURCE carries the template token; the value IS gradle.properties'
+        // minecraft_version by construction (paper processResources), so the lockstep
+        // assertion moves to the data side.
+        assertEquals("${api_version}", yml.getString("api-version"),
+                "plugin.yml's api-version must stay templated from minecraft_version");
 
         var props = new Properties();
         props.load(new StringReader(Files.readString(locate("gradle.properties"))));
-        assertEquals(props.getProperty("minecraft_version"), apiVersion,
-                "api-version must move in lockstep with the minecraft_version the build targets");
+        String apiVersion = props.getProperty("minecraft_version");
+        assertNotNull(apiVersion);
 
         var bundle = Pattern.compile("paperweight\\.paperDevBundle\\('([^']+)'\\)")
                 .matcher(Files.readString(locate("paper/build.gradle")));

@@ -50,6 +50,18 @@ public final class LSSConstants {
      *  input; never needed to decode v20 data. */
     public static final String CHANNEL_CLIENT_INFO = "lss:client_info";
 
+    // Far players (v0.11.0 stage E1, far-player-proxies-plan.md §3.1 as amended by the
+    // mega plan's R-7/R-10): capability-gated additive payloads — the server sends
+    // far-player frames only to sessions that declared CAPABILITY_FAR_PLAYERS, so no
+    // compat rung and no protocol bump. C2S prefs ride the CHANNEL_CLIENT_INFO sidecar
+    // doctrine (legacy servers silently discard unregistered channels; the send is
+    // containment-guarded client-side). Wire is MC-VERSION-NEUTRAL by construction:
+    // equipment/vehicle types cross as identity strings via a per-payload dictionary
+    // (the v20 pattern), never numeric registry ids.
+    public static final String CHANNEL_FAR_PLAYER_PREFS = "lss:far_player_prefs";
+    public static final String CHANNEL_FAR_PLAYER_ROSTER = "lss:far_player_roster";
+    public static final String CHANNEL_FAR_PLAYER_UPDATES = "lss:far_player_updates";
+
     // Time conversion constants
     public static final long NANOS_PER_SECOND = 1_000_000_000L;
     public static final long NANOS_PER_MS = 1_000_000L;
@@ -87,7 +99,8 @@ public final class LSSConstants {
     public static final int MIN_BYTES_PER_SECOND = 1024;
     /** Per-player bandwidth ceiling. Raised 100 MB -> 1 GiB 2026-08-02 (config review
      *  section 5): the live server hit the old ceiling exactly, and this bounds only what an
-     *  admin deliberately types. The DEFAULT is 15 MiB (25 -> 15 on 2026-08-05, v0.9.1) —
+     *  admin deliberately types. The DEFAULT is 25 MiB (25 -> 15 on 2026-08-05, re-raised
+     *  to 25 on 2026-08-08 — ServerConfigBase.DEFAULT_MB_PER_PLAYER is the authority) —
      *  the cap charges RAW bytes because it bounds client decode work (the confirmed
      *  receiver-limited bottleneck), so wire compression did not loosen the constraint it
      *  exists to enforce. */
@@ -108,14 +121,22 @@ public final class LSSConstants {
      *  scale with cores but stop well short of starving the rest of the server. */
     public static final int AUTO_DISK_READER_THREADS_PRIORITIZED_MAX = 8;
     public static final int MAX_DISK_READER_THREADS = 64;
-    /** Transport-deference ceiling bounds (0 = disabled, the default — see
-     *  {@code outboundBufferCeilingKB}). The floor is well above one legal maximum-size
-     *  column so a single admissible payload can never trip the gate on its own. The
-     *  transport YIELD needs no such floor at all: it gates on netty's writability flag,
-     *  so a payload is only ever written to a writable channel and the single-payload
-     *  invariant holds by construction (yield plan §1.2). */
-    public static final int MIN_OUTBOUND_BUFFER_CEILING_KB = 4_096;
-    public static final int MAX_OUTBOUND_BUFFER_CEILING_KB = 262_144;
+    /** Disk-read concurrency gate floor (disk-read-concurrency-gate-plan.md). 0 is a
+     *  first-class value above it — AUTO, see
+     *  ServerConfigBase.effectiveMaxConcurrentDiskReads — so validate() clamps only
+     *  nonzero values; the ceiling rides MAX_DISK_READER_THREADS (a K above the pool is
+     *  structurally a no-op, the documented OFF idiom). */
+    public static final int MIN_MAX_CONCURRENT_DISK_READS = 1;
+    /** AUTO K on a STORE-ARMED server = ceil(pool / this): ≤ half the reader pool runs
+     *  the expensive NBT phase (region read → inflate → parse → transcode → compress) at
+     *  any instant, reserving the other half for ~44 µs store-hit serves — the structural
+     *  fix for "cold-region reads starve the cheap store rung on the shared pool". With
+     *  no store attached AUTO = pool (a no-op gate): no cheap path exists to protect and
+     *  half-pooling would hand store-off servers pure downside on exactly the workloads
+     *  where disk reads dominate (both gate reviews' convergent MAJOR). */
+    public static final int AUTO_DISK_READ_GATE_DIVISOR = 2;
+    /** Global bandwidth ceiling bound — same 1 GiB rationale as the per-player bound
+     *  above (bounds only what an admin deliberately types). */
     public static final long MAX_BYTES_PER_SECOND_GLOBAL_LIMIT = 1_073_741_824;
     public static final int MIN_CONCURRENT_GENERATIONS = 1;
     /** Global generation ceiling. Raised 256 -> 512 2026-08-02: WantSetBudgetInvariantTest
@@ -138,8 +159,17 @@ public final class LSSConstants {
     public static final int MAX_GENERATION_TIMEOUT = 600;
     public static final int MIN_DIRTY_BROADCAST_INTERVAL = 1;
     public static final int MAX_DIRTY_BROADCAST_INTERVAL = 300;
+    /** Drain cadence when dirty SENDS are disabled (dirtyBroadcastIntervalSeconds = 0):
+     *  the broadcasters still drain the tracker and run the invalidation fan-out (store
+     *  rows, timestamp cache, in-flight taints, per-player done-bit/probe-stamp clears)
+     *  on this interval — only the DirtyColumnsS2CPayload send is gated off. Matches the
+     *  field's default so "off" costs the same server-side as the default cadence. */
+    public static final int DIRTY_DRAIN_ONLY_INTERVAL_SECONDS = 10;
     public static final int MIN_CONCURRENCY_LIMIT = 1;
-    public static final int MAX_CONCURRENCY_LIMIT = 1000;
+    // MAX_CONCURRENCY_LIMIT (1000) DELETED 2026-08-13 (deletion review D-6): the 9.1
+    // config-review fix replaced its clamp role with clampGenPerPlayer(v, configuredGlobal)
+    // — the constant enforced nothing and its two remaining test assertions pinned a
+    // number no mechanism used.
     /** Per-DIMENSION timestamp-cache bounds (multiply by dimension count for the real heap
      *  budget). Ceiling raised 256 -> 512 2026-08-02: reachable on a large-distance server.
      *  0 means AUTO — derived from lodDistanceChunks, see
@@ -308,6 +338,12 @@ public final class LSSConstants {
      *  probe succeeds — see the client-side StoreCodec.zstdOrNull holder). The bit carries
      *  ABILITY only; the v19 layout (codec byte present) is version-agreed regardless. */
     public static final int CAPABILITY_ZSTD_COLUMNS = 2;
+    /** Far players (E1): the client wants far-player roster/update frames. The handshake
+     *  gate MASKS unknown bits ({@code HandshakeGate} — the in-repo precedent the FARP
+     *  review verified), so this bit at an older server is silently ignored and the
+     *  session registers normally: no compat rung, no version bump. INERT at E1 — the
+     *  client-side composition compiles the bit OFF until E2 flips the defaults. */
+    public static final int CAPABILITY_FAR_PLAYERS = 4;
 
     // VoxelColumn codec tag values (one wire byte, protocol 19+, after the source tag).
     // Unlike the source tag, unknown values are NOT passed through verbatim client-side:
@@ -325,6 +361,8 @@ public final class LSSConstants {
     public static final int COLUMN_COMPRESS_MIN_BYTES = 512;
 
     // Dimension resource location strings (common/ has no MC deps, so plain strings)
+    // Test-convenience literals only (deletion review D-13) — nothing on the wire or in
+    // production reads these; they live here for the shared test corpus, not the protocol.
     public static final String DIM_STR_OVERWORLD = "minecraft:overworld";
     public static final String DIM_STR_THE_NETHER = "minecraft:the_nether";
     public static final String DIM_STR_THE_END = "minecraft:the_end";

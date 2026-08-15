@@ -66,6 +66,23 @@ class ConfigValidationTest {
         assertTrue(serverConfig().enableViaMismatchGuard);
     }
 
+    /** Both adaptive-transfer-rate mechanisms ship ON (adaptive-transfer-rate-plan.md):
+     *  the server ping backstop protects ANY client on a congested link, and the
+     *  client governor paces itself against every released v17+ server. Each has its
+     *  own kill switch. */
+    @Test
+    void adaptiveTransferRateMechanismsDefaultOn() {
+        assertTrue(serverConfig().enablePingBackstop,
+                "the ping backstop must ship enabled");
+        assertTrue(serverConfig().enableSendPacing,
+                "send pacing must ship enabled (a burst shaper, never a rate governor)");
+        assertTrue(clientConfig().enableAdaptiveTransferRate,
+                "the client transfer governor must ship enabled");
+        assertTrue(clientConfig().enableJoinSlowStart,
+                "join slow start must ship enabled (join-slow-start-plan.md — join "
+                        + "latency beats LOD fill speed, user decision 2026-08-14)");
+    }
+
     @Test
     void lodDistanceChunksClamped() {
         var c = serverConfig();
@@ -225,12 +242,25 @@ class ConfigValidationTest {
         assertEquals(600, c.generationTimeoutSeconds);
     }
 
+    /** v0.11.0 (dirty-broadcast-interval-zero-plan.md): 0 = dirty pushes disabled is a
+     *  first-class value — the lodStoreMaxMB idiom. 0 stays 0 (was: clamped to 1, the
+     *  FASTEST cadence — the opposite of what an operator writing 0 means), negatives
+     *  normalize to 0, and 1 stays the floor for a NONZERO (sending) interval. */
     @Test
-    void dirtyBroadcastIntervalSecondsClamped() {
+    void dirtyBroadcastIntervalSecondsZeroDisablesSendsAndNonzeroFloorsAt1() {
         var c = serverConfig();
         c.dirtyBroadcastIntervalSeconds = 0;
         c.validate();
-        assertEquals(1, c.dirtyBroadcastIntervalSeconds);
+        assertEquals(0, c.dirtyBroadcastIntervalSeconds, "0 = sends off, must survive validate");
+
+        c.dirtyBroadcastIntervalSeconds = -5;
+        c.validate();
+        assertEquals(0, c.dirtyBroadcastIntervalSeconds,
+                "negative nonsense must mean sends off, not a 1 s cadence");
+
+        c.dirtyBroadcastIntervalSeconds = 1;
+        c.validate();
+        assertEquals(1, c.dirtyBroadcastIntervalSeconds, "1 is the nonzero floor, kept exactly");
 
         c.dirtyBroadcastIntervalSeconds = 9999;
         c.validate();
@@ -247,7 +277,7 @@ class ConfigValidationTest {
         // Plain per-field bound: the #28 cross-clamp is gone (no client budget derives
         // from this cap anymore; the successor invariant lives in WantSetBudgetInvariantTest).
         // Config review §9.1: the per-player ceiling is now the CONFIGURED global, not the
-        // unrelated MAX_CONCURRENCY_LIMIT (1000) — a per-player value above the fleet-wide one
+        // deleted MAX_CONCURRENCY_LIMIT — a per-player value above the fleet-wide one
         // is unreachable by construction, so it used to validate to silent nonsense.
         c.generationConcurrencyLimitGlobal = 64;
         c.generationConcurrencyLimitPerPlayer = 9999;
@@ -527,14 +557,20 @@ class ConfigValidationTest {
             c.validate();
             // missMemoTtlSeconds and lodStoreResweepSeconds have a legal floor of 0
             // (each 0 is that feature's kill switch), as does lodStoreMaxMB (0 =
-            // uncapped, the default) and outboundBufferCeilingKB (0 = transport
-            // deference off, the default); xrayMaxBlockHeight's floor is a world Y and
+            // uncapped, the default), and dirtyBroadcastIntervalSeconds (0 = dirty
+            // pushes off since v0.11.0; the drain keeps its fallback cadence);
+            // xrayMaxBlockHeight's floor is a world Y and
             // deliberately negative — every other numeric floor is >= 1.
             int floor = switch (f.getName()) {
                 case "missMemoTtlSeconds", "lodStoreResweepSeconds", "lodStoreMaxMB",
-                        "outboundBufferCeilingKB",
-                        // 0 = AUTO (derived), the default for both since 2026-08-02.
-                        "diskReaderThreads", "perDimensionTimestampCacheSizeMB" -> 0;
+                        "dirtyBroadcastIntervalSeconds",
+                        // 0 = AUTO (derived), the default for both since 2026-08-02;
+                        // maxConcurrentDiskReads is the same shape (store-conditional
+                        // AUTO — disk-read-concurrency-gate-plan.md).
+                        "diskReaderThreads", "perDimensionTimestampCacheSizeMB",
+                        "maxConcurrentDiskReads",
+                        // 0 = no inner ring (the default) — E1 far players.
+                        "farPlayersMinDistanceBlocks" -> 0;
                 case "xrayMaxBlockHeight" -> LSSConstants.MIN_XRAY_MAX_BLOCK_HEIGHT;
                 default -> 1;
             };
@@ -600,12 +636,13 @@ class ConfigValidationTest {
                         <= LSSConstants.MAX_DISK_READER_THREADS);
     }
 
-    /** The yield plan's recorded evidence discipline (§4): the mechanism ships UNARMED;
-     *  the default flips only in a later release citing the live E3 A/B. */
+    /** Default TRUE since v0.11.0 (user decision 2026-08-13, superseding the yield
+     *  plan's ships-unarmed stance; the CI-inertness pin keeps soaks provably
+     *  unaffected — loopback channels never go unwritable). */
     @Test
-    void transportYieldDefaultsOff() {
-        assertFalse(serverConfig().lodYieldsToVanillaTransport,
-                "lodYieldsToVanillaTransport must default FALSE");
+    void transportYieldDefaultsOn() {
+        assertTrue(serverConfig().lodYieldsToVanillaTransport,
+                "lodYieldsToVanillaTransport defaults TRUE since v0.11.0");
     }
 
     /** Disk serves transcode NBT straight to wire bytes out of the box; false is the
@@ -726,20 +763,67 @@ class ConfigValidationTest {
         // cap the user meant to disable.
         c.lodColumnsPerSecondLimit = -5;
         c.validate();
-        assertEquals(0, c.lodColumnsPerSecondLimit, "negatives normalize to off, never to 50");
+        assertEquals(0, c.lodColumnsPerSecondLimit, "negatives normalize to off, never to the floor");
 
-        c.lodColumnsPerSecondLimit = 10;
+        c.lodColumnsPerSecondLimit = 5;
         c.validate();
-        assertEquals(50, c.lodColumnsPerSecondLimit, "positive values clamp to the 50 floor");
+        assertEquals(10, c.lodColumnsPerSecondLimit, "positive values clamp to the 10 floor");
+
+        // The 2026-08-14 granularity request: a low-but-plausible manual rate like 20
+        // must survive validate() unchanged (the old floor of 50 silently rewrote it).
+        c.lodColumnsPerSecondLimit = 20;
+        c.validate();
+        assertEquals(20, c.lodColumnsPerSecondLimit, "20 col/s is a legal manual cap");
 
         c.lodColumnsPerSecondLimit = 1_000_000;
         c.validate();
         assertEquals(100_000, c.lodColumnsPerSecondLimit, "...and to the 100k ceiling");
 
-        // Every nonzero Sodium slider stop (step 50, range 50..3200) round-trips unchanged.
+        // Every nonzero Sodium slider stop must round-trip unchanged — the slider is
+        // curved (RateSliderStops: 10s, then 25s/50s/100s up to 3200), and its
+        // lowest nonzero stop equals the validate() floor by construction.
         c.lodColumnsPerSecondLimit = 3200;
         c.validate();
         assertEquals(3200, c.lodColumnsPerSecondLimit);
+    }
+
+    @Test
+    void rateSliderCurveRoundTripsTheClampAndCoversTheLowEnd() {
+        // The curved "Max LOD Download Rate" slider (2026-08-14 granularity request).
+        // Invariant 1: the UI must never lie — every nonzero stop survives validate()
+        // unchanged, so what the slider shows is what the config keeps.
+        var stops = RateSliderStops.STOPS;
+        var c = clientConfig();
+        for (int i = 1; i < stops.length; i++) {
+            c.lodColumnsPerSecondLimit = stops[i];
+            c.validate();
+            assertEquals(stops[i], c.lodColumnsPerSecondLimit,
+                    "slider stop " + stops[i] + " must round-trip the clamp unchanged");
+            assertTrue(stops[i] > stops[i - 1], "stops must be strictly ascending");
+        }
+        // Invariant 2: the shape the request asked for — stop 0 is off, the lowest
+        // nonzero stop IS the clamp floor (10), 20 is selectable, top stays 3200.
+        assertEquals(0, stops[0], "stop 0 must be off");
+        c.lodColumnsPerSecondLimit = stops[1] - 1;
+        c.validate();
+        assertEquals(stops[1], c.lodColumnsPerSecondLimit,
+                "the lowest nonzero stop must equal the validate() floor");
+        assertTrue(java.util.Arrays.stream(stops).anyMatch(s -> s == 20),
+                "20 col/s must be a selectable stop (the granularity request)");
+        assertEquals(3200, stops[stops.length - 1], "the top stop is the no-op bound");
+
+        // Invariant 3: nearestIndex — off maps only to stop 0 and stop 0 only to off
+        // (a tiny nonzero rate must never display as Unlimited, nor off as a throttle);
+        // exact stops map to themselves; legal-but-inert hand-edits snap to the top.
+        assertEquals(0, RateSliderStops.nearestIndex(0));
+        assertEquals(0, RateSliderStops.nearestIndex(-7));
+        assertEquals(1, RateSliderStops.nearestIndex(1), "1 col/s must not read as Unlimited");
+        for (int i = 1; i < stops.length; i++) {
+            assertEquals(i, RateSliderStops.nearestIndex(stops[i]),
+                    "exact stop " + stops[i] + " must map to its own index");
+        }
+        assertEquals(stops.length - 1, RateSliderStops.nearestIndex(100_000),
+                "above-top values display snapped to the top stop");
     }
 
     @Test
@@ -821,19 +905,96 @@ class ConfigValidationTest {
         c.useCompressedColumns = false;
         assertEquals("Effective config: useNbtTranscode=false, diskReaderThreads=7,"
                         + " useCompressedColumns=true, useBackgroundReadSplit=true,"
-                        + " useSelectiveNbtParse=true",
-                c.effectiveConfigEcho(7, true),
+                        + " useSelectiveNbtParse=true, maxConcurrentDiskReads=4",
+                c.effectiveConfigEcho(7, true, 4),
                 "key order and key=value spelling are what the harnesses grep");
         // The thread count echoed is the RESOLVED one the caller passes (0=AUTO already
         // applied) — the scripts assert the staged explicit value appears verbatim.
+        // Same rule for the gate's K (the store-conditional resolution, post-degrade).
         c.useNbtTranscode = true;
         c.useCompressedColumns = true;
         c.useBackgroundReadSplit = false;
         c.useSelectiveNbtParse = false;
         assertEquals("Effective config: useNbtTranscode=true, diskReaderThreads=5,"
                         + " useCompressedColumns=false, useBackgroundReadSplit=false,"
-                        + " useSelectiveNbtParse=false",
-                c.effectiveConfigEcho(5, false));
+                        + " useSelectiveNbtParse=false, maxConcurrentDiskReads=5",
+                c.effectiveConfigEcho(5, false, 5));
     }
 
+    /** The disk-read gate's K resolver (disk-read-concurrency-gate-plan.md): 0 = AUTO is
+     *  STORE-CONDITIONAL — no store attached resolves to the pool (a no-op gate; the
+     *  store-off population must never pay the half-pool tax — both gate reviews'
+     *  convergent MAJOR), store attached resolves to ceil(pool/2); an explicit override
+     *  clamps to the pool (a K above it cannot bind — the documented OFF idiom). */
+    @Test
+    void effectiveMaxConcurrentDiskReadsIsStoreConditionalWithPoolClampedOverride() {
+        var c = serverConfig();
+
+        c.maxConcurrentDiskReads = 0; // AUTO
+        assertEquals(8, c.effectiveMaxConcurrentDiskReads(8, false),
+                "AUTO with no store attached must be the pool — a structural no-op");
+        assertEquals(3, c.effectiveMaxConcurrentDiskReads(3, false));
+        assertEquals(4, c.effectiveMaxConcurrentDiskReads(8, true),
+                "AUTO with a store: half the pool, reserving the rest for store lookups");
+        assertEquals(2, c.effectiveMaxConcurrentDiskReads(3, true), "ceil(3/2) = 2");
+        assertEquals(1, c.effectiveMaxConcurrentDiskReads(1, true),
+                "pool 1: K=1 — exactly today's behavior, nothing regresses");
+
+        c.maxConcurrentDiskReads = 2;
+        assertEquals(2, c.effectiveMaxConcurrentDiskReads(8, true), "explicit override wins");
+        assertEquals(2, c.effectiveMaxConcurrentDiskReads(8, false),
+                "an explicit override binds regardless of store attachment");
+        c.maxConcurrentDiskReads = 64;
+        assertEquals(8, c.effectiveMaxConcurrentDiskReads(8, true),
+                "override >= pool clamps to the pool — the disable idiom");
+
+        // The diskReaderThreads negative-normalizes-to-AUTO mirror: -1 must mean AUTO
+        // (store-conditional), never clamp up to the tightest possible gate (1).
+        c.maxConcurrentDiskReads = -1;
+        c.validate();
+        assertEquals(0, c.maxConcurrentDiskReads, "negative normalizes to AUTO");
+        assertEquals(8, c.effectiveMaxConcurrentDiskReads(8, false));
+        c.maxConcurrentDiskReads = 3;
+        c.validate();
+        assertEquals(3, c.maxConcurrentDiskReads, "in-band explicit value survives validate");
+        c.maxConcurrentDiskReads = 9999;
+        c.validate();
+        assertEquals(LSSConstants.MAX_DISK_READER_THREADS, c.maxConcurrentDiskReads,
+                "validate clamps nonzero to the shared ceiling; the pool clamp is at derivation");
+    }
+
+
+    /** Far players (E1): the mode normalizes through the shared helper (unknown -> off,
+     *  the inert compiled default), and the min ring drags under the CONFIGURED max —
+     *  the cross-field rule the table sweeps cannot express (an inverted ring would
+     *  hide everyone). */
+    @Test
+    void farPlayersModeNormalizesAndMinRingDragsUnderTheConfiguredMax() {
+        var c = serverConfig();
+        assertEquals("on", c.farPlayers,
+                "E2 flips the compiled default ON for fresh AND upgrading installs"
+                        + " (user decision 2026-08-12)");
+        c.farPlayers = "ON";
+        c.validate();
+        assertEquals("on", c.farPlayers, "case-insensitive canonical spelling");
+        c.farPlayers = "optin";
+        c.validate();
+        assertEquals("opt-in", c.farPlayers, "alias spellings normalize");
+        c.farPlayers = "banana";
+        c.validate();
+        assertEquals("off", c.farPlayers, "unknown modes fail SAFE to off");
+        c.farPlayers = null;
+        c.validate();
+        assertEquals("off", c.farPlayers);
+
+        c.farPlayersMaxDistanceBlocks = 1024;
+        c.farPlayersMinDistanceBlocks = 9000;
+        c.validate();
+        assertEquals(1024, c.farPlayersMinDistanceBlocks,
+                "min drags under the configured max — never an inverted ring");
+        c.farPlayersExclude = null;
+        c.validate();
+        assertEquals(java.util.List.of(), c.farPlayersExclude,
+                "a malformed null exclude list restores the empty default");
+    }
 }

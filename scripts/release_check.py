@@ -42,6 +42,9 @@ ROOT = os.path.dirname(HERE)
 
 FABRIC_FORBIDDEN = "dev/vox/lss/benchmark/"        # benchmark + soak driver live here on Fabric
 PAPER_FORBIDDEN = "dev/vox/lss/paper/soak/"
+# The NeoForge shadow jar flattens xplat+common; benchmark/ (excluded by shadowJar) and
+# the lsstest gametest companion (its own source set, never packed) must stay absent.
+NEOFORGE_FORBIDDEN = ("dev/vox/lss/benchmark/", "dev/vox/lss/neoforge/gametest/")
 # Dev-only namespaces that would live in common/ (e.g. a deduped soak-driver twin): common
 # ships on BOTH platforms — nested in the Fabric jar, shaded into the Paper jar.
 COMMON_FORBIDDEN = ("dev/vox/lss/common/soak/", "dev/vox/lss/common/benchmark/")
@@ -50,7 +53,9 @@ COMMON_FORBIDDEN = ("dev/vox/lss/common/soak/", "dev/vox/lss/common/benchmark/")
 # classes, mod id `lss` / plugin name LodServerSupport, so they get the IDENTICAL safety
 # gate plus an identity guardrail (check_vss_*_identity). See docs/planning/ci-dual-publish.md.
 RELEASE_GLOBS = ("lod-server-support-fabric-*.jar", "lod-server-support-paper-*.jar",
-                 "voxy-server-side-fabric-*.jar", "voxy-server-side-paper-*.jar")
+                 "lod-server-support-neoforge-*.jar",
+                 "voxy-server-side-fabric-*.jar", "voxy-server-side-paper-*.jar",
+                 "voxy-server-side-neoforge-*.jar")
 CI_NAME_SUFFIX = "0.4.0+26.1.2.jar"  # a representative CI filename for glob round-tripping
 # The Fabric jar's mapping namespace for THIS line: 26.x fabric-loom ships official-mapped
 # jars; 1.21.x fabric-loom-remap ships intermediary. A forward merge swapping the loom
@@ -291,6 +296,166 @@ def check_store_natives_paper(jar, problems):
     _check_native_strip(base, "shadow jar", names, problems)
 
 
+def check_neoforge_jar(jar, problems):
+    """The NeoForge shadow jar (stage N-2 packaging decision: Paper-style shading):
+    descriptor + mixin/AT/services presence, dev-package exclusion, and shading
+    hygiene (no MC/loader classes may leak into the flat jar)."""
+    names = set(_names(jar))
+    base = os.path.basename(jar)
+    _scan_forbidden(jar, base, NEOFORGE_FORBIDDEN + COMMON_FORBIDDEN, problems)
+    # Round-3 review: the gametest smoke runs off classes dirs, never this jar — a
+    # careless shadowJar exclude of dev/vox/lss/neoforge/** would ship an
+    # entrypoint-less jar with every other check green. Pin the wiring classes.
+    for req in ("dev/vox/lss/neoforge/LSSNeoMod.class",
+                "dev/vox/lss/platform/NeoForgeLoaderServices.class",
+                "dev/vox/lss/platform/NeoForgeClientLoaderServices.class"):
+        if req not in names:
+            problems.append(f"{base}: missing {req} — the NeoForge entrypoint/seam "
+                            "wiring was excluded from the shadow jar")
+    if "META-INF/neoforge.mods.toml" not in names:
+        problems.append(f"{base}: missing META-INF/neoforge.mods.toml")
+    else:
+        toml = _read(jar, "META-INF/neoforge.mods.toml")
+        if 'modId="lss"' not in toml:
+            problems.append(f"{base}: neoforge mod id must stay 'lss' (the wire-compat contract)")
+        if _looks_unexpanded(toml) or 'version="${mod_version}"' in toml:
+            problems.append(f"{base}: neoforge.mods.toml has an unexpanded version template")
+        if 'config="lss.neoforge.mixins.json"' not in toml:
+            problems.append(f"{base}: neoforge.mods.toml lost the mixin config declaration "
+                            "(accessors + save hook would silently never apply)")
+    for required, why in (("lss.neoforge.mixins.json", "mixin config"),
+                          ("META-INF/accesstransformer.cfg", "access transformer"),
+                          ("META-INF/services/dev.vox.lss.platform.LoaderServices",
+                           "LoaderServices ServiceLoader registration")):
+        if required not in names:
+            problems.append(f"{base}: missing {required} ({why})")
+    if not any(n.startswith("dev/vox/lss/common/") and n.endswith(".class") for n in names):
+        problems.append(f"{base}: shaded jar missing the shared common/ classes")
+    for leak in ("net/minecraft/", "net/neoforged/"):
+        if any(n.startswith(leak) and n.endswith(".class") for n in names):
+            problems.append(f"{base}: {leak} classes leaked into the shadow jar — the shade "
+                            "configuration must never include the MC/loader classpath")
+
+
+# Classes that legitimately exist ONLY in the fabric jar (per-loader wiring homes; the
+# networking holders/renderer have same-FQN neoforge twins, so they are deliberately
+# NOT listed — their absence from the neoforge jar would be real drift).
+FABRIC_ONLY_CLASS_PREFIXES = (
+    "dev/vox/lss/LSSMod", "dev/vox/lss/LSSClient",
+    "dev/vox/lss/config/LSSConfigMenu", "dev/vox/lss/config/LSSModMenuIntegration",
+    # Sodium slider-curve policy for the config menu above — same Sodium-only surface,
+    # split into its own class only so Tier 1 can classload it (2026-08-14).
+    "dev/vox/lss/config/RateSliderStops",
+    "dev/vox/lss/networking/client/LSSClientCommands",
+    "dev/vox/lss/mixin/IntegratedServerLanHook",
+    "dev/vox/lss/mixin/trace/MovementRejectHook",
+    "dev/vox/lss/trace/MoveTraceBootstrap",
+    "dev/vox/lss/platform/FabricLoaderServices",
+    "dev/vox/lss/platform/FabricClientLoaderServices",
+    # Same-FQN TWIN classes: each loader implements its own body behind the shared
+    # outer name xplat compiles against, so their NESTED members legitimately differ
+    # (the fabric renderer's Proxy/MountInstance vs the neoforge cut; the fabric
+    # SessionConfigResponder alias). The OUTER class stays checked.
+    "dev/vox/lss/networking/client/FarPlayerRenderer$",
+    "dev/vox/lss/networking/client/LSSClientNetworking$",
+    "dev/vox/lss/networking/server/LSSServerNetworking$",
+    "dev/vox/lss/networking/LSSNetworking$",
+    "dev/vox/lss/mixin/ChunkSaveDataHook$",
+)
+
+
+def check_cross_loader_classes(fabric_jar, neoforge_jar, problems):
+    """The plan §4.2 cross-loader check, PRESENCE form (byte-equality would be brittle:
+    the two compiles see different classpaths, so constant pools can differ while the
+    source is identical — the shared xplat srcDir IS the byte-identity mechanism):
+    every shared class the fabric jar ships must exist in the neoforge jar, so a
+    shadowJar exclude or twin drift cannot silently drop shared surface."""
+    base = os.path.basename(neoforge_jar)
+    fab_names = set(_names(fabric_jar))
+    neo_names = set(_names(neoforge_jar))
+    missing = []
+    for n in fab_names:
+        if not (n.startswith("dev/vox/lss/") and n.endswith(".class")):
+            continue
+        # Boundary-exact matching (N-4 review): a bare prefix must match only the class
+        # itself or its nested members — never a name EXTENSION (e.g. a future shared
+        # MoveTraceBootstrapCommon must not ride the MoveTraceBootstrap allowlist row).
+        if any(n.startswith(pref) if pref.endswith("$")
+               else (n == pref + ".class" or n.startswith(pref + "$"))
+               for pref in FABRIC_ONLY_CLASS_PREFIXES):
+            continue
+        if n not in neo_names:
+            missing.append(n)
+    # common/ rides NESTED in the fabric jar (META-INF/jars/common-*.jar) but FLAT in
+    # the neoforge shade (N-4 review): without this walk a shadowJar exclude slimming a
+    # common subpackage would ship a NoClassDefFoundError jar with every check green.
+    for label, nested_names in _nested_jars(fabric_jar):
+        if "common-" not in label:
+            continue
+        for n in nested_names:
+            if (n.startswith("dev/vox/lss/common/") and n.endswith(".class")
+                    and n not in neo_names):
+                missing.append(f"{label}!{n}")
+    if missing:
+        problems.append(f"{base}: shared classes present in the fabric jar but missing here "
+                        f"({len(missing)}): {sorted(missing)[:5]} — a shadowJar exclude or "
+                        "twin drift dropped shared surface")
+
+
+def check_vss_neoforge_identity(jar, problems):
+    """The VSS neoforge rebrand: display fields flip, the wire identity does not."""
+    base = os.path.basename(jar)
+    try:
+        toml = _read(jar, "META-INF/neoforge.mods.toml")
+    except KeyError:
+        return  # check_neoforge_jar already flagged the missing descriptor
+    if 'modId="lss"' not in toml:
+        problems.append(f"{base}: vss neoforge mod id must stay 'lss' (wire identity)")
+    if 'displayName="Voxy Server Side"' not in toml:
+        problems.append(f"{base}: vss neoforge displayName must be 'Voxy Server Side'")
+    if "Xantha" not in toml:
+        problems.append(f"{base}: vss neoforge authors must include Xantha")
+
+
+def check_wire_identity_neoforge(lss_jar, vss_jar, problems):
+    """The VSS repackage must byte-copy every dev/vox/lss CLASS entry (flat shaded jar,
+    so the class set IS the wire surface — the Paper sha256-digest check's sibling;
+    was CRC32 until the N-4 review, which is weaker than the byte proof it claimed)."""
+    base = os.path.basename(vss_jar)
+    if _class_digest(lss_jar) != _class_digest(vss_jar):
+        problems.append(f"{base}: dev/vox/lss/**.class bytes differ from the LSS neoforge "
+                        "jar — the repackage must be a byte-copy rebrand (wire identity)")
+
+
+VSS_NEOFORGE_REBRAND_KEYS = ("displayName=", "authors=", "description=", "issueTrackerURL=")
+
+
+def check_vss_pair_neoforge(lss_jar, vss_jar, problems):
+    """The TOML pair diff (N-4 review): the VSS rebrand's line-anchored replaceFirst
+    rewrites can silently corrupt a reflowed multi-line TOML construct (orphaned
+    continuation text + a dangling triple-quote = an unloadable jar) while every
+    substring-presence check stays green. Pin the exact rewrite shape: identical line
+    COUNT, and every line byte-equal except the four branding keys."""
+    vbase = os.path.basename(vss_jar)
+    try:
+        lss = _read(lss_jar, "META-INF/neoforge.mods.toml").splitlines()
+        vss = _read(vss_jar, "META-INF/neoforge.mods.toml").splitlines()
+    except KeyError:
+        return  # the per-jar checks already flagged the missing descriptor
+    if len(lss) != len(vss):
+        problems.append(f"{vbase}: neoforge.mods.toml line count differs from the LSS jar "
+                        f"({len(vss)} vs {len(lss)}) — the rebrand must be line-for-line "
+                        "(a replaceFirst against a reflowed construct corrupts the TOML)")
+        return
+    for i, (a, b) in enumerate(zip(lss, vss), 1):
+        if a == b:
+            continue
+        if not any(a.lstrip().startswith(k) and b.lstrip().startswith(k)
+                   for k in VSS_NEOFORGE_REBRAND_KEYS):
+            problems.append(f"{vbase}: neoforge.mods.toml line {i} differs outside the "
+                            f"branding keys {VSS_NEOFORGE_REBRAND_KEYS}: {b!r}")
+
+
 def check_third_party_notices(jar, is_fabric, problems):
     """C6 (review-fixes round): the release jars redistribute two third-party native
     binaries (sqlite-jdbc, zstd-jni); the notices file shipped only by grace of a
@@ -334,23 +499,25 @@ def check_vss_fabric_identity(jar, problems):
 
 
 def check_vss_paper_identity(jar, problems):
-    """The VSS Paper jar is a branded byte-copy of the LSS shadowJar. `name: LodServerSupport`
-    IS the plugin identity + config-folder name and MUST stay verbatim — only the top-level
-    description is rebranded (Paper plugins carry no display name/icon distinct from `name`)."""
+    """The VSS Paper jar is a branded byte-copy of the LSS shadowJar. Since 2026-08-13
+    (XANTHA's release patch) the plugin NAME rebrands to VoxyServerSide — the data folder
+    deliberately forks to plugins/VoxyServerSide/ (a Paper-side jar swap starts a fresh
+    config folder; the filename candidates only adopt within one folder). main/api-version/
+    folia-supported stay verbatim — the identity + wire contract."""
     base = os.path.basename(jar)
     try:
         yml = _read(jar, "plugin.yml")
     except KeyError:
         return  # check_paper_jar already flags a missing plugin.yml
-    if not re.search(r"^name:\s*LodServerSupport\s*$", yml, re.MULTILINE):
-        problems.append(f"{base}: vss Paper jar plugin name must stay 'LodServerSupport' "
-                        "— forking it breaks LSS/VSS interchangeability + the config folder")
+    if not re.search(r"^name:\s*VoxyServerSide\s*$", yml, re.MULTILINE):
+        problems.append(f"{base}: vss Paper jar plugin name must be 'VoxyServerSide' "
+                        "(the name rebrand is part of the VSS presentation since 2026-08-13)")
 
 
 # fabric.mod.json fields the VSS rebrand MAY touch; everything else must be byte-equal to the
 # LSS jar's descriptor (the build comments in fabric/build.gradle claim this invariant — this
 # check enforces it, so a future vssJar edit can't silently fork entrypoints/mixins/depends).
-VSS_FABRIC_ALLOWED_DIFF = {"name", "description", "icon", "contact"}
+VSS_FABRIC_ALLOWED_DIFF = {"name", "description", "icon", "contact", "authors"}
 
 
 def check_vss_pair_fabric(lss_jar, vss_jar, problems):
@@ -374,19 +541,50 @@ def check_vss_pair_fabric(lss_jar, vss_jar, problems):
     icon = vmeta.get("icon")
     if icon and icon not in _names(vss_jar):
         problems.append(f"{vbase}: fabric.mod.json icon {icon!r} is not an entry in the jar")
+    # Lang-value rebrand pin (review-wave V-M2, generalized for the zh locales): the
+    # vssJar rewrites EVERY assets/lss/lang/*.json entry's VALUES — a silent no-op ships
+    # VSS Sodium pages reading "LOD Server Support"/"LSS" mid-sentence (the exact defect
+    # the rewrite exists to fix). Skipped when the jar has no lang entries (synthetic
+    # selftest fixtures); the byte-copy loop cannot drop entries. The LSS token match is
+    # explicit ASCII lookarounds, not \b: Python's \b treats CJK as word chars, so a
+    # CJK-adjacent "LSS" the Java rewrite WOULD rebrand would slip a \b-based checker.
+    def _lang_names(jar):
+        return {n for n in _names(jar)
+                if n.startswith("assets/lss/lang/") and n.endswith(".json")}
+    for LANG in sorted(_lang_names(lss_jar) | _lang_names(vss_jar)):
+        if LANG in _names(lss_jar) and LANG not in _names(vss_jar):
+            # Structurally impossible via the byte-copy loop; a hit means the resource
+            # moved and the build's rewrite keys on the old path prefix.
+            problems.append(f"{vbase}: {LANG} present in the LSS jar but missing from the"
+                            " VSS jar — the lang rewrite and this pin key on that path")
+            continue
+        if LANG not in _names(vss_jar):
+            continue
+        try:
+            vlang = json.loads(_read(vss_jar, LANG))
+        except (KeyError, json.JSONDecodeError):
+            problems.append(f"{vbase}: {LANG} is not valid JSON after the lang rebrand")
+            vlang = {}
+        for k, v in vlang.items():
+            sv = str(v)
+            if "LOD Server Support" in sv or re.search(
+                    r"(?<![A-Za-z0-9_])LSS(?![A-Za-z0-9_])", sv):
+                problems.append(f"{vbase}: {LANG} value {k!r} still carries LSS branding "
+                                "— the vssJar lang rewrite no-opped or missed it")
 
 
 # plugin.yml lines that are the identity + wire contract: the VSS rebrand must leave every
-# one of them byte-identical to the LSS jar (rebranding them would break interchangeability,
-# the config-folder name, or — for a client on the other brand — nothing on the wire, but the
-# plugin identity a server operator depends on). `main:` also pins the package/class names.
-VSS_PAPER_IDENTITY_PREFIXES = ("name:", "main:", "api-version:", "folia-supported:")
+# one of them byte-identical to the LSS jar. `main:` also pins the package/class names.
+# `name:` LEFT this list 2026-08-13 (XANTHA's release patch): the VSS plugin presents as
+# VoxyServerSide — check_vss_paper_identity pins the rebranded value instead, and the
+# data-folder fork it causes is documented there.
+VSS_PAPER_IDENTITY_PREFIXES = ("main:", "api-version:", "folia-supported:", "version:")
 
 
 def check_vss_pair_paper(lss_jar, vss_jar, problems):
     """The VSS Paper jar rebrands plugin.yml's DISPLAY + LOCAL-command surface only. Line
     count must be unchanged (every rewrite is in-place). The identity/wire lines
-    (name/main/api-version/folia) must be byte-identical. And the rebrand must actually have
+    (main/api-version/folia; name rebrands since 2026-08-13) must be byte-identical. And the rebrand must actually have
     happened: the VSS jar carries vsslod / vss.admin / the Voxy description and NONE of the
     LSS tokens; the LSS jar carries the LSS tokens. The command name + permission node are
     LOCAL (never on the wire), so this rebrand does not affect LSS<->VSS compatibility."""
@@ -425,14 +623,18 @@ def check_vss_pair_paper(lss_jar, vss_jar, problems):
                             "(replaceFirst silently no-opped) — VSS would show the LSS "
                             "description / Modrinth link")
     # The rebrand must have swapped every LSS token for its VSS counterpart.
-    for tok in ("lsslod", "lss.admin", "LOD Server Support admin", "Access to LSS admin"):
+    # lss.farplayers.hidden is deliberately NOT in this list: BOTH brand spellings ship
+    # in BOTH jars since 2026-08-13 (Bukkit's undeclared-node op default made the rename
+    # + cross-brand enforcement silently hide ops) — see plugin.yml + the vssJar comment.
+    for tok in ("lsslod", "lss.admin",
+                "LOD Server Support admin", "Access to LSS admin"):
         if tok not in ltext:
             problems.append(f"{vbase}: LSS plugin.yml is missing expected token {tok!r} "
                             "(source shape changed — the VSS rewrite may silently no-op)")
         if tok in vtext:
             problems.append(f"{vbase}: VSS plugin.yml still contains LSS token {tok!r} "
                             "— the rebrand rewrite no-opped")
-    for tok in ("vsslod", "vss.admin", "Voxy Server Side"):
+    for tok in ("vsslod", "vss.admin", "vss.farplayers.hidden", "Voxy Server Side"):
         if tok not in vtext:
             problems.append(f"{vbase}: VSS plugin.yml is missing expected VSS token {tok!r} "
                             "— the rebrand did not fully apply")
@@ -532,17 +734,19 @@ def _vss_counterpart(vss_jar, lss_jars, vss_prefix, lss_prefix):
 
 def check_glob_hygiene(problems, soak_jars):
     """The dev-only soak jar must never be picked up by a release glob; every CI-named release
-    jar (all four brand/platform combinations) must be picked up by exactly one release glob (a
+    jar (all six brand/platform combinations) must be picked up by exactly one release glob (a
     publish that matches nothing fails CI)."""
     for sj in soak_jars:
         base = os.path.basename(sj)
         for glob in RELEASE_GLOBS:
             if fnmatch.fnmatch(base, glob):
                 problems.append(f"{base}: dev soak jar MATCHES release glob {glob} — would be published")
-    # Round-trip every CI artifact name format against the globs (HD-043). Each of the four
+    # Round-trip every CI artifact name format against the globs (HD-043). Each of the six
     # shipped prefixes must match one release glob; the soak jar must match none.
     for prefix in ("lod-server-support-fabric", "lod-server-support-paper",
-                   "voxy-server-side-fabric", "voxy-server-side-paper"):
+                   "lod-server-support-neoforge",
+                   "voxy-server-side-fabric", "voxy-server-side-paper",
+                   "voxy-server-side-neoforge"):
         ci_name = f"{prefix}-{CI_NAME_SUFFIX}"
         if not any(fnmatch.fnmatch(ci_name, g) for g in RELEASE_GLOBS):
             problems.append(f"CI name {ci_name} matches no release glob")
@@ -553,19 +757,24 @@ def check_glob_hygiene(problems, soak_jars):
 def discover(problems, expected_version=None, root=ROOT):
     fab_libs = os.path.join(root, "fabric", "build", "libs")
     pap_libs = os.path.join(root, "paper", "build", "libs")
+    neo_libs = os.path.join(root, "neoforge", "build", "libs")
     # `voxy-server-side-*` and `lod-server-support-*` are disjoint prefixes, so neither
     # discovery list contaminates the other.
     fab = _jars_in(fab_libs, "lod-server-support-fabric")
     pap = _jars_in(pap_libs, "lod-server-support-paper")
     vfab = _jars_in(fab_libs, "voxy-server-side-fabric")
     vpap = _jars_in(pap_libs, "voxy-server-side-paper")
+    neo = _jars_in(neo_libs, "lod-server-support-neoforge")
+    vneo = _jars_in(neo_libs, "voxy-server-side-neoforge")
     soak = _jars_in(pap_libs, SOAK_JAR_PREFIX)
-    # All four families must be present — a release ships all four, and a missing family
+    # All six families must be present — a release ships all six, and a missing family
     # (e.g. the vssJar finalizer silently unwired) must fail the gate, not shrink it.
     for jars, what, hint in ((fab, "lod-server-support-fabric", "run :fabric:build"),
                              (pap, "lod-server-support-paper", "run :paper:shadowJar"),
                              (vfab, "voxy-server-side-fabric", "the fabric vssJar task did not run"),
-                             (vpap, "voxy-server-side-paper", "the paper vssJar finalizer did not run")):
+                             (vpap, "voxy-server-side-paper", "the paper vssJar finalizer did not run"),
+                             (neo, "lod-server-support-neoforge", "run :neoforge:build"),
+                             (vneo, "voxy-server-side-neoforge", "the neoforge vssJar task did not run")):
         if not jars:
             problems.append(f"no {what} jar found in build/libs — {hint}")
     if expected_version:
@@ -583,13 +792,17 @@ def discover(problems, expected_version=None, root=ROOT):
         pap = _require_version(pap, "lod-server-support-paper", expected_version, problems, mc=mc)
         vfab = _require_version(vfab, "voxy-server-side-fabric", expected_version, problems, mc=mc)
         vpap = _require_version(vpap, "voxy-server-side-paper", expected_version, problems, mc=mc)
+        neo = _require_version(neo, "lod-server-support-neoforge", expected_version, problems, mc=mc)
+        vneo = _require_version(vneo, "voxy-server-side-neoforge", expected_version, problems, mc=mc)
         # With --version the ambiguity guard is off, but release.yml's upload globs are
         # greedy: any OTHER versioned jar sitting beside the selected one would be attached
         # to the release too. Flag them (the suffixless local dev names stay tolerated).
         for sel, allj, prefix in ((fab, _jars_in(fab_libs, "lod-server-support-fabric"), "lod-server-support-fabric"),
                                   (pap, _jars_in(pap_libs, "lod-server-support-paper"), "lod-server-support-paper"),
                                   (vfab, _jars_in(fab_libs, "voxy-server-side-fabric"), "voxy-server-side-fabric"),
-                                  (vpap, _jars_in(pap_libs, "voxy-server-side-paper"), "voxy-server-side-paper")):
+                                  (vpap, _jars_in(pap_libs, "voxy-server-side-paper"), "voxy-server-side-paper"),
+                                  (neo, _jars_in(neo_libs, "lod-server-support-neoforge"), "lod-server-support-neoforge"),
+                                  (vneo, _jars_in(neo_libs, "voxy-server-side-neoforge"), "voxy-server-side-neoforge")):
             stale = [os.path.basename(j) for j in allj
                      if j not in sel and os.path.basename(j) != f"{prefix}.jar"]
             if sel and stale:
@@ -600,6 +813,8 @@ def discover(problems, expected_version=None, root=ROOT):
         _flag_ambiguous(pap, "lod-server-support-paper", problems)
         _flag_ambiguous(vfab, "voxy-server-side-fabric", problems)
         _flag_ambiguous(vpap, "voxy-server-side-paper", problems)
+        _flag_ambiguous(neo, "lod-server-support-neoforge", problems)
+        _flag_ambiguous(vneo, "voxy-server-side-neoforge", problems)
     for jar in fab:
         check_fabric_jar(jar, problems)
         check_store_natives_fabric(jar, problems)
@@ -608,13 +823,34 @@ def discover(problems, expected_version=None, root=ROOT):
         check_paper_jar(jar, problems)
         check_store_natives_paper(jar, problems)
         check_third_party_notices(jar, False, problems)
+    for jar in neo:
+        check_neoforge_jar(jar, problems)
+        # Flat shaded jar — the paper natives matrix check applies verbatim.
+        check_store_natives_paper(jar, problems)
+        check_third_party_notices(jar, False, problems)
+        if fab:
+            check_cross_loader_classes(fab[0], jar, problems)
+    for jar in vneo:
+        check_neoforge_jar(jar, problems)
+        check_store_natives_paper(jar, problems)
+        check_third_party_notices(jar, False, problems)
+        check_vss_neoforge_identity(jar, problems)
+        check_brand_properties(jar, _BRAND_VSS, problems)
+        src = _vss_counterpart(jar, neo, "voxy-server-side-neoforge", "lod-server-support-neoforge")
+        if src is None:
+            problems.append(f"{os.path.basename(jar)}: no matching lod-server-support-neoforge "
+                            "jar to pair-verify against (stale vss jar?)")
+        else:
+            check_wire_identity_neoforge(src, jar, problems)
+            check_vss_pair_neoforge(src, jar, problems)
     # The vss jars ship to real users → identical safety gate, plus the identity guardrail
-    # that pins them as branded byte-copies (mod id `lss` / plugin name LodServerSupport),
+    # that pins them as branded byte-copies (mod id `lss`; plugin name VoxyServerSide since
+    # the 2026-08-13 rebrand),
     # plus a descriptor pair-diff against the LSS jar they were repackaged from (only the
     # branding fields may differ — and must). A vss jar without its LSS counterpart cannot
     # be pair-verified and is a failure: the repackage task guarantees the source jar exists.
     # LSS jars must carry the LSS branding values (a rewrite regression could flip them).
-    for jar in fab + pap:
+    for jar in fab + pap + neo:
         check_brand_properties(jar, _BRAND_LSS, problems)
     for jar in vfab:
         check_fabric_jar(jar, problems)
@@ -643,7 +879,7 @@ def discover(problems, expected_version=None, root=ROOT):
             check_vss_pair_paper(src, jar, problems)
             check_wire_identity_paper(src, jar, problems)
     check_glob_hygiene(problems, soak)
-    return fab, pap, vfab, vpap, soak
+    return fab, pap, vfab, vpap, neo, vneo, soak
 
 
 def _jars_in(d, prefix):
@@ -1007,12 +1243,12 @@ def _selftest():
         check_fabric_jar(leaky_vfab, p)
         check(any("benchmark" in m for m in p), "vss jar dev-code leak not caught by shared gate")
 
-        # A clean vss Paper jar: name STILL LodServerSupport → passes both gates.
+        # A clean vss Paper jar: name VoxyServerSide (the 2026-08-13 rebrand) → passes.
         good_vpap = os.path.join(td, "voxy-server-side-paper.jar")
         _make_jar(good_vpap, {
-            "plugin.yml": ("name: LodServerSupport\nversion: 0.7.0\n"
+            "plugin.yml": ("name: VoxyServerSide\nversion: 0.7.0\n"
                            "folia-supported: true\n"
-                           "description: Server-side backend for Voxy...\n"),
+                           "description: Render distant Voxy LODs on servers\n"),
             "dev/vox/lss/paper/LSSPaperPlugin.class": "x",
             "dev/vox/lss/common/PositionUtil.class": "x",
         }, manifest="Manifest-Version: 1.0\npaperweight-mappings-namespace: mojang\n")
@@ -1021,18 +1257,18 @@ def _selftest():
         check_vss_paper_identity(good_vpap, p)
         check(p == [], f"clean vss paper jar flagged: {p}")
 
-        # A vss Paper jar whose plugin name was forked MUST fail — that IS the config-folder
-        # + plugin identity, and forking it breaks interchangeability.
-        forked_vpap = os.path.join(td, "voxy-server-side-paper-forked.jar")
-        _make_jar(forked_vpap, {
-            "plugin.yml": "name: VoxyServerSide\nversion: 0.7.0\n",
+        # A vss Paper jar that KEPT the LSS plugin name MUST fail — the rebrand silently
+        # no-opped (the pre-2026-08-13 shape, now the regression direction).
+        unrenamed_vpap = os.path.join(td, "voxy-server-side-paper-unrenamed.jar")
+        _make_jar(unrenamed_vpap, {
+            "plugin.yml": "name: LodServerSupport\nversion: 0.7.0\n",
             "dev/vox/lss/paper/LSSPaperPlugin.class": "x",
             "dev/vox/lss/common/PositionUtil.class": "x",
         }, manifest="Manifest-Version: 1.0\npaperweight-mappings-namespace: mojang\n")
         p = []
-        check_vss_paper_identity(forked_vpap, p)
-        check(any("must stay 'LodServerSupport'" in m for m in p),
-              f"forked vss plugin name not caught: {p}")
+        check_vss_paper_identity(unrenamed_vpap, p)
+        check(any("must be 'VoxyServerSide'" in m for m in p),
+              f"un-renamed vss plugin name not caught: {p}")
 
         # ---- VSS≡LSS pair checks: only branding fields may differ, and must ----
         pair_lss_fab = os.path.join(td, "pair-lss-fabric.jar")
@@ -1042,6 +1278,10 @@ def _selftest():
                 "version": "0.7.0", "entrypoints": {"main": ["dev.vox.lss.LSSMod"]},
                 "mixins": ["lss.mixins.json"], "icon": "assets/lss/icon.png"}),
             "assets/lss/icon.png": "PNG",
+            "assets/lss/lang/en_us.json": json.dumps(
+                {"lss.config.page": "LOD Server Support", "lss.x": "LSS toggles"}),
+            "assets/lss/lang/zh_cn.json": json.dumps(
+                {"lss.x": "\u4f7f\u7528 LSS \u5f00\u5173"}),
         })
         pair_ok_vfab = os.path.join(td, "pair-ok-vss-fabric.jar")
         _make_jar(pair_ok_vfab, {
@@ -1051,10 +1291,53 @@ def _selftest():
                 "mixins": ["lss.mixins.json"], "icon": "assets/lss/icon-vss.png"}),
             "assets/lss/icon.png": "PNG",
             "assets/lss/icon-vss.png": "PNG2",
+            "assets/lss/lang/en_us.json": json.dumps(
+                {"lss.config.page": "Voxy Server Side", "lss.x": "VSS toggles"}),
+            "assets/lss/lang/zh_cn.json": json.dumps(
+                {"lss.x": "\u4f7f\u7528 VSS \u5f00\u5173"}),
         })
         p = []
         check_vss_pair_fabric(pair_lss_fab, pair_ok_vfab, p)
         check(p == [], f"clean fabric pair flagged: {p}")
+
+        # a vss jar whose NON-en_us locale kept LSS branding MUST fail (the zh
+        # generalization's catch side — the old pin keyed on the en_us literal and a
+        # clean en_us beside a missed zh_cn shipped LSS-branded Chinese pages)
+        pair_zh_vfab = os.path.join(td, "pair-zhlang-vss-fabric.jar")
+        _make_jar(pair_zh_vfab, {
+            "fabric.mod.json": json.dumps({
+                "id": "lss", "name": "Voxy Server Side", "description": "VSS.",
+                "version": "0.7.0", "entrypoints": {"main": ["dev.vox.lss.LSSMod"]},
+                "mixins": ["lss.mixins.json"], "icon": "assets/lss/icon-vss.png"}),
+            "assets/lss/icon.png": "PNG",
+            "assets/lss/icon-vss.png": "PNG2",
+            "assets/lss/lang/en_us.json": json.dumps(
+                {"lss.config.page": "Voxy Server Side", "lss.x": "VSS toggles"}),
+            "assets/lss/lang/zh_cn.json": json.dumps(
+                {"lss.x": "\u4f7f\u7528 LSS \u5f00\u5173"}),
+        })
+        p = []
+        check_vss_pair_fabric(pair_lss_fab, pair_zh_vfab, p)
+        check(any("zh_cn.json" in m and "still carries LSS branding" in m for m in p),
+              f"un-rebranded zh_cn lang values not caught: {p}")
+
+        # a vss jar whose lang VALUES kept the LSS branding MUST fail (the V-M2 pin's
+        # catch side — a silently no-opped lang rewrite ships LSS-branded Sodium pages)
+        pair_nolang_vfab = os.path.join(td, "pair-nolang-vss-fabric.jar")
+        _make_jar(pair_nolang_vfab, {
+            "fabric.mod.json": json.dumps({
+                "id": "lss", "name": "Voxy Server Side", "description": "VSS.",
+                "version": "0.7.0", "entrypoints": {"main": ["dev.vox.lss.LSSMod"]},
+                "mixins": ["lss.mixins.json"], "icon": "assets/lss/icon-vss.png"}),
+            "assets/lss/icon.png": "PNG",
+            "assets/lss/icon-vss.png": "PNG2",
+            "assets/lss/lang/en_us.json": json.dumps(
+                {"lss.config.page": "LOD Server Support", "lss.x": "LSS toggles"}),
+        })
+        p = []
+        check_vss_pair_fabric(pair_lss_fab, pair_nolang_vfab, p)
+        check(any("still carries LSS branding" in m for m in p),
+              f"un-rebranded vss lang values not caught: {p}")
 
         # a vss descriptor whose NON-branding field drifted (entrypoints fork) MUST fail
         pair_forked_vfab = os.path.join(td, "pair-forked-vss-fabric.jar")
@@ -1101,6 +1384,7 @@ def _selftest():
                           "main: dev.vox.lss.paper.LSSPaperPlugin\n"
                           "api-version: '26.2'\n"
                           "description: LSS plugin.\n"
+                          "author: VoX\n"
                           "website: https://modrinth.com/plugin/lod-server-support\n"
                           "commands:\n  lsslod:\n"
                           "    description: LOD Server Support admin commands\n"
@@ -1108,10 +1392,22 @@ def _selftest():
                           "    permission: lss.admin\n"
                           "permissions:\n  lss.admin:\n"
                           "    description: Access to LSS admin commands\n"
-                          "    default: op\n")
-        # Mirror vssJar's exact rewrites.
+                          "    default: op\n"
+                          # BOTH brand spellings ship in BOTH jars (2026-08-13) — the
+                          # undeclared-node op default made a single-brand rename unsafe.
+                          "  lss.farplayers.hidden:\n"
+                          "    description: hidden\n"
+                          "    default: false\n"
+                          "  vss.farplayers.hidden:\n"
+                          "    description: hidden (VSS spelling)\n"
+                          "    default: false\n")
+        # Mirror vssJar's exact rewrites (2026-08-13 shape: name/author rebrand too; the
+        # farplayers node is deliberately NOT renamed — both spellings ship in both jars).
         VSS_PLUGIN_YML = (LSS_PLUGIN_YML
-            .replace("description: LSS plugin.", "description: VSS plugin.", 1)
+            .replace("name: LodServerSupport", "name: VoxyServerSide", 1)
+            .replace("description: LSS plugin.",
+                     "description: Render distant Voxy LODs on servers", 1)
+            .replace("author: VoX", "author: Xantha, VoX", 1)
             .replace("website: https://modrinth.com/plugin/lod-server-support",
                      "website: https://modrinth.com/plugin/voxy-server-side", 1)
             .replace("lsslod", "vsslod")
@@ -1143,10 +1439,11 @@ def _selftest():
               and any("missing expected VSS token 'vsslod'" in m for m in p),
               f"paper partial rebrand not caught: {p}")
 
-        # rebranding an IDENTITY line (plugin name / config-folder name) MUST fail
+        # rebranding an IDENTITY line (main: — the package/class contract) MUST fail
         pair_idname_vpap = os.path.join(td, "pair-idname-vss-paper.jar")
         _make_jar(pair_idname_vpap, {"plugin.yml": VSS_PLUGIN_YML.replace(
-            "name: LodServerSupport", "name: VoxyServerSide", 1)})
+            "main: dev.vox.lss.paper.LSSPaperPlugin",
+            "main: dev.vox.vss.paper.VSSPaperPlugin", 1)})
         p = []
         check_vss_pair_paper(pair_lss_pap, pair_idname_vpap, p)
         check(any("identity line" in m for m in p),
@@ -1164,7 +1461,8 @@ def _selftest():
               f"paper website no-op not caught: {p}")
         pair_nodesc_vpap = os.path.join(td, "pair-nodesc-vss-paper.jar")
         _make_jar(pair_nodesc_vpap, {"plugin.yml": VSS_PLUGIN_YML.replace(
-            "description: VSS plugin.", "description: LSS plugin.", 1)})
+            "description: Render distant Voxy LODs on servers",
+            "description: LSS plugin.", 1)})
         p = []
         check_vss_pair_paper(pair_lss_pap, pair_nodesc_vpap, p)
         check(any("'description:' line was not rebranded" in m for m in p),
@@ -1330,20 +1628,29 @@ def _selftest():
         droot = os.path.join(td, "tree")
         dfab = os.path.join(droot, "fabric", "build", "libs")
         dpap = os.path.join(droot, "paper", "build", "libs")
+        dneo = os.path.join(droot, "neoforge", "build", "libs")
         os.makedirs(dfab)
         os.makedirs(dpap)
+        os.makedirs(dneo)
         PY_LSS = ("name: LodServerSupport\nversion: '0.7.0'\n"
                   "main: dev.vox.lss.paper.LSSPaperPlugin\napi-version: '26.2'\n"
                   "folia-supported: true\n"
                   "description: LSS plugin.\n"
+                  "author: VoX\n"
                   "website: https://modrinth.com/plugin/lod-server-support\n"
                   "commands:\n  lsslod:\n"
                   "    description: LOD Server Support admin commands\n"
                   "    usage: /lsslod <stats|diag>\n    permission: lss.admin\n"
                   "permissions:\n  lss.admin:\n"
-                  "    description: Access to LSS admin commands\n    default: op\n")
+                  "    description: Access to LSS admin commands\n    default: op\n"
+                  "  lss.farplayers.hidden:\n    description: hidden\n    default: false\n"
+                  "  vss.farplayers.hidden:\n    description: hidden\n    default: false\n")
+        # The 2026-08-13 rewrite shape: name/author rebrand; farplayers nodes NOT renamed.
         PY_VSS = (PY_LSS
-                  .replace("description: LSS plugin.", "description: VSS plugin.", 1)
+                  .replace("name: LodServerSupport", "name: VoxyServerSide", 1)
+                  .replace("description: LSS plugin.",
+                           "description: Render distant Voxy LODs on servers", 1)
+                  .replace("author: VoX", "author: Xantha, VoX", 1)
                   .replace("plugin/lod-server-support", "plugin/voxy-server-side", 1)
                   .replace("lsslod", "vsslod")
                   .replace("LOD Server Support admin commands", "Voxy Server Side admin commands")
@@ -1361,6 +1668,8 @@ def _selftest():
             entries = {
                 "fabric.mod.json": json.dumps(meta),
                 "dev/vox/lss/LSSMod.class": "x",
+                # A SHARED class (xplat) — the cross-loader presence check's subject.
+                "dev/vox/lss/networking/server/RequestProcessingService.class": "x",
                 "META-INF/jars/common-0.7.0.jar": _nested_common("0.7.0"),
                 "lss-brand.properties": brand,
                 "LICENSE_lod-server-support-fabric": "MIT",
@@ -1391,10 +1700,54 @@ def _selftest():
                            extra={"assets/lss/icon-vss.png": "PNG"})
         _write_tree_paper("lod-server-support-paper.jar", PY_LSS, BRAND_LSS)
         _write_tree_paper("voxy-server-side-paper.jar", PY_VSS, BRAND_VSS)
+
+        TOML_LSS = ('modLoader="javafml"\nloaderVersion="[4,)"\nlicense="MIT"\n\n[[mods]]\n'
+                    'modId="lss"\nversion="0.7.0"\ndisplayName="LOD Server Support"\n'
+                    'authors="VoX"\ndescription=\'\'\'LSS.\'\'\'\n\n'
+                    '[[mixins]]\nconfig="lss.neoforge.mixins.json"\n')
+        TOML_VSS = (TOML_LSS
+                    .replace('displayName="LOD Server Support"', 'displayName="Voxy Server Side"')
+                    .replace('authors="VoX"', 'authors="Xantha, VoX"'))
+
+        def _write_tree_neoforge(name, toml, brand, shared_class="x", extra=None, drop=()):
+            entries = {
+                "META-INF/neoforge.mods.toml": toml,
+                "lss.neoforge.mixins.json": "{}",
+                "META-INF/accesstransformer.cfg": "public net.minecraft.world.level.chunk.PalettedContainer data",
+                "META-INF/services/dev.vox.lss.platform.LoaderServices":
+                    "dev.vox.lss.platform.NeoForgeLoaderServices",
+                "lss-brand.properties": brand,
+                "dev/vox/lss/common/PositionUtil.class": "x",
+                "dev/vox/lss/networking/server/RequestProcessingService.class": shared_class,
+                "dev/vox/lss/neoforge/LSSNeoMod.class": "x",
+                "dev/vox/lss/platform/NeoForgeLoaderServices.class": "x",
+                "dev/vox/lss/platform/NeoForgeClientLoaderServices.class": "x",
+                "THIRD-PARTY-NOTICES": "sqlite-jdbc / zstd-jni notices " + "x" * 100,
+            }
+            entries.update(_store_paper_entries())
+            entries.update(extra or {})
+            for d in drop:
+                entries.pop(d, None)
+            _make_jar(os.path.join(dneo, name), entries)
+
+        _write_tree_neoforge("lod-server-support-neoforge.jar", TOML_LSS, BRAND_LSS)
+        _write_tree_neoforge("voxy-server-side-neoforge.jar", TOML_VSS, BRAND_VSS)
         p = []
-        fab_d, pap_d, vfab_d, vpap_d, _ = discover(p, root=droot)
-        check(p == [] and len(fab_d) == len(pap_d) == len(vfab_d) == len(vpap_d) == 1,
+        fab_d, pap_d, vfab_d, vpap_d, neo_d, vneo_d, _ = discover(p, root=droot)
+        check(p == [] and len(fab_d) == len(pap_d) == len(vfab_d) == len(vpap_d)
+              == len(neo_d) == len(vneo_d) == 1,
               f"clean synthetic tree flagged by discover: {p}")
+
+        # a neoforge jar whose entrypoint/seam classes were shaded OUT must fail
+        # (round-3 review NIT-3: the gametest smoke runs off classes dirs, never the
+        # jar, so a careless shadowJar exclude shipped an entrypoint-less jar green)
+        _write_tree_neoforge("lod-server-support-neoforge.jar", TOML_LSS, BRAND_LSS,
+                             drop=("dev/vox/lss/neoforge/LSSNeoMod.class",))
+        p = []
+        check_neoforge_jar(os.path.join(dneo, "lod-server-support-neoforge.jar"), p)
+        check(any("LSSNeoMod" in m and "excluded from the shadow jar" in m for m in p),
+              f"entrypoint-less neoforge jar not caught: {p}")
+        _write_tree_neoforge("lod-server-support-neoforge.jar", TOML_LSS, BRAND_LSS)
 
         # a missing vss family must fail the gate (silently unwired repackage task)
         os.remove(os.path.join(dfab, "voxy-server-side-fabric.jar"))
@@ -1413,6 +1766,84 @@ def _selftest():
         discover(p, root=droot)
         check(any("must stay 'lss'" in m for m in p),
               f"forked vss id not caught through discover: {p}")
+        # restore the clean fabric vss fixture for the neoforge cases below
+        _write_tree_fabric("voxy-server-side-fabric.jar",
+                           {"id": "lss", "name": "Voxy Server Side", "version": "0.7.0",
+                            "icon": "assets/lss/icon-vss.png"},
+                           BRAND_VSS,
+                           extra={"assets/lss/icon-vss.png": "PNG"})
+
+        # a missing neoforge family must fail the gate (N-4: the family is a release blocker)
+        os.remove(os.path.join(dneo, "lod-server-support-neoforge.jar"))
+        p = []
+        discover(p, root=droot)
+        check(any("no lod-server-support-neoforge jar" in m for m in p),
+              f"missing neoforge family not caught: {p}")
+        _write_tree_neoforge("lod-server-support-neoforge.jar", TOML_LSS, BRAND_LSS)
+
+        # a VSS neoforge jar with drifted class bytes must fail wire identity
+        _write_tree_neoforge("voxy-server-side-neoforge.jar", TOML_VSS, BRAND_VSS,
+                             shared_class="DRIFTED")
+        p = []
+        discover(p, root=droot)
+        check(any("byte-copy rebrand" in m for m in p),
+              f"vss neoforge class drift not caught: {p}")
+        _write_tree_neoforge("voxy-server-side-neoforge.jar", TOML_VSS, BRAND_VSS)
+
+        # a leaked dev-only class must fail the forbidden scan
+        _write_tree_neoforge("lod-server-support-neoforge.jar", TOML_LSS, BRAND_LSS,
+                             extra={"dev/vox/lss/benchmark/BenchmarkHook.class": "x"})
+        p = []
+        discover(p, root=droot)
+        check(any("benchmark" in m and "neoforge" in m for m in p),
+              f"neoforge forbidden class not caught: {p}")
+
+        # a dropped mixin-config declaration must be caught (accessors silently dead)
+        _write_tree_neoforge("lod-server-support-neoforge.jar",
+                             TOML_LSS.replace('[[mixins]]\nconfig="lss.neoforge.mixins.json"\n', ""),
+                             BRAND_LSS)
+        p = []
+        discover(p, root=droot)
+        check(any("lost the mixin config declaration" in m for m in p),
+              f"missing mixin declaration not caught: {p}")
+
+        # cross-loader drift: the fabric jar ships a shared class the neoforge jar lacks
+        _write_tree_neoforge("lod-server-support-neoforge.jar", TOML_LSS, BRAND_LSS,
+                             drop=("dev/vox/lss/networking/server/RequestProcessingService.class",))
+        p = []
+        discover(p, root=droot)
+        check(any("twin drift dropped shared surface" in m for m in p),
+              f"cross-loader class drop not caught: {p}")
+        _write_tree_neoforge("lod-server-support-neoforge.jar", TOML_LSS, BRAND_LSS)
+
+        # cross-loader drift, NESTED flavor (N-4 review): fabric ships common/ inside
+        # META-INF/jars, so a neoforge shade slimming a common class must still red
+        _write_tree_neoforge("lod-server-support-neoforge.jar", TOML_LSS, BRAND_LSS,
+                             drop=("dev/vox/lss/common/PositionUtil.class",))
+        p = []
+        discover(p, root=droot)
+        check(any("twin drift dropped shared surface" in m for m in p),
+              f"nested-common class drop not caught: {p}")
+        _write_tree_neoforge("lod-server-support-neoforge.jar", TOML_LSS, BRAND_LSS)
+
+        # the VSS TOML pair check (N-4 review): a non-branding line drift must red
+        _write_tree_neoforge("voxy-server-side-neoforge.jar",
+                             TOML_VSS.replace('loaderVersion="[4,)"', 'loaderVersion="[9,)"'),
+                             BRAND_VSS)
+        p = []
+        discover(p, root=droot)
+        check(any("differs outside the branding keys" in m for m in p),
+              f"vss neoforge non-branding TOML drift not caught: {p}")
+
+        # ... and a corrupted rewrite that changes the line count (the reflowed-construct
+        # replaceFirst failure mode: orphaned continuation + dangling triple-quote)
+        _write_tree_neoforge("voxy-server-side-neoforge.jar",
+                             TOML_VSS + "orphaned continuation text'''\n", BRAND_VSS)
+        p = []
+        discover(p, root=droot)
+        check(any("line count differs" in m for m in p),
+              f"vss neoforge TOML line-count corruption not caught: {p}")
+        _write_tree_neoforge("voxy-server-side-neoforge.jar", TOML_VSS, BRAND_VSS)
 
     print(f"release_check selftest OK: {n} cases")
     return 0
@@ -1431,9 +1862,9 @@ def main(argv):
         return _selftest()
 
     problems = []
-    fab, pap, vfab, vpap, soak = discover(problems, expected_version=args.version)
-    print(f"release_check: lss(fabric={len(fab)} paper={len(pap)}) "
-          f"vss(fabric={len(vfab)} paper={len(vpap)}) soak={len(soak)}")
+    fab, pap, vfab, vpap, neo, vneo, soak = discover(problems, expected_version=args.version)
+    print(f"release_check: lss(fabric={len(fab)} paper={len(pap)} neoforge={len(neo)}) "
+          f"vss(fabric={len(vfab)} paper={len(vpap)} neoforge={len(vneo)}) soak={len(soak)}")
     if problems:
         print(f"FAIL: {len(problems)} release problem(s):")
         for m in problems:

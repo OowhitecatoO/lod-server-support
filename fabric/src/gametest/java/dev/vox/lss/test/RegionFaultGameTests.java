@@ -18,22 +18,17 @@ import java.util.concurrent.atomic.AtomicInteger;
  * FP-027: real corrupt-region-file tolerance through the live disk-read pipeline. A region
  * file with a VALID header but garbage zlib chunk data is read by vanilla's
  * {@code RegionFileStorage}. On 26.x the inflate failure is caught upstream and surfaces
- * as an empty/absent chunk (not-found); on MC 1.21.11 vanilla PROPAGATES the ZipException
- * so the SAME read resolves as ERROR (empirically confirmed on this line: errors=1,
- * not_found=0 — the old support branch recorded the identical divergence). Both paths
- * land on handleDiskNotFound and containment is unchanged, but the two outcomes are NOT
- * identical: 26.x's swallow produces {@code ChunkReadResult.notFoundAuthoritative} while
- * 1.21.11's error triage produces notFoundFromError ({@code authoritativeMiss=false}) —
- * so on this line a corrupt chunk is never miss-memoized (it re-reads each ~1 Hz
- * re-declaration until generation covers it) and each read logs the UNTHROTTLED
- * "Failed to read chunk NBT" error with a stack trace. Rare (a corrupt region file),
- * self-healing, but louder than 26.x — and it means "disk.errors with zero 'Failed to
- * read chunk' lines" is NOT a valid all-timeouts triage signal for corrupt-region cases
- * on this line. What FP-027 actually guarantees, and what this test pins, is
- * CONTAINMENT: the corrupt read completes through the pool without going thread-fatal,
- * frees its slot, leaks nothing, and the SAME reader pool then serves a valid disk read.
- * (The error-vs-not-found classification is a vanilla-internal detail; the containment +
- * pool-survival contract is the load-bearing one, so the assertion accepts either label.)
+ * as an empty/absent chunk (not-found, the label this line normally produces); on the
+ * 1.21.x lines vanilla PROPAGATES the ZipException and the SAME read resolves as ERROR —
+ * and even ON this line, constrained/WSL2 boxes have produced the errors=1/not_found=0
+ * shape environmentally (the CLAUDE.md flake-catalog entry this test used to red on).
+ * What FP-027 actually guarantees, and what this test pins, is CONTAINMENT: the corrupt
+ * read completes through the pool without going thread-fatal, frees its slot, leaks
+ * nothing, and the SAME reader pool then serves a valid disk read. The
+ * error-vs-not-found classification is a vanilla-internal detail, so the assertion
+ * accepts EITHER label (V-1/T3b, adopted from the support branches — where the 1.21.11
+ * line confirmed the error flavor empirically). A failure of this test is now a REAL
+ * containment/pool regression, never a label flake.
  *
  * <p>The corrupt chunk sits ~1900 chunks away in a region no IO worker has ever opened
  * (region file handles are cached per region; writing under an open handle would race).
@@ -91,9 +86,9 @@ public class RegionFaultGameTests {
         // Valid disk target: generated now, then unloaded + saved so its serve hits disk
         // through the same reader pool the corrupt read errors on.
         var validPos = new ChunkPos(pcx - VALID_CHUNK_OFFSET, pcz + 2);
-        long validPacked = PositionUtil.packPosition(validPos.x, validPos.z);
+        long validPacked = PositionUtil.packPosition(validPos.x(), validPos.z());
         chunkSource.addTicketWithRadius(TicketType.PLAYER_LOADING, validPos, 0);
-        level.getChunk(validPos.x, validPos.z);
+        level.getChunk(validPos.x(), validPos.z());
         helper.runAfterDelay(4, () ->
                 chunkSource.removeTicketWithRadius(TicketType.PLAYER_LOADING, validPos, 0));
 
@@ -104,7 +99,7 @@ public class RegionFaultGameTests {
         helper.succeedWhen(() -> {
             helper.assertTrue(helper.getTick() >= 6, "waiting for the ticket release");
             if (step.get() == 0) {
-                helper.assertTrue(chunkSource.getChunkNow(validPos.x, validPos.z) == null,
+                helper.assertTrue(chunkSource.getChunkNow(validPos.x(), validPos.z()) == null,
                         "waiting for the valid chunk to unload");
                 level.save(null, true, false);
                 // ONE batch: two sequential offers would supersede the corrupt position and
@@ -117,10 +112,9 @@ public class RegionFaultGameTests {
             service.tick();
             var diskDiag = service.getDiskReader().getDiag();
             // Containment: both reads ran through the same pool to completion; the corrupt one
-            // resolved to a single empty result — classified not-found on 26.x, error on
-            // 1.21.11 (vanilla-internal, see class doc) — WITHOUT saturating, and the valid
-            // read still served, proof the pool survived the corrupt read intact. This is the
-            // FP-027 guarantee; the not-found-vs-error label is vanilla's, so accept either.
+            // resolved not-found (vanilla swallowed the inflate failure) WITHOUT erroring or
+            // saturating, and the valid read still served — proof the pool survived the corrupt
+            // read intact. This is the FP-027 guarantee; the not-found vs error label is vanilla's.
             helper.assertTrue(diskDiag.getSubmittedCount() == 2 && diskDiag.getCompletedCount() == 2
                             && diskDiag.getSuccessfulReadCount() == 1 && state.getTotalSectionsSent() == 1
                             && (diskDiag.getNotFoundCount() + diskDiag.getErrorCount()) == 1

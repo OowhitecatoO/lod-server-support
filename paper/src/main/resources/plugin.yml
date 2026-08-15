@@ -1,14 +1,11 @@
 name: LodServerSupport
 version: '${version}'
 main: dev.vox.lss.paper.LSSPaperPlugin
-api-version: '1.21.11'
-# 1.21.11 support line (fresh v0.10.0 re-port): Folia publishes real MC 1.21.11 builds, so
-# the flag is correct HERE for the same reason it is correct on the 26.2 primary line — the
-# guarded failure is a jar that silently stops loading on Folia (PluginYmlContractTest +
-# release_check.py pin its PRESENCE; the R-7 direction-flip check was applied, not assumed).
-# Folia support remains EXPERIMENTAL on every line — single-player soak validated; concurrent
-# multi-region ingress untested. Do NOT treat the flag's presence as a claim that
-# SOAK_PLATFORM=folia has passed on 1.21.11.
+api-version: '${api_version}'
+# 1.21.11 support line: Folia publishes real 1.21.11 builds, so the flag is correct HERE —
+# the guarded failure is a jar that silently stops loading on Folia (PluginYmlContractTest +
+# release_check.py pin its PRESENCE). Folia support remains EXPERIMENTAL on every line —
+# single-player soak validated; concurrent multi-region ingress untested.
 folia-supported: true
 # C5 (XVER §7): the Via mismatch guard reflectively reads ViaVersion's API when the
 # plugin is present. softdepend keeps Spigot's classloader from logging the one-time
@@ -16,15 +13,27 @@ folia-supported: true
 # noise that reads like an LSS bug. No hard dependency: without Via the probe is a
 # silent no-signal.
 softdepend: [ViaVersion]
-description: Paper Plugin that provides unofficial multiplayer support for Voxy.
+description: Voxy multiplayer support (unofficial). Enables players with Voxy to see fully rendered terrain out to hundreds of chunks on multiplayer servers without needing to explore the world first.
 author: VoX
 website: https://modrinth.com/plugin/lod-server-support
 commands:
   lsslod:
     description: LOD Server Support admin commands
-    usage: /lsslod <stats|diag|store>
+    usage: /lsslod <stats|diag|store|set|help>
     permission: lss.admin
 permissions:
   lss.admin:
     description: Access to LSS admin commands
     default: op
+  # Far players (v0.11.0 E1): server-side privacy lever — holders are never served as
+  # far players regardless of the farPlayers mode (FARP §3.2). BOTH brand spellings are
+  # declared (default false) and the enforcement honors either: Bukkit resolves an
+  # UNDECLARED node to the op default, so a single-brand declaration plus a cross-brand
+  # check would silently hide every op — and declaring both keeps the privacy grant
+  # working across an LSS<->VSS jar swap.
+  lss.farplayers.hidden:
+    description: Players with this permission are never shown as far players
+    default: false
+  vss.farplayers.hidden:
+    description: Players with this permission are never shown as far players (VSS spelling)
+    default: false

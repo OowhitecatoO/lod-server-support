@@ -108,6 +108,12 @@ public abstract class OffThreadProcessor<PlayerState extends AbstractPlayerReque
     private int evictionCounter;
     private int saveCounter;
     private int consecutiveErrors;
+    // Log-sweep hygiene (2026-08-13): persistent-condition error sites aggregate to one
+    // line/min — the park-overflow-WARN deletion set the bar for self-healing paths.
+    private final dev.vox.lss.common.LogThrottle cycleErrorWarn =
+            new dev.vox.lss.common.LogThrottle(60_000);
+    private final dev.vox.lss.common.LogThrottle deliveryErrorWarn =
+            new dev.vox.lss.common.LogThrottle(60_000);
     private long cycleNow; // cached epochSeconds for current processing cycle
     // Per-cycle phase-completion flags (processing-thread only): a failed cycle re-queues only
     // the lossless events whose phase did NOT complete, so an already-applied phase is never
@@ -168,9 +174,28 @@ public abstract class OffThreadProcessor<PlayerState extends AbstractPlayerReque
     private static final int DEFAULT_SWEEP_RADIUS_CHUNKS =
             LSSConstants.MAX_LOD_DISTANCE + LSSConstants.LOD_DISTANCE_BUFFER + SWEEP_RADIUS_MARGIN_CHUNKS;
 
-    // diskReadDone sweep (M3): radius captured at construction — safe while no config
-    // reload path exists (none today; a future reload must re-derive it).
-    private final int diskReadDoneSweepRadiusChunks;
+    // diskReadDone sweep (M3): volatile since v0.11.0 stage C — /lsslod set
+    // lodDistanceChunks re-derives it each lifecycle tick as a MONOTONIC MAX
+    // (updateSweepRadius). Monotonic-max rationale (SET review, corrected): an
+    // under-radius sweep of a still-declarable done-bit is semantically FREE (worst
+    // case one redundant re-serve — in-pipeline/grace entries are kept regardless), so
+    // the max avoids redundant serves, not corruption; the cost of a too-large radius
+    // is only memory already bounded by M3's trim. Do not treat this as a
+    // data-integrity constraint.
+    private volatile int diskReadDoneSweepRadiusChunks;
+
+    /** Runtime radius re-derivation (v0.11.0 stage C): monotonic max — see the field
+     *  comment. Called from the owning service's tick pass with the config-derived
+     *  radius; never shrinks within a run. */
+    public void updateSweepRadius(int derivedRadiusChunks) {
+        if (derivedRadiusChunks > this.diskReadDoneSweepRadiusChunks) {
+            this.diskReadDoneSweepRadiusChunks = derivedRadiusChunks;
+        }
+    }
+
+    int sweepRadiusForTest() {
+        return this.diskReadDoneSweepRadiusChunks;
+    }
 
     /** Old-signature overload (test rigs) — production passes the config-derived radius. */
     protected OffThreadProcessor(Map<UUID, PlayerState> players,
@@ -321,7 +346,11 @@ public abstract class OffThreadProcessor<PlayerState extends AbstractPlayerReque
             try {
                 sender.send(state, types, positions, count);
             } catch (Exception e) {
-                LSSLogger.error("Failed to send batch response to " + state.getPlayerName(), e);
+                long n = this.deliveryErrorWarn.recordAndTryAcquire(System.nanoTime() / 1_000_000);
+                if (n > 0) {
+                    LSSLogger.error("Failed to send batch response to " + state.getPlayerName()
+                            + " (" + n + " delivery failure(s) since the last report)", e);
+                }
             }
         });
     }
@@ -361,6 +390,20 @@ public abstract class OffThreadProcessor<PlayerState extends AbstractPlayerReque
      *  False when no reader is configured. */
     boolean hasDiskHeadroom() {
         return this.diskReader != null && this.diskReader.hasHeadroom();
+    }
+
+    /** True when the disk-read gate is saturated (permits exhausted AND the park plus
+     *  permit-less in-flight work would fill it — see AbstractChunkDiskReader#gateSaturated,
+     *  Amendment 2). The router retains the entry and stops the player's pass. Null reader
+     *  (no disk serving) is never saturated — mirroring {@link #hasDiskHeadroom}'s guard. */
+    boolean gateSaturated() {
+        return this.diskReader != null && this.diskReader.gateSaturated();
+    }
+
+    /** Books one gate-stopped router pass on the reader's diagnostics (no-op with no
+     *  reader — unreachable in practice, since {@link #gateSaturated} gates the call). */
+    void recordGateStop() {
+        if (this.diskReader != null) this.diskReader.recordGateStop();
     }
 
     /**
@@ -489,7 +532,14 @@ public abstract class OffThreadProcessor<PlayerState extends AbstractPlayerReque
             } catch (Throwable t) {
                 // Catch Throwable (not just Exception) so a transient Error doesn't silently
                 // kill the processing thread and stop the LOD pipeline for every player.
-                LSSLogger.error("Error in processing cycle", t);
+                // Throttled (log-sweep top finding): a persistent throw here repeats at
+                // cycle rate (~20 Hz, ~1 Hz once the backoff engages) FOREVER — one
+                // stack per minute carries the same diagnostic value without the flood.
+                long cycleErrs = this.cycleErrorWarn.recordAndTryAcquire(System.nanoTime() / 1_000_000);
+                if (cycleErrs > 0) {
+                    LSSLogger.error("Error in processing cycle (" + cycleErrs
+                            + " failed cycle(s) since the last report)", t);
+                }
                 // The take destructively drained the lossless event buffers; discarding them
                 // on a failed cycle permanently loses player removals (leaked slots/dedup
                 // groups), generation outcomes (stranded pending generations), and
@@ -501,7 +551,9 @@ public abstract class OffThreadProcessor<PlayerState extends AbstractPlayerReque
                 // fresh tracking).
                 requeueLosslessEvents(take);
                 if (++this.consecutiveErrors >= 10) {
-                    LSSLogger.error("Processing thread hit " + this.consecutiveErrors + " consecutive errors, backing off");
+                    // The backoff NOTE rides the throttled line above (the old separate
+                    // per-cycle line repeated ~1/s forever once engaged); the sleep is
+                    // the mechanism, the log is not.
                     try { Thread.sleep(1000); } catch (InterruptedException ie) {
                         // Shutdown landed during the backoff: requeueLosslessEvents above put
                         // the failed cycle's unapplied invalidations back in the pending
@@ -975,13 +1027,17 @@ public abstract class OffThreadProcessor<PlayerState extends AbstractPlayerReque
         var pending = state.removePendingByPosition(cx, cz);
 
         if (result.saturated()) {
-            // Residual only: the router's headroom gate prevents submits into a full pool,
-            // so this fires only on races/shutdown. Silent drop — the pending slot was
-            // already freed above, no dedup/stale-guard teardown is needed for a result
-            // that already drained, and the client's next want-set re-declares the position.
+            // Two bounce sources share this flavor, BOTH races-only since Amendment 2:
+            // the residual pool rejection (the router's headroom gate prevents submits
+            // into a full pool, so races/shutdown only) and the DiskReadGate's park
+            // OVERFLOW (race armor — the router's gateSaturated retention conjunct holds
+            // sustained pressure upstream; counted disk.gated at the bounce site, never
+            // here). Silent drop either way — the pending slot was already freed above,
+            // no dedup/stale-guard teardown is needed for a result that already drained,
+            // and the client's next want-set re-declares the position.
             this.ctx.diagnostics().addSuperseded(1);
             if (LSSLogger.isDebugEnabled()) {
-                LSSLogger.debug("Disk-saturated result dropped silently (superseded) for "
+                LSSLogger.debug("Disk saturated/gated result dropped silently (superseded) for "
                         + playerUuid + ": chunk [" + cx + ", " + cz + "]");
             }
         } else if (result.notFound()) {
@@ -1025,7 +1081,11 @@ public abstract class OffThreadProcessor<PlayerState extends AbstractPlayerReque
                 // live pending blocked every other setter) and drop as a standard transient
                 // (superseded, re-declared next scan). Other recipients of this dedup group
                 // still get their deliveries.
-                LSSLogger.error("Failed to deliver disk result for chunk " + cx + ", " + cz, t);
+                long n = this.deliveryErrorWarn.recordAndTryAcquire(System.nanoTime() / 1_000_000);
+                if (n > 0) {
+                    LSSLogger.error("Failed to deliver disk result for chunk " + cx + ", " + cz
+                            + " (" + n + " delivery failure(s) since the last report)", t);
+                }
                 state.clearDiskReadDone(packed);
                 this.ctx.diagnostics().addSuperseded(1);
             }
@@ -1308,7 +1368,11 @@ public abstract class OffThreadProcessor<PlayerState extends AbstractPlayerReque
                 // (idempotent, and worst case costs one honest re-read). Pending was already
                 // removed above — the catch must NOT touch pending again (a fresh session's
                 // entry at the same position could be stripped).
-                LSSLogger.error("Failed to process generation outcome for chunk " + cx + ", " + cz, t);
+                long n = this.deliveryErrorWarn.recordAndTryAcquire(System.nanoTime() / 1_000_000);
+                if (n > 0) {
+                    LSSLogger.error("Failed to process generation outcome for chunk " + cx + ", "
+                            + cz + " (" + n + " delivery failure(s) since the last report)", t);
+                }
                 state.clearDiskReadDone(packed);
                 this.ctx.diagnostics().addSuperseded(1);
             }

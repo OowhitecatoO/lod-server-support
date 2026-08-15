@@ -40,8 +40,12 @@ public class PaperCommands implements CommandExecutor, TabCompleter {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (args.length == 0) {
-            sender.sendMessage("Usage: /" + label + " <stats|diag|store>");
+        if (args.length == 0 || args[0].equalsIgnoreCase("help")) {
+            // Bare /lsslod = help (v0.11.0 stage C) — shared builder, so Fabric/Paper
+            // render identical lines; backfill verbs stay Fabric-only.
+            for (var line : dev.vox.lss.common.CommandHelp.lines(label, false)) {
+                sender.sendMessage(line);
+            }
             return true;
         }
 
@@ -55,10 +59,65 @@ public class PaperCommands implements CommandExecutor, TabCompleter {
             case "stats" -> showStats(sender, service);
             case "diag" -> showDiagnostics(sender, service);
             case "store" -> storeCommand(sender, label, service, args);
-            default -> sender.sendMessage("Usage: /" + label + " <stats|diag|store>");
+            case "set" -> setCommand(sender, label, service, args);
+            default -> sender.sendMessage("Usage: /" + label + " <stats|diag|store|set|help>");
         }
 
         return true;
+    }
+
+    /** The /lsslod set apply path (v0.11.0 stage C). Unknown-key and usage errors reply
+     *  inline from the command thread; VALUE-parse failures reply from inside the pump
+     *  task (the parse happens in applyAndPersist). The MUTATION (per-key clamp →
+     *  assign once → validate → save → reply, plus the lodDistance re-push) is
+     *  marshaled through the pump via enqueueRuntimeTask — Folia dispatches commands on
+     *  region threads, and the re-push must enumerate dialects only AFTER the lifecycle
+     *  mailbox drain (the SET review's ordering MAJOR: a flip-pending player must never
+     *  be pushed a v20 config). Command-block senders on Folia may see the reply land
+     *  after the block's tick window (the message is delivered, possibly dropped to
+     *  the void for an unloaded block) — accepted: admins drive this from console. */
+    private void setCommand(CommandSender sender, String label,
+                            PaperRequestProcessingService service, String[] args) {
+        var config = this.configSupplier.get();
+        if (args.length == 1) {
+            sender.sendMessage("Runtime-settable keys (applied + persisted to "
+                    + dev.vox.lss.common.Brand.lowerShortName() + "-server-config.json):");
+            for (var line : dev.vox.lss.common.config.RuntimeSettings.listLines(config)) {
+                sender.sendMessage("  " + line);
+            }
+            return;
+        }
+        var key = dev.vox.lss.common.config.RuntimeSettings.byName(args[1]);
+        if (key == null) {
+            sender.sendMessage("Unknown key '" + args[1] + "'. Settable: "
+                    + String.join(", ", dev.vox.lss.common.config.RuntimeSettings.keyNames()));
+            return;
+        }
+        if (args.length < 3) {
+            sender.sendMessage("Usage: /" + label + " set " + key.name() + " <value>");
+            return;
+        }
+        String rawValue = String.join(" ", java.util.Arrays.copyOfRange(args, 2, args.length));
+        service.enqueueRuntimeTask(() -> {
+            String before = key.current().apply(config);
+            String effective;
+            try {
+                effective = dev.vox.lss.common.config.RuntimeSettings
+                        .applyAndPersist(config, key, rawValue);
+            } catch (IllegalArgumentException e) {
+                sender.sendMessage(key.name() + ": " + e.getMessage());
+                return;
+            }
+            String repushNote = "";
+            if (key.name().equals("lodDistanceChunks") && !effective.equals(before)) {
+                int[] counts = service.repushSessionConfig();
+                repushNote = "; re-pushed to " + counts[0] + " client(s)"
+                        + (counts[1] > 0 ? " (" + counts[1] + " legacy update on rejoin)" : "");
+            }
+            sender.sendMessage(key.name() + " = " + effective
+                    + dev.vox.lss.common.config.RuntimeSettings.clampedSuffix(effective, rawValue)
+                    + " — " + key.applyNote() + repushNote);
+        });
     }
 
     /** The store ops verbs (4-agent round R3: Paper shipped the store with no ops
@@ -87,13 +146,7 @@ public class PaperCommands implements CommandExecutor, TabCompleter {
                     // steady-state must stay diagnosable without any log line.
                     + " evicted=" + store.diagnostics().getSqlEvictions()
                     // C4: background-migration progress (empty once every row is v20).
-                    + store.migrationStatusToken()
-                    // Memory-tier visibility (review B1): db/wal/evicted are SQL-only
-                    // and rendered a thrashing memory store as all-zero.
-                    + (store.diagnostics().getMemBytes() > 0
-                            ? " mem=" + (store.diagnostics().getMemBytes() >> 20) + "MB"
-                                    + " mem_evicted=" + store.diagnostics().getMemEvictions()
-                            : ""));
+                    + store.migrationStatusToken());
         } else if (args.length >= 3 && args[1].equalsIgnoreCase("invalidate")
                 && args[2].equalsIgnoreCase("all")) {
             if (store == null) {
@@ -101,7 +154,9 @@ public class PaperCommands implements CommandExecutor, TabCompleter {
                 return;
             }
             if (!service.invalidateStoreAllDimensions()) {
-                sender.sendMessage("Invalidate-all requires the persistent store — this session degraded to the in-memory tier at boot (SQLite could not open; see the startup warning)");
+                // Unreachable since the in-memory tier's deletion (a non-null store is
+                // always SQLite); defensive armor with an honest message.
+                sender.sendMessage("Invalidate-all requires the persistent SQLite store engine");
                 return;
             }
             sender.sendMessage("LOD store: dropping all rows (background) — re-warms from serves");
@@ -139,8 +194,8 @@ public class PaperCommands implements CommandExecutor, TabCompleter {
                 // LIVE store mode, not the config's ask (review MINOR-3): a codec-probe
                 // degrade renders store=unavailable, never a lying store=memory h=0.
                 // enabled=false is an OFF store, not a degraded one — without that term
-                // a disabled server rendered store=unavailable, which formatToken
-                // documents as "requested but the codec native failed", sending admins
+                // a disabled server rendered store=unavailable, which reads as the
+                // degraded-boot state (codec or SQLite-init failure), sending admins
                 // after a zstd problem that does not exist (v0.9.0 final review).
                 !config.enabled
                         || dev.vox.lss.common.store.LodStoreMode.normalize(config.lodStore)
@@ -151,6 +206,7 @@ public class PaperCommands implements CommandExecutor, TabCompleter {
                 service.getPlayers().values()
         ).withV16Line(service.getV16CompatManager().diagLineOrNull())
                 .withV18Line(service.getDialectTracker().diagLine())
+                .withFarPlayersLine(farPlayersDiagLineOrNull(service))
                 .withYieldLine(DiagnosticsFormatter.yieldDiagLineOrNull(
                         config.lodYieldsToVanillaTransport, service.getTickDiag()))
                 .withXrayLine(xrayDiagLine());
@@ -168,7 +224,7 @@ public class PaperCommands implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            return List.of("stats", "diag", "store").stream()
+            return List.of("stats", "diag", "store", "set", "help").stream()
                     .filter(s -> s.startsWith(args[0].toLowerCase()))
                     .toList();
         }
@@ -177,10 +233,26 @@ public class PaperCommands implements CommandExecutor, TabCompleter {
                     .filter(s -> s.startsWith(args[1].toLowerCase()))
                     .toList();
         }
+        if (args.length == 2 && args[0].equalsIgnoreCase("set")) {
+            // Registry-derived so completion cannot drift from the settable set.
+            return dev.vox.lss.common.config.RuntimeSettings.keyNames().stream()
+                    .filter(s -> s.toLowerCase().startsWith(args[1].toLowerCase()))
+                    .toList();
+        }
         if (args.length == 3 && args[0].equalsIgnoreCase("store")
                 && args[1].equalsIgnoreCase("invalidate")) {
             return List.of("all");
         }
         return Collections.emptyList();
+    }
+
+    /** Present ONLY once far players have been touched (a subscriber exists or frames
+     *  were ever sent) — inert servers render nothing, so soak/benchmark diag output is
+     *  byte-unchanged (E1 baseline neutrality). */
+    private static String farPlayersDiagLineOrNull(
+            PaperRequestProcessingService service) {
+        var fp = service.getFarPlayerService();
+        if (fp == null) return null; // partial rigs (mocked service seams)
+        return fp.subscriberCount() > 0 || fp.rosterFramesSent() > 0 ? fp.diagLine() : null;
     }
 }

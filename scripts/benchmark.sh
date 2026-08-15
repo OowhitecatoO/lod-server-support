@@ -66,15 +66,22 @@ mkdir -p "$SERVER_RUN_DIR" "$CLIENT_RUN_DIR" "$RESULTS_DIR"
 # claims the config, stage the neutral one the scenarios were defined against.
 if [[ -z "${BENCHMARK_CONFIG_STAGED:-}" ]]; then
     mkdir -p "$SERVER_RUN_DIR/config"
+    # lodDistanceChunks is PINNED (v0.11.0 stage A): the neutral config used to ride the
+    # shipped default, so every default retune silently re-sized the benchmark workload
+    # and broke cross-era comparability. 512 is the value the v0.10.0-era baselines ran
+    # at (the 2026-08-08 rework default) — keep it pinned even as the shipped default
+    # moves (300 since v0.11.0).
     cat > "$SERVER_RUN_DIR/config/lss-server-config.json" <<'EOF'
 {
   "enabled": true,
   "enableChunkGeneration": true,
+  "lodDistanceChunks": 512,
   "lodStore": "off",
-  "lodStoreBackfill": false
+  "lodStoreBackfill": false,
+  "maxConcurrentDiskReads": 64
 }
 EOF
-    echo "[benchmark] Staged neutral config (lodStore=off) — export BENCHMARK_CONFIG_STAGED=1 to keep your own"
+    echo "[benchmark] Staged neutral config (lodStore=off, lodDistance=512 pinned) — export BENCHMARK_CONFIG_STAGED=1 to keep your own"
 fi
 
 require_base_world() {
@@ -91,7 +98,10 @@ reset_world_from_base() {
 }
 
 clear_client_lss_cache() {
-    rm -rf "$CLIENT_RUN_DIR/config/lss/cache" "$CLIENT_RUN_DIR/config/vss/cache" 2>/dev/null || true
+    # Both cache roots (stage D relocation: legacy config/lss/cache is adopted when it
+    # exists, fresh run dirs write the game-root .lss/cache). The old config/vss/cache
+    # entry was a dead path (no in-repo VSS build ever used it) — dropped.
+    rm -rf "$CLIENT_RUN_DIR/config/lss/cache" "$CLIENT_RUN_DIR/.lss/cache" 2>/dev/null || true
 }
 
 # Drop the OS page cache (measure-cycle cold-read variant). Best-effort: passwordless

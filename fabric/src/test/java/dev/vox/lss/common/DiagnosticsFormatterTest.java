@@ -112,7 +112,7 @@ class DiagnosticsFormatterTest {
                 2_097_152,
                 512,
                 List.of(new DiagnosticsFormatter.PlayerDiag("Steve", 3, 4000, 2, 1, 2000, 4096,
-                        65536L, 131072L, 7L)));
+                        65536L, 131072L, 0L, 1.0, 0L)));
 
         assertEquals(List.of(
                 "=== LSS LOD Diagnostics ===",
@@ -123,7 +123,7 @@ class DiagnosticsFormatterTest {
                 "DiskReader: submitted=5, completed=5",
                 "Generation: active=1/32, order_gated=7, inversions=3",
                 "Bandwidth: 512 B/s / 1.0 MB/s global (2.0 MB total, 0 B wire, cols zstd=0 raw=0)",
-                "  Steve: sq=3/4000, psync=2, pgen=1, sent=2000 (4.0 KB), rate=20/s, obuf=64.0 KB/128.0 KB, deferred=7, yielded=0"
+                "  Steve: sq=3/4000, psync=2, pgen=1, sent=2000 (4.0 KB), rate=20/s, obuf=64.0 KB/128.0 KB, pingf=1.00, yielded=0, paced=0"
         ), DiagnosticsFormatter.formatDiagnostics(d));
     }
 
@@ -345,6 +345,41 @@ class DiagnosticsFormatterTest {
     }
 
     @Test
+    void diagFarPlayersLineRendersAfterYieldOnlyWhenPresent() {
+        var d = new DiagnosticsFormatter.DiagData(
+                true, 24,
+                2048, 1_048_576,
+                100, 5000, 10_485_760,
+                11, 33, 44, 55, 66,
+                22,
+                "sent=9, disk=1/2",
+                "submitted=5, completed=5",
+                "active=1/32", true,
+                7, 3,
+                2_097_152,
+                512,
+                List.of());
+
+        var without = DiagnosticsFormatter.formatDiagnostics(d);
+        assertTrue(without.stream().noneMatch(l -> l.startsWith("FarPlayers")),
+                "an untouched far-player service (null line) must add nothing — the E1"
+                        + " inert diag surface stays byte-unchanged");
+
+        String line = "FarPlayers: subscribers=2, rosters=3, updates=40, entries=200,"
+                + " suppressed=5, bytes=8.0 KB";
+        var with = DiagnosticsFormatter.formatDiagnostics(
+                d.withYieldLine("Yield: armed=true, ticks_total=40, bytes_withheld=1.0 MB")
+                        .withFarPlayersLine(line));
+        int yIdx = indexOfPrefix(with, "Yield:");
+        int fpIdx = indexOfPrefix(with, "FarPlayers:");
+        int bwIdx = indexOfPrefix(with, "Bandwidth:");
+        assertTrue(yIdx < fpIdx && fpIdx < bwIdx,
+                "the FarPlayers line sits between Yield and Bandwidth: " + with);
+        assertEquals(line, with.get(fpIdx));
+        assertEquals(without.size() + 2, with.size());
+    }
+
+    @Test
     void yieldDiagLineProducerHonorsTheArmedOrFiredContract() {
         var diag = new dev.vox.lss.common.processing.TickDiagnostics();
         assertEquals(null, DiagnosticsFormatter.yieldDiagLineOrNull(false, diag),
@@ -443,7 +478,7 @@ class DiagnosticsFormatterTest {
                 2_097_152,
                 512,
                 List.of(new DiagnosticsFormatter.PlayerDiag("Steve", 0, 4000, 0, 0, 0, 0,
-                        -1L, -1L, 0L)));
+                        -1L, -1L, 0L, 1.0, 0L)));
         var lines = DiagnosticsFormatter.formatDiagnostics(d);
         assertTrue(lines.stream().anyMatch(l -> l.contains("obuf=n/a/n/a")),
                 "no-signal must render as n/a, got: " + lines);
@@ -550,5 +585,51 @@ class DiagnosticsFormatterTest {
         assertEquals("1h 0m", DiagnosticsFormatter.formatUptime(3600));
         // Hours never roll into days; leftover seconds are truncated from the h/m form.
         assertEquals("25h 1m", DiagnosticsFormatter.formatUptime(25 * 3600 + 60 + 5));
+    }
+
+    /** The pingf= VALUE branch: a live backstop cut renders its factor (the full-line
+     *  golden above only covers the 1.00 default through the compat ctor). */
+    @Test
+    void pingfTokenRendersACutFactor() {
+        var d = new DiagnosticsFormatter.DiagData(
+                true, 24,
+                2048, 1_048_576,
+                100, 5000, 10_485_760,
+                11, 33, 44, 55, 66,
+                22,
+                "sent=9, disk=1/2",
+                "submitted=5, completed=5",
+                "active=1/32", true,
+                7, 3,
+                2_097_152,
+                512,
+                List.of(new DiagnosticsFormatter.PlayerDiag("Alex", 1, 4000, 0, 0, 10, 1000,
+                        50_000L, 60_000L, 3L, 0.0833, 0L)));
+        assertTrue(DiagnosticsFormatter.formatDiagnostics(d).stream()
+                        .anyMatch(l -> l.contains("pingf=0.08")),
+                "a cut factor renders through the %.2f format");
+    }
+
+    /** The paced= VALUE branch (send-pacing-plan.md v2): a live pacer count renders
+     *  (the full-line golden covers only the compat-ctor 0). */
+    @Test
+    void pacedTokenRendersALiveCount() {
+        var d = new DiagnosticsFormatter.DiagData(
+                true, 24,
+                2048, 1_048_576,
+                100, 5000, 10_485_760,
+                11, 33, 44, 55, 66,
+                22,
+                "sent=9, disk=1/2",
+                "submitted=5, completed=5",
+                "active=1/32", true,
+                7, 3,
+                2_097_152,
+                512,
+                List.of(new DiagnosticsFormatter.PlayerDiag("Alex", 1, 4000, 0, 0, 10, 1000,
+                        50_000L, 60_000L, 3L, 1.0, 42L)));
+        assertTrue(DiagnosticsFormatter.formatDiagnostics(d).stream()
+                        .anyMatch(l -> l.contains("paced=42")),
+                "a live paced count renders at line end");
     }
 }

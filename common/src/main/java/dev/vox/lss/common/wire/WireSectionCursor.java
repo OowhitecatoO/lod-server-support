@@ -11,20 +11,10 @@ import java.util.List;
  * migration walk all share one parser/emitter instead of three.
  *
  * <p><b>NATIVE layout</b> (protocol ≤19 section bytes, what `SectionSerializer` /
- * `NbtSectionSerializer` emit today — <b>1.21.11-LINE FLAVOR: ONE count short</b>.
- * This line's {@code LevelChunkSection.write} emits a single {@code nonEmptyBlockCount}
- * short whose vanilla recalc counts non-air cells PLUS non-empty-fluid cells — i.e. the
- * SUM of the two shorts 26.2 split it into. The V20 layout below keeps BOTH shorts
- * verbatim (XVER §2.1 pins them as version-neutral wire fields in the 26.2 shape), so:
- * NATIVE parse reads one short into {@code nonEmptyBlockCount} with {@code fluidCount=0},
- * and NATIVE emit writes {@code nonEmptyBlockCount + fluidCount} as the one short — the
- * v20→native client direction thereby reconstructs this line's exact vanilla count from
- * a 26.2 peer's split pair, and native→v20 frames from this line carry the single count
- * in the nonEmpty slot with fluid 0 (a 26.2 peer splices that into a display-only LOD
- * section, where the count fields are inert). Round-trips stay byte-identity.):
+ * `NbtSectionSerializer` emit today):
  * <pre>
  * VarInt sectionCount
- * repeat: byte sectionY; short nonEmptyBlockCount;   // one short on this line
+ * repeat: byte sectionY; short nonEmptyBlockCount; short fluidCount;
  *         blocks container(4096 entries); biomes container(64 entries);
  *         bool hasBlockLight [+2048 B]; bool hasSkyLight [+2048 B]
  * container: byte bits;
@@ -166,10 +156,12 @@ public final class WireSectionCursor {
         var sections = new ArrayList<WireSection>();
         for (int i = 0; i < sectionCount; i++) {
             int sectionY = in.readByte();
-            // 1.21.11 line: NATIVE sections carry ONE count short (see class doc); V20
-            // keeps the version-neutral split pair.
             int nonEmpty = in.readShort();
-            int fluid = layout == Layout.V20 ? in.readShort() : 0;
+            // V-2/S1: the second count short is NATIVE-per-line (26.x carries the
+            // split pair, 1.21.x one short — NativeSectionShape); V20 ALWAYS carries
+            // both (line-invariant wire spec, never descriptor-derived).
+            int fluid = (layout == Layout.V20
+                    || NativeSectionShape.NATIVE_COUNT_SHORTS == 2) ? in.readShort() : 0;
             WireContainer blocks = readContainer(in, layout, BLOCK_ENTRIES, true, dictSize);
             WireContainer biomes = readContainer(in, layout, BIOME_ENTRIES, false, dictSize);
             byte[] blockLight = in.readByte() != 0 ? in.readBytes(LIGHT_BYTES) : null;
@@ -267,15 +259,21 @@ public final class WireSectionCursor {
             checkShortRange(s.nonEmptyBlockCount(), "nonEmptyBlockCount");
             checkShortRange(s.fluidCount(), "fluidCount");
             out.writeByte(s.sectionY());
-            if (layout == Layout.V20) {
+            if (layout == Layout.V20 || NativeSectionShape.NATIVE_COUNT_SHORTS == 2) {
                 out.writeShort(s.nonEmptyBlockCount());
                 out.writeShort(s.fluidCount());
             } else {
-                // 1.21.11 line: the one native count short is the SUM of the neutral pair
-                // (this line's vanilla recalc counts fluid cells into nonEmptyBlockCount).
-                int oneShort = s.nonEmptyBlockCount() + s.fluidCount();
-                checkShortRange(oneShort, "nonEmptyBlockCount+fluidCount");
-                out.writeShort(oneShort);
+                // One-short NATIVE emit: the LINE-level fold (V-2 review MAJOR-1 —
+                // recorded 1.21.11: nonEmpty + fluid, because that line's vanilla
+                // counts fluid cells into its single count and the consumer of
+                // cursor-emitted native bytes is always a CLIENT of that line).
+                // A line rule, deliberately not a family fold: this cursor is common
+                // and serves BOTH families' v20→native egress. The folded SUM gets
+                // its own range check (the recorded flavor's rule).
+                int folded = NativeSectionShape.foldedCountForNativeHeader(
+                        s.nonEmptyBlockCount(), s.fluidCount());
+                checkShortRange(folded, "foldedCount");
+                out.writeShort(folded);
             }
             writeContainer(out, s.blocks(), layout, BLOCK_ENTRIES, true, dictSize);
             writeContainer(out, s.biomes(), layout, BIOME_ENTRIES, false, dictSize);
