@@ -67,8 +67,9 @@ public final class WireSectionCursor {
 
     // 1.21.1 line: vanilla's native container serialization length-prefixes its long
     // array (writeLongArray = VarInt count + words); 26.x/1.21.11 write the words bare.
-    // This axis belongs in NativeSectionShape conceptually, but that descriptor is
-    // owned/frozen by the coordinator this round — FLAGGED in the port report; a
+    // The axis LIVES in NativeSectionShape.NATIVE_LONG_ARRAY_PREFIXED (the fourth
+    // descriptor field — lifted post-port and back-flowed to main as dead-branch
+    // derivation, false there); the four NATIVE-gated sites below consume it.
     private WireSectionCursor() {}
 
     public enum Layout { NATIVE, V20 }

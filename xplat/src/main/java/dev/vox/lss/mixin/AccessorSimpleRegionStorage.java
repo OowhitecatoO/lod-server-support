@@ -14,10 +14,12 @@ import org.spongepowered.asm.mixin.gen.Accessor;
  * lives on {@link ChunkStorage} directly ({@code SimpleRegionStorage} exists here but is
  * NOT in ChunkMap's hierarchy — that superclass move is 26.x, where this accessor
  * targeted it; the class NAME is kept so the mixin listing and the cross-line call
- * sites stay textually stable). A wrong target here does not crash: the resolve's
- * catch-all latches backgroundIncompatible and the C2ME-style throttle fallback
- * engages — exactly the silent inertness the Tier-2 raw_serves receipt caught at the
- * port.
+ * sites stay textually stable). Failure shapes split (surfaces row 1): a MISSING
+ * field on the target class is a LOUD mixin apply error at load (defaultRequire = 1);
+ * a wrong-class resolve at runtime (the shape this port hit: the 26.x cast CCE'd) is
+ * caught by resolveBackgroundHandles' catch-all, latches backgroundIncompatible, and
+ * the C2ME-style throttle fallback engages — the silent inertness the Tier-2
+ * raw_serves receipt caught at the port.
  *
  * <p>The method is {@code lss$}-prefixed because mixin adds it to the target class: an
  * unprefixed {@code getWorker()} could collide with a vanilla method of that name.

@@ -27,9 +27,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   itself, which Moonrise @Overwrites into a throw-only stub: the injector matched ZERO
  *   targets and, under the mixin config's {@code defaultRequire = 1}, crashed the server
  *   fatally during world load. Retargeting to a method a chunk-system overhaul stubs out
- *   again would resurrect exactly that. NOTE: whether Moonrise/C2ME's 1.21.1 pipelines
- *   route through ChunkSerializer.write is FLAGGED for per-line bytecode verification
- *   (the D1 checklist row) — it is deliberately not pinned here.</li>
+ *   again would resurrect exactly that. Moonrise/C2ME 1.21.1 routing through
+ *   ChunkSerializer.write IS bytecode-verified (2026-08-14; the record lives in the
+ *   mixin's own javadoc — vanilla census + Moonrise saveChunk + C2ME SerializerAccess);
+ *   it stays deliberately un-PINNED here (reflective-only, off the test classpath).</li>
  *   <li><b>The crash guard.</b> {@code require = 0}: if a future overhaul bypasses even
  *   write, the miss must degrade to "no save-driven dirty detection" (edits refresh on
  *   rejoin), never to a crash. And the vanilla method must still EXIST with the expected

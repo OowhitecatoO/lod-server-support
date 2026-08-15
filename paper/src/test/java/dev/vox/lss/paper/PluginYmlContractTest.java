@@ -134,20 +134,20 @@ class PluginYmlContractTest {
     }
 
     @Test
-    void foliaSupportedIsDeclaredNowThatFolia262Exists() {
-        // Third flip. Absent 2026-07-19..2026-08-01 because Folia had no MC 26.2 build at
-        // all, so declaring it would have auto-loaded release jars onto a platform that did
-        // not exist yet. Folia published 26.2-1 (channel BETA) on 2026-07-28, so the flag is
-        // back — putting this line on the same experimental footing as 1.21.8/1.21.11/26.1.x
-        // rather than ahead of them. FoliaWiringContractTest still pins the wiring
-        // (no legacy scheduler, lifecycle through the mailbox).
-        assertTrue(yml.contains("folia-supported"),
-                "folia-supported must be declared now that Folia ships a 26.2 build — the"
-                        + " single jar serves Paper and Folia");
-        assertTrue(yml.getBoolean("folia-supported"),
-                "...and it must be true; a false/absent flag makes Folia refuse the jar");
-        assertTrue(rawText.contains("folia-supported: true"),
-                "release_check.py greps the RAW line, so the source must carry that exact form");
+    void foliaSupportedStaysAbsentBecauseFoliaHasNo1211Build() {
+        // 1.21.1 line: the DIRECTION of this pin is re-derived per line (surfaces row 7).
+        // Folia never published a 1.21.1 build (its 1.21 family starts at 1.21.4 —
+        // fill.papermc.io verified 2026-08-15), so the flag must stay ABSENT: declaring it
+        // would claim support for a platform that does not exist (the same reasoning that
+        // kept it absent on 26.2 during 2026-07-19..2026-08-01, inverted). release_check.py
+        // carries the matching absence check. FoliaWiringContractTest still pins the wiring
+        // (no legacy scheduler, lifecycle through the mailbox) — the code paths stay, inert.
+        // Declaration-shaped match only (line-anchored key, release_check's regex): the
+        // explanatory COMMENT above the absence names the token and must not trip this.
+        assertTrue(!rawText.lines().anyMatch(l -> l.strip().startsWith("folia-supported:")),
+                "folia-supported must stay ABSENT on the 1.21.1 line — no Folia build exists"
+                        + " for this MC version, and declaring support for a nonexistent"
+                        + " platform is the exact failure the v0.7.0-era drop guarded");
     }
 
     @Test

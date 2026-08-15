@@ -6,9 +6,9 @@ package dev.vox.lss.common.wire;
  * port edits THIS file instead of flavoring the cursor, both NBT serializers, and the
  * three relationship-pinning tests (the recorded ~134-line churn on the 1.21.11 port).
  *
- * <p>Three independent fields (the plan-review MAJOR said two; the V-2 execution
- * review added the cursor's line-level fold — one value cannot express the recorded
- * flavor):
+ * <p>Four independent fields (the plan-review MAJOR said two; the V-2 execution
+ * review added the cursor's line-level fold, and the 1.21.1 port found the long-array
+ * prefix axis — one value cannot express the recorded flavor):
  * <ul>
  *   <li>{@link #NATIVE_COUNT_SHORTS} — LINE-level, consumed by the cursor's parse+emit:
  *       how many count shorts the native section header carries after sectionY.</li>

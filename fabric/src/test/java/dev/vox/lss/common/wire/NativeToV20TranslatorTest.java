@@ -519,14 +519,27 @@ class NativeToV20TranslatorTest {
         byte[] viaTranslate = NativeToV20Translator.translate(
                 nativeBody(shapes.toArray(new WireSection[0])), BLOCKS, BIOMES);
 
+        // Review 2026-08-15: this fixture assembles with the CURSOR's line fold while
+        // production emitV20Direct uses the FABRIC family fold — byte-identical only
+        // while the two folds COINCIDE on this line. Pin the coincidence so a future
+        // line that diverges them reds HERE and splits the arms consciously instead of
+        // leaving the direct/translate identity blind.
+        if (NativeSectionShape.NATIVE_COUNT_SHORTS != 2) {
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    NativeSectionShape.foldedCountForNativeHeader(7, 3),
+                    NativeSectionShape.foldedCountFabricFamily(7, 3),
+                    "line fold and fabric family fold diverged — this fixture's"
+                            + " direct arm must switch to the family fold to keep"
+                            + " mirroring emitV20Direct");
+        }
         var dict = new IdentityDictionary();
         var sections = new java.util.ArrayList<WireSection>();
         for (var s : shapes) {
             // Derived (the emitV20Direct rule — the fourth relationship site, found at
             // the 1.21.11 port): the translate side reads CURSOR-emitted native bytes,
             // whose one-short line header carries the line fold — so the direct side
-            // must assemble (fold, 0) there to stay byte-identical (two-short lines,
-            // like this one, pass through — the ternary constant-folds).
+            // must assemble (fold, 0) there to stay byte-identical (this IS a one-short
+            // line; on two-short lines the ternary passes through).
             int nonEmpty = NativeSectionShape.NATIVE_COUNT_SHORTS == 2
                     ? s.nonEmptyBlockCount()
                     : NativeSectionShape.foldedCountForNativeHeader(

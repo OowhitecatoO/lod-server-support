@@ -20,7 +20,16 @@ import java.util.function.BiConsumer;
  * resolved at runtime, and any failure shape degrades to {@code null} = unavailable, which
  * leaves {@code ChunkDiskReader}'s existing ladder bit-identical to today.
  *
- * <p>The target overload (verified against moonrise-opt 1.1.0 bytecode, MC 26.2):
+ * <p>1.21.1 line: the class name is UNCHANGED here — Moonrise-Fabric's 1.21.1 builds
+ * (verified against moonrise-opt 0.1.0-beta.15+2eae1b1, the latest 1.21.1 Fabric jar)
+ * already carry {@code MoonriseRegionFileIO} with the identical 7-arg overload,
+ * {@code RegionFileType.CHUNK_DATA}, and the SHADED {@code …libs…util.Priority} with
+ * {@code LOW}. Do NOT "fix" this to {@code RegionFileIOThread}: that is Paper's own
+ * 1.21.1-era class (see {@code PaperChunkDiskReader}'s compile-time flavor), never the
+ * Fabric mod's — the two platforms genuinely differ on this line (review 2026-08-15).
+ *
+ * <p>The target overload (verified against moonrise-opt 0.1.0-beta.15, MC 1.21.1 —
+ * byte-identical shape to 26.2's 1.1.0):
  * <pre>
  * public static Cancellable loadDataAsync(ServerLevel, int, int, RegionFileType,
  *         BiConsumer&lt;CompoundTag, Throwable&gt;, boolean intendingToBlock, Priority)

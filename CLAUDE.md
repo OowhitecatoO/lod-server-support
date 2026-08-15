@@ -7,9 +7,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > **Java 21** (build with a Java 21 JDK — paperweight's codebook cannot parse
 > Java 25 class files). **BEST-EFFORT tier, whole line** (user decision
 > 2026-08-14): the spike's pre-authorized feature-drop list applies
-> (docs/planning/pre-authorized-cuts.md — headline cuts: Tier 3 client gametests,
-> the far-player RENDER path, the Sodium config screen), further cuts need a
-> dated decisions-log entry. Do NOT merge to `main`; releases tag
+> (docs/planning/pre-authorized-cuts.md), further cuts need a dated decisions-log
+> entry. **Cut actually TAKEN: Tier 3 client gametests only.** The other two
+> pre-authorized headline cuts were NOT needed: the Fabric far-player RENDER path
+> is LIVE (reworked to immediate-mode `dispatcher.render` on
+> `WorldRenderEvents.AFTER_ENTITIES` — only the NeoForge renderer is the no-op
+> stub, which is main's pre-existing state, not a line cut) and the Sodium config
+> screen is LIVE (ported, registered under `sodium:config_api_user`). Release
+> notes must describe the shipped set, not the pre-authorization. **Folia does
+> NOT exist on this line** (no 1.21.1 build — the 1.21 family starts at 1.21.4):
+> `folia-supported` is ABSENT from plugin.yml with the pins INVERTED to absence
+> (PluginYmlContractTest + release_check), the Modrinth loaders list drops folia,
+> and `run-folia`/`SOAK_PLATFORM=folia` are unavailable here — the mainline prose
+> below about Folia describes 26.2, not this line. Do NOT merge to `main`; releases tag
 > `v<x.y.z>+mc1.21.1` (make_latest false). Per-line surfaces live in
 > **docs/planning/per-version-surfaces.md** (canonical — this banner is a
 > POINTER) and the line identity in `.github/line.env` + `gradle.properties`
@@ -87,7 +97,7 @@ lod-server-support/
 ## Build Commands
 
 ```bash
-./gradlew :fabric:build -x runClientGameTest  # Build Fabric mod + Tier 1 & 2 tests
+./gradlew :fabric:build                       # Build Fabric mod + Tier 1 & 2 tests (Tier 3 is CUT on this line — the task does not exist)
 ./gradlew :paper:shadowJar                    # Build Paper plugin JAR
 ./gradlew :neoforge:build                     # Build NeoForge mod (shadowJar + contract tests + vssJar)
 ./gradlew :neoforge:runGameTestServer         # NeoForge 8-test gametest smoke (exit = failed count)
@@ -105,12 +115,13 @@ CI builds (env `CI=true`) name the jars `lod-server-support-<platform>-<mod_vers
 ## Test Commands
 
 ```bash
-./gradlew :fabric:test -x runGameTest -x runClientGameTest  # Tier 1: JUnit unit tests only (~40s)
+./gradlew :fabric:test -x runGameTest                        # Tier 1: JUnit unit tests only (~40s)
 ./gradlew :fabric:runGameTest                                # Tier 2: server gametests (starts dedicated server, ~13s)
 # NOTE: `:fabric:test` alone runs Tier 1 ONLY — runGameTest hangs off check/build, not test.
-# For Tier 1 + 2 run both commands above, or `:fabric:build -x runClientGameTest`.
-./gradlew :fabric:runClientGameTest                          # Tier 3: client gametests (starts integrated server + client)
-./gradlew :fabric:build -x runClientGameTest                 # Full build + Tier 1 + 2 tests
+# For Tier 1 + 2 run both commands above, or `:fabric:build`.
+# Tier 3 (runClientGameTest) is CUT on this line (pre-authorized-cuts.md) — the task
+# is not registered (enableClientGameTests = false) and `-x runClientGameTest` FAILS.
+./gradlew :fabric:build                                      # Full build + Tier 1 + 2 tests
 ./gradlew :paper:test                                       # Paper JUnit tests (wire parity, NBT serialization, config)
 ```
 
@@ -135,7 +146,7 @@ Since 2026-07 `build.yml` contains the flakes automatically: docs-only changes (
 - **`MemoryLodStoreTest.invalidationTombstoneKillsAQueuedPreEditDeposit` — RESOLVED BY DELETION (2026-08-13).** The suite (and `MemoryLodStore` itself, the SQLite-init degrade tier) was deleted in the deletion-review round — the flake died with the class. Historical mechanism: the test raced 50 deposit→invalidate pairs against the live batcher thread and could miss under full-suite load (~once per loaded-box run, three sightings).
 - **`LSSClientGameTests` superflat section count (Tier 3) — hardened in v0.6.1 (was a serialization-window flake).** `assertDecodedFlatWorldContent` used to fail with *"superflat columns must decode to exactly the one non-air section, got 24"* when a column was serialized during unsettled spawn-prep (its air sections not yet culled by `SectionSerializer`'s `hasOnlyAir` / block-light filter) and that stale delivery lingered in `recorder.snapshot()`. It flaked on the v0.6.0 and v0.6.1 PR CI (twice in a row on the latter — re-running did not clear it). The assertion now checks the content section (sectionY -4) and requires any extra sections to be **air-only** (sampled block states — the extras' blocks are genuinely air, only cull metadata/light differed), tolerating the transient un-culled sections while still catching real decode bugs. If a *new* "expected exactly one content section" or "must be air-only" variant appears, treat it as a real decode regression, not a flake. (`release.yml` runs `-x runClientGameTest`, so Tier 3 never gated the publish regardless.)
 - **`TwoPlayerGameTests` fan-out (Tier 2) — hardened 2026-07 (was a one-shot re-ask race, twice).** `editedColumnPropagatesToBothHoldersThroughBroadcastFanout` failed as "A=3 B=1 on tick 1202" when a step-2 re-ask routed before the broadcaster's dirty-clear mailbox event applied on the processing thread and terminally resolved up_to_date off the stale done-bit. Step 1's version of the same bug was fixed in PR #19; step 2 flaked again 2026-07-10 and now retries its ts=1L re-asks under the same exactly-once guards (mirroring the real client's rescan retry, without weakening the pin — an undelivered clear still freezes the counts and fails at maxTicks). If this test fails again, treat it as a real fan-out regression, not a re-run.
-  - **1.21.1-line sibling, one sighting (2026-08-15, this line only):** `overlappingRequestsFromTwoPlayersDedupeDiskReadsAndBothConverge` failed at "A=0 B=0" at maxTicks (NEITHER player received anything — a startup/timing shape, not the hardened re-ask race above) on a WSL2 box immediately after a NeoForge gametest-server run in the same Gradle chain; the re-run was 71/71 green first try on identical bytes. Action: re-run once; a recurrence — especially with nonzero counts — deserves diagnosis, not another re-run.
+  - **1.21.1-line sibling, one sighting (2026-08-15, this line only):** `overlappingRequestsFromTwoPlayersDedupeDiskReadsAndBothConverge` failed at "A=0 B=0" at maxTicks (NEITHER player received anything — a startup/timing shape, not the hardened re-ask race above) on a WSL2 box immediately after a NeoForge gametest-server run in the same Gradle chain; the re-run was 71/71 green first try on identical bytes. Action: check the DISCRIMINATOR first, then re-run once: this line's new failure mode (BackgroundIoSubmit's documented closed-mailbox `tell()` drop — the read burns its 10 s timeout) produces the same zero-serves shape, so before writing a red off as this flake, grep the run's log for `"Disk read timed out"` and check `disk.errors` — nonzero means the mailbox/submit path, not timing; investigate. A clean-log A=0 B=0 that greens on re-run is this entry. A recurrence — especially with nonzero counts — deserves diagnosis either way.
 - **`GenerationLifecycleGameTests` (Tier 2) — cold-gen timing, budgets raised 2026-07.** The four tests that wait on real cold chunk generation (piggybacked, same-tick re-request, End-void sentinel, generation-serve seed) ran at 600 maxTicks, which first-run generation can exceed on starved runners; all now run at 1200 (FP-033 needed the same bump earlier). A timeout beyond 1200 ticks is worth investigating, not re-running.
 - **Tier 3 silent client-JVM hang → 35-min step timeout (first seen 2026-08-05, v0.9.1 release commit).** The Client GameTests job can fail with NO assertion, NO crash report, and no LSS/vanilla error: the client log simply stops (that instance: right after an `LSS-CacheIO` "Saved N cached column entries" line, world-teardown screen churn just before) and GitHub kills the step at its 35-minute timeout. Both attempts of the run redded this way while the BYTE-IDENTICAL tree had passed Tier 3 three times the same day in ~2 min each (both PR runs + the prior main commit). Recurred 2026-08-08 (PR #109: mute stop right after the session-config receipt, 15:04→15:38 kill, no crash-reports; rerun green first try — and the merge commit's own main run was green). Third sighting 2026-08-13 (PR #129: mute stop right after an LSS-CacheIO "Saved 1296 cached column entries" line — the FIRST sighting's exact stop point — 07:21→07:55 kill; the byte-identical tree passed Tier 3 locally twice the same day). Diagnosis: an environment-class headless-client freeze on a shared runner, not a code regression — the decisive signature is the silent log stop with an empty crash-reports dir in the `gametest-failure-evidence-client` artifact (a real regression fails a test or crashes; it does not go mute mid-teardown). Action: `gh run rerun <id> --failed` after confirming that signature (the rerun was green first try). Note `release.yml` runs `-x runClientGameTest`, so this can never block a publish — only the pre-tag green-check.
 - **Vanilla `TicketStorage.purgeStaleTickets` NPE (Tier 3) — upstream MC 26.2 crash under ticket churn.** The integrated server can die with `NullPointerException: ... "this.wrapped" is null` in `Long2ObjectOpenHashMap$MapIterator.nextEntry` via `TicketStorage.removeTicketIf` ← `purgeStaleTickets` ← `ServerChunkCache.tick` (first seen 2026-07-10, run 29101338616). Investigated: every LSS ticket call is main-thread-only (`ChunkGenerationService` — submit/timeout/extract/removePlayer/shutdown all inside `tick()`), and LSS's generation ticket has no timeout so the purge never touches it; 26.2's `removeTicketIf` bytecode fires the `ChunkUpdated.update` callback *mid-iteration* of the fastutil ticket map, so any synchronous downstream ticket mutation corrupts the iterator — a vanilla fragility that Tier 3's generation-driven ticket churn makes likely to trip. Not fixable in LSS; the CI retry contains it. Action: if it recurs, pull the crash report from the `gametest-flake-evidence-client` artifact and confirm the stack is still vanilla-only before suspecting LSS.
@@ -521,8 +532,8 @@ Releases are triggered by pushing an **annotated tag** (`git tag -a`). The tag a
 
 1. Review commits since the last tag: `git log $(git describe --tags --abbrev=0)..HEAD --oneline`
 2. **Pre-flight the exact release build locally** before tagging — the tag triggers an irreversible GitHub + Modrinth publish, so it must be green first:
-   `CI=true ./gradlew :fabric:build -x runClientGameTest :paper:test :paper:shadowJar :neoforge:build -Pmod_version=<version> && python3 scripts/release_check.py --version <version>`
-   (`release_check.py` must print `OK`; `--version` pins the check to the jars just built — stale jars in build/libs otherwise fail the run; `:fabric:build` runs Tier 1 + Tier 2, `:paper:test` gates the Paper jar, `:neoforge:build` runs the contract suite + builds the six-family jar set `release_check.py` now hard-requires. CI runs Tier 3 (`:fabric:runClientGameTest`) as a separate build.yml job — check it is green on the release commit before tagging.)
+   `CI=true ./gradlew :fabric:build :paper:test :paper:shadowJar :neoforge:build -Pmod_version=<version> && python3 scripts/release_check.py --version <version>`
+   (`release_check.py` must print `OK`; `--version` pins the check to the jars just built — stale jars in build/libs otherwise fail the run; `:fabric:build` runs Tier 1 + Tier 2, `:paper:test` gates the Paper jar, `:neoforge:build` runs the contract suite + builds the six-family jar set `release_check.py` now hard-requires. There is NO Tier 3 on this line — build.yml has no client-gametest job.)
 3. Get the release commit onto `main` via PR (protected branch): push the release branch, `gh pr create --base main`, then `gh pr merge --merge`. Use **`--merge`** (a merge commit) — `--squash`/`--rebase` rewrite SHAs and orphan the tag.
 4. Write release notes to a file (format below) and create the annotated tag with **`--cleanup=verbatim`** so the `###` headers survive:
    `git tag -a v<version> -F <notes-file> --cleanup=verbatim`

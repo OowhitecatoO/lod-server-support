@@ -25,13 +25,15 @@ LEGACY_DIR="$SCRIPT_DIR/test-server/fabric-legacy"
 # --- Fabric versions ---
 # NOTE: the Java-version gate below (JAVA_MAJOR check) is ALSO per-line data —
 #       a Java-21 line port must retarget it (round-3 review NIT).
-FABRIC_MC_VERSION="26.2"
+FABRIC_MC_VERSION="1.21.1"
 FABRIC_LOADER_VERSION="0.19.3"
 FABRIC_INSTALLER_VERSION="1.1.1"
 
 # --- Paper/Folia versions ---
-PAPER_MC_VERSION="26.2"
-FOLIA_MC_VERSION="26.2"
+PAPER_MC_VERSION="1.21.1"
+# Folia has NO 1.21.1 build (its 1.21 family starts at 1.21.4) — the fill probe in
+# setup_folia self-skips, permanently on this line, not "yet".
+FOLIA_MC_VERSION="1.21.1"
 
 # --- NeoForge version ---
 # Pinned to the version the neoforge module BUILDS AGAINST (gradle.properties
@@ -45,32 +47,32 @@ NEOFORGE_INSTALLER_URL="https://maven.neoforged.net/releases/net/neoforged/neofo
 
 # --- Download URLs ---
 FABRIC_SERVER_URL="https://meta.fabricmc.net/v2/versions/loader/${FABRIC_MC_VERSION}/${FABRIC_LOADER_VERSION}/${FABRIC_INSTALLER_VERSION}/server/jar"
-FABRIC_API_URL="https://cdn.modrinth.com/data/P7dR8mSH/versions/Cpy2Px2f/fabric-api-0.154.0%2B26.2.jar"
-C2ME_URL="https://cdn.modrinth.com/data/VSNURh3q/versions/nvOkOiyi/c2me-fabric-mc26.2-0.4.2-alpha.0.9.jar"
-# DrexHD AntiXray (Modrinth sml2FMaA), fabric-1.4.16+26.1 — listed compatible with MC 26.2.
+FABRIC_API_URL="https://cdn.modrinth.com/data/P7dR8mSH/versions/Nlt8gI9z/fabric-api-0.116.15%2B1.21.1.jar"
+C2ME_URL="https://cdn.modrinth.com/data/VSNURh3q/versions/gRm1ZAvc/c2me-fabric-mc1.21.1-0.4.0-alpha.0.27.jar"
+# DrexHD AntiXray (Modrinth sml2FMaA), fabric-1.4.8+1.21.1 — this line's build.
 # `run-fabric-antixray` enables it as the live gate for LSS's AntiXray compat
-# (docs/planning/antixray-compat-design.md): a current LSS build must SURVIVE an LSS client
-# join — the crash shim binds AntiXray's ScopedValue context around LSS serialization, and
-# masking adopts the mod's hidden list (watch for the shim + 'LOD x-ray masking active'
-# lines and the /lsslod diag Xray line). Only a pre-shim LSS build still crashes (unbound
-# ScopedValue NoSuchElementException in the probe serve — the stack-trace source for the
-# upstream issue draft). Every other run command parks the jar as .jar.disabled.
-ANTIXRAY_URL="https://cdn.modrinth.com/data/sml2FMaA/versions/AK313N9m/antixray-fabric-1.4.16%2B26.1.jar"
+# (docs/planning/antixray-compat-design.md). 1.21.1 line: ScopedCarrier is the
+# PASS-THROUGH variant (ScopedValue is preview on Java 21 — no crash shim exists or is
+# needed; this rig is the pass-through claim's ONLY live verification): watch for a clean
+# LSS client join + masking adopting the mod's hidden list ('LOD x-ray masking active',
+# the /lsslod diag Xray line). Every other run command parks the jar as .jar.disabled.
+ANTIXRAY_URL="https://cdn.modrinth.com/data/sml2FMaA/versions/KlJq0gHr/antixray-fabric-1.4.8%2B1.21.1.jar"
 
 # --- Legacy (protocol-16) LSS server ---
-# The last pre-v0.7.0 release on this Minecraft line (26.2), pulled straight from GitHub
-# Releases (a real protocol-16 server, not a rebuild). MC 26.2 == the current line, so a
-# current client CAN join it — only the LSS protocol differs (16 vs 18), which is exactly
-# what the v16 client-compat path bridges. Bump this when a newer pre-v0.7.0 tag is preferred.
-LEGACY_LSS_VERSION="0.6.2"
-LEGACY_LSS_MC="26.2"
-LEGACY_LSS_FABRIC_URL="https://github.com/VoX/lod-server-support/releases/download/v${LEGACY_LSS_VERSION}/lod-server-support-fabric-${LEGACY_LSS_VERSION}%2B${LEGACY_LSS_MC}.jar"
+# NOT AVAILABLE on the 1.21.1 line: this line's FIRST LSS release is v0.11.0, so no
+# pre-v0.7.0 (protocol-16) jar exists for it and the same-MC legacy rig is structurally
+# impossible here (run-legacy errors out; cross-MC legacy testing lives in the
+# lss-multi-test Prism profiles).
+LEGACY_LSS_VERSION=""
+LEGACY_LSS_MC=""
+LEGACY_LSS_FABRIC_URL=""
 
 # --- Java version check ---
 JAVA_MAJOR=$(java -version 2>&1 | head -1 | sed 's/.*"\([0-9]\+\).*/\1/')
-if [ "$JAVA_MAJOR" -lt 25 ] 2>/dev/null; then
-    echo "ERROR: Java 25+ required for MC 26.2. Found: Java $JAVA_MAJOR" >&2
-    echo "  Set JAVA_HOME to a JDK 25+ installation." >&2
+if [ "$JAVA_MAJOR" -lt 21 ] 2>/dev/null; then
+    echo "ERROR: Java 21+ required for MC 1.21.1. Found: Java $JAVA_MAJOR" >&2
+    echo "  Set JAVA_HOME to a JDK 21 installation (this line BUILDS with 21 —" >&2
+    echo "  paperweight's codebook cannot parse Java 25 class files)." >&2
     exit 1
 fi
 
@@ -232,7 +234,7 @@ print(stable[0]['downloads']['server:default']['url']) if stable else print('')
 }
 
 # Resolve the newest Modrinth version file for a project/loader/MC-line and download it.
-# Used by the Via variant (no pinned URLs — Via ships frequently and any MC-26.2 build
+# Used by the Via variant (no pinned URLs — Via ships frequently and any MC-1.21.1 build
 # works for the guard's live pull).
 download_modrinth_latest() {
     local slug="$1" loader="$2" mc_version="$3" dest="$4"
@@ -270,7 +272,7 @@ build_fabric_jar() {
     jar="$SCRIPT_DIR/fabric/build/libs/lod-server-support-fabric.jar"
     if [ -n "$force" ] || [ ! -f "$jar" ]; then
         echo "Building Fabric LSS JAR..." >&2
-        (cd "$SCRIPT_DIR" && ./gradlew :fabric:build -x runClientGameTest) >&2
+        (cd "$SCRIPT_DIR" && ./gradlew :fabric:build) >&2
     fi
     echo "$jar"
 }
@@ -588,12 +590,11 @@ setup_folia() {
     local plugins_dir="$FOLIA_DIR/plugins"
     mkdir -p "$FOLIA_DIR" "$plugins_dir"
 
-    # Folia lags Paper when a new Minecraft version lands — it may not have a build for
-    # FOLIA_MC_VERSION yet. Skip the local Folia server gracefully (the Paper plugin jar already
-    # carries Folia support) instead of aborting the whole script under `set -e`.
-    # 26.2 status: Folia published its first build (26.2-1) on 2026-07-28, channel BETA.
-    # download_papermc_jar falls back from STABLE to whatever exists, so this resolves the
-    # BETA build — deliberate, since BETA is the only channel Folia 26.2 has.
+    # 1.21.1 line: Folia NEVER published a 1.21.1 build (its 1.21 family starts at
+    # 1.21.4), so this probe always fails and the Folia server always skips — permanent
+    # on this line, not "not yet". Kept as the graceful data-driven skip rather than a
+    # hard error so `setup` (all servers) still works. plugin.yml carries NO
+    # folia-supported here (the absence is pin-inverted — see PluginYmlContractTest).
     if ! curl -fsSL -A "lod-server-support/test-server" -o /dev/null \
             "https://fill.papermc.io/v3/projects/folia/versions/${FOLIA_MC_VERSION}/builds" 2>/dev/null; then
         echo "  NOTE: Folia has no MC ${FOLIA_MC_VERSION} build published upstream yet — skipping the local Folia server."
@@ -612,7 +613,7 @@ setup_folia() {
     write_lss_config "$FOLIA_DIR/plugins/LodServerSupport"
 
     echo "=== Installing Folia plugins ==="
-    echo "  Installing LSS (same jar as Paper — folia-supported: true, EXPERIMENTAL on 26.2)..."
+    echo "  Installing LSS (same jar as Paper)..."
     local lss_jar
     lss_jar=$(build_paper_jar)
     rm -f "$plugins_dir"/lod-server-support-paper*.jar
@@ -693,7 +694,13 @@ setup_legacy() {
     local mods_dir="$LEGACY_DIR/mods"
     mkdir -p "$LEGACY_DIR" "$mods_dir"
 
-    # Same MC 26.2 Fabric server launcher + Fabric API as the current Fabric server — only the
+    if [ -z "$LEGACY_LSS_VERSION" ]; then
+        echo "ERROR: no legacy (protocol-16) LSS release exists on the 1.21.1 line —" >&2
+        echo "  this line's first release is v0.11.0. Cross-MC legacy testing lives in" >&2
+        echo "  the lss-multi-test Prism profiles, not this rig." >&2
+        exit 1
+    fi
+    # Same Fabric server launcher + Fabric API as the current Fabric server — only the
     # LSS jar differs (an old release instead of the local build). No C2ME: keep the legacy
     # server a clean vanilla-IO protocol-16 baseline so nothing confounds the compat eyeball.
     download "$FABRIC_SERVER_URL" "$LEGACY_DIR/fabric-server-launch.jar"

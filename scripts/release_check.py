@@ -175,13 +175,15 @@ def check_paper_jar(jar, problems):
         if _looks_unexpanded(ymltext):
             problems.append(f"{base}: plugin.yml has an unexpanded ${{version}} placeholder")
         # Re-inverted 2026-08-01: Folia shipped its first MC 26.2 build (26.2-1, BETA), so
-        # the flag is declared again and the single jar must keep serving Folia. A jar that
-        # LOSES the flag silently stops loading on Folia servers, which is the failure this
-        # now guards (the previous inversion guarded the opposite risk, when no 26.2 Folia
-        # existed to load onto).
-        if not re.search(r"^folia-supported:\s*true\s*$", ymltext, re.MULTILINE):
-            problems.append(f"{base}: plugin.yml lost folia-supported: true — Folia servers "
-                            "will refuse this jar")
+        # 1.21.1 line: the DIRECTION is inverted vs 26.x — Folia has NO 1.21.1 build
+        # (its 1.21 family starts at 1.21.4; fill.papermc.io verified 2026-08-15), so a
+        # jar DECLARING the flag claims support for a platform that does not exist (the
+        # v0.7.0-era failure this line re-guards). PluginYmlContractTest carries the
+        # matching absence pin.
+        if re.search(r"^folia-supported:", ymltext, re.MULTILINE):
+            problems.append(f"{base}: plugin.yml declares folia-supported on the 1.21.1 line "
+                            "— Folia has NO 1.21.1 build (its 1.21 family starts at 1.21.4), "
+                            "so the flag claims support for a platform that does not exist")
     if not any(n.startswith("dev/vox/lss/common/") and n.endswith(".class") for n in names):
         problems.append(f"{base}: shaded jar missing the shared common/ classes")
     if "paperweight-mappings-namespace: mojang" not in _manifest(jar):
@@ -1090,7 +1092,7 @@ def _selftest():
 
         good_pap = os.path.join(td, "lod-server-support-paper.jar")
         _make_jar(good_pap, {
-            "plugin.yml": "name: LodServerSupport\nversion: 0.4.0\nfolia-supported: true\n",
+            "plugin.yml": "name: LodServerSupport\nversion: 0.4.0\n",
             "dev/vox/lss/paper/LSSPaperPlugin.class": "x",
             "dev/vox/lss/common/PositionUtil.class": "x",
         }, manifest="Manifest-Version: 1.0\npaperweight-mappings-namespace: mojang\n")
@@ -1098,13 +1100,11 @@ def _selftest():
         check_paper_jar(good_pap, p)
         check(p == [], f"clean paper jar flagged: {p}")
 
-        # a paper jar LOSING folia-supported must be caught: Folia ships a 26.2 build since
-        # 2026-07-28, so a jar without the flag silently stops loading on Folia servers
-        # (re-inverted 2026-08-01 — the previous direction guarded the opposite risk, back
-        # when no Folia 26.2 existed to load onto)
+        # 1.21.1 line: a paper jar DECLARING folia-supported must be caught — no Folia
+        # build exists for this MC version (direction inverted vs 26.x, surfaces row 7)
         foliaflag_pap = os.path.join(td, "foliaflag-paper.jar")
         _make_jar(foliaflag_pap, {
-            "plugin.yml": "name: LodServerSupport\nversion: 0.4.0\n",
+            "plugin.yml": "name: LodServerSupport\nversion: 0.4.0\nfolia-supported: true\n",
             "dev/vox/lss/paper/LSSPaperPlugin.class": "x",
             "dev/vox/lss/common/PositionUtil.class": "x",
         }, manifest="Manifest-Version: 1.0\npaperweight-mappings-namespace: mojang\n")
@@ -1247,7 +1247,6 @@ def _selftest():
         good_vpap = os.path.join(td, "voxy-server-side-paper.jar")
         _make_jar(good_vpap, {
             "plugin.yml": ("name: VoxyServerSide\nversion: 0.7.0\n"
-                           "folia-supported: true\n"
                            "description: Render distant Voxy LODs on servers\n"),
             "dev/vox/lss/paper/LSSPaperPlugin.class": "x",
             "dev/vox/lss/common/PositionUtil.class": "x",
@@ -1634,7 +1633,6 @@ def _selftest():
         os.makedirs(dneo)
         PY_LSS = ("name: LodServerSupport\nversion: '0.7.0'\n"
                   "main: dev.vox.lss.paper.LSSPaperPlugin\napi-version: '26.2'\n"
-                  "folia-supported: true\n"
                   "description: LSS plugin.\n"
                   "author: VoX\n"
                   "website: https://modrinth.com/plugin/lod-server-support\n"

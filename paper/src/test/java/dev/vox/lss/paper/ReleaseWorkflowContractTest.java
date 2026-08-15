@@ -286,6 +286,13 @@ class ReleaseWorkflowContractTest {
             assertTrue(env("LINE_PAPER_LOADERS").contains("folia"),
                     "the 26.2 Paper step advertises folia (jar declares folia-supported; "
                             + "all four SOAK_PLATFORM=folia scenarios pass)");
+        } else {
+            // 1.21.1 line: Folia has NO build for this MC version (its 1.21 family starts
+            // at 1.21.4), plugin.yml carries no folia-supported, and the Modrinth listing
+            // must not advertise a loader the jar cannot run on (surfaces row 7 — the
+            // direction is re-derived per line).
+            assertTrue(!env("LINE_PAPER_LOADERS").contains("folia"),
+                    "the 1.21.1 Paper step must NOT advertise folia — no Folia 1.21.1 exists");
         }
     }
 
