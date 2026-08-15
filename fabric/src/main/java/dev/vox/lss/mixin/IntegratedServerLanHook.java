@@ -19,9 +19,12 @@ public class IntegratedServerLanHook {
     @Inject(method = "publishServer(Lnet/minecraft/world/level/GameType;ZI)Z", at = @At("RETURN"))
     private void lss$onLanPublished(GameType gameType, boolean allowCheats, int port,
                                      CallbackInfoReturnable<Boolean> cir) {
-        // getReturnValue() is read HERE, in the callback frame (false for already-published
-        // and listener IOException — no spurious starts); only the start itself is deferred
-        // (see startServiceForLan's server-thread hop, which applies on every line).
+        // getReturnValue() is read HERE, in the callback frame. 26.1: false comes ONLY
+        // from the listener-IOException handler — this line's publishServer has NO
+        // already-published guard (javap-verified, review 2026-08-15), so double-publish
+        // idempotency rests on startServiceForLanOnServerThread's requestService
+        // null-check (pinned by the Tier-2 idempotency gametest), not on this flag.
+        // Only the start itself is deferred (see startServiceForLan's server-thread hop).
         if (cir.getReturnValue()) {
             LSSServerNetworking.startServiceForLan((IntegratedServer) (Object) this);
         }

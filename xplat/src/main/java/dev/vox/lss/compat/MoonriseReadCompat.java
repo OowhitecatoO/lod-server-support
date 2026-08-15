@@ -20,7 +20,13 @@ import java.util.function.BiConsumer;
  * resolved at runtime, and any failure shape degrades to {@code null} = unavailable, which
  * leaves {@code ChunkDiskReader}'s existing ladder bit-identical to today.
  *
- * <p>The target overload (verified against moonrise-opt 1.1.0 bytecode, MC 26.2):
+ * <p>26.1 line: re-verified against moonrise-opt 1.0.0 (the 26.1/26.1.1/26.1.2 build,
+ * review 2026-08-15) — it declares four public static loadDataAsync overloads and the
+ * 7-param one is exactly this shape, so the scan stays unambiguous; RegionFileType
+ * .CHUNK_DATA and Priority.LOW both exist.
+ *
+ * <p>The target overload (verified against moonrise-opt 1.1.0 bytecode, MC 26.2 —
+ * byte-identical shape on this line's 1.0.0):
  * <pre>
  * public static Cancellable loadDataAsync(ServerLevel, int, int, RegionFileType,
  *         BiConsumer&lt;CompoundTag, Throwable&gt;, boolean intendingToBlock, Priority)

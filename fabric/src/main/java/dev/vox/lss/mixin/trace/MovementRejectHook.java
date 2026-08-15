@@ -19,6 +19,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * non-required {@code lss-trace.mixins.json}, so any drift degrades to missing rows, never
  * a crash (§0 constraint 4).
  *
+ * <p>26.1 line: the census is byte-for-byte identical on 26.1 AND 26.1.2 (one
+ * warn(String,Object[]), one warn(String,Object), three teleport(DDDFF)V, the wrongly
+ * warn between teleports #2 and #3 — re-verified at the v0.11.0 review, 2026-08-15).
+ *
  * <p>Targeting scheme (reviews F-6/F-7, verified against the 26.2 bytecode): the two
  * vanilla warns have DISTINCT slf4j descriptors — {@code warn(String,Object[])} is the
  * "moved too quickly!" site, {@code warn(String,Object)} the "moved wrongly!" site — so no
