@@ -74,7 +74,7 @@ neoForge {
         }
         gameTestServer {
             type = "gameTestServer"
-            // Filter to OUR tests: the 26.2 TEST_INSTANCE registry also carries every
+            // Filter to OUR tests: the vanilla TEST_INSTANCE registry also carries every
             // vanilla datapack test; unfiltered, the run executes hundreds of them.
             programArguments.addAll('--tests', 'lsstest:*')
             // GameTestServer is not a DedicatedServer — the same activation gate the
@@ -105,9 +105,11 @@ configurations {
 
 configurations.all {
     resolutionStrategy {
-        // common declares slf4j 2.0.18; MC 26.2's dependency graph STRICTLY pins
-        // 2.0.17. Force MC's version (API-compatible) — the runtime provider is the
-        // game's own slf4j anyway (same posture as the fabric/paper modules).
+        // common declares slf4j 2.0.18; force the GAME's own slf4j-api major so the
+        // compile classpath can never see newer API than the runtime provider (the
+        // shadowJar excludes org/slf4j/** — this is compile-classpath-only; same
+        // posture as the fabric/paper modules). 2.0.17 is API-compatible with the
+        // 1.21.11-era runtime; re-derive if a real slf4j API use ever appears.
         force 'org.slf4j:slf4j-api:2.0.17'
     }
 }

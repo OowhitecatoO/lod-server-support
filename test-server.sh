@@ -47,21 +47,22 @@ NEOFORGE_INSTALLER_URL="https://maven.neoforged.net/releases/net/neoforged/neofo
 FABRIC_SERVER_URL="https://meta.fabricmc.net/v2/versions/loader/${FABRIC_MC_VERSION}/${FABRIC_LOADER_VERSION}/${FABRIC_INSTALLER_VERSION}/server/jar"
 FABRIC_API_URL="https://cdn.modrinth.com/data/P7dR8mSH/versions/5zJNhXV2/fabric-api-0.141.4%2B1.21.11.jar"
 C2ME_URL="https://cdn.modrinth.com/data/VSNURh3q/versions/MfQIu1Y0/c2me-fabric-mc1.21.11-0.4.0-alpha.0.18.jar"
-# DrexHD AntiXray (Modrinth sml2FMaA), fabric-1.4.16+26.1 — listed compatible with MC 26.2.
+# DrexHD AntiXray (Modrinth sml2FMaA), fabric-1.4.14+1.21.11 — this line's own build.
 # `run-fabric-antixray` enables it as the live gate for LSS's AntiXray compat
 # (docs/planning/antixray-compat-design.md): a current LSS build must SURVIVE an LSS client
-# join — the crash shim binds AntiXray's ScopedValue context around LSS serialization, and
-# masking adopts the mod's hidden list (watch for the shim + 'LOD x-ray masking active'
-# lines and the /lsslod diag Xray line). Only a pre-shim LSS build still crashes (unbound
-# ScopedValue NoSuchElementException in the probe serve — the stack-trace source for the
-# upstream issue draft). Every other run command parks the jar as .jar.disabled.
+# join — 1.21.x line: ScopedCarrier is the PASS-THROUGH variant (ScopedValue is preview
+# on Java 21 — no crash shim exists or is needed; this rig is the pass-through claim's
+# ONLY live verification) — and masking adopts the mod's hidden list (watch for a clean
+# join + 'LOD x-ray masking active' and the /lsslod diag Xray line). Every other run
+# command parks the jar as .jar.disabled.
 ANTIXRAY_URL="https://cdn.modrinth.com/data/sml2FMaA/versions/PHC63Epd/antixray-fabric-1.4.14%2B1.21.11.jar"
 
 # --- Legacy (protocol-16) LSS server ---
-# The last pre-v0.7.0 release on this Minecraft line (26.2), pulled straight from GitHub
-# Releases (a real protocol-16 server, not a rebuild). MC 26.2 == the current line, so a
-# current client CAN join it — only the LSS protocol differs (16 vs 18), which is exactly
-# what the v16 client-compat path bridges. Bump this when a newer pre-v0.7.0 tag is preferred.
+# The last pre-v0.7.0 release ON THIS LINE (v0.5.0 shipped a real +mc1.21.11 build),
+# pulled straight from GitHub Releases (a real protocol-16 server, not a rebuild). Same MC
+# as the current line, so a current client CAN join it — only the LSS protocol differs
+# (16 vs 18), which is exactly what the v16 client-compat path bridges. Bump this when a
+# newer pre-v0.7.0 tag is preferred.
 LEGACY_LSS_VERSION="0.5.0"
 LEGACY_LSS_MC="1.21.11"
 LEGACY_LSS_FABRIC_URL="https://github.com/VoX/lod-server-support/releases/download/v${LEGACY_LSS_VERSION}/lod-server-support-fabric-${LEGACY_LSS_VERSION}%2B${LEGACY_LSS_MC}.jar"
@@ -70,7 +71,8 @@ LEGACY_LSS_FABRIC_URL="https://github.com/VoX/lod-server-support/releases/downlo
 JAVA_MAJOR=$(java -version 2>&1 | head -1 | sed 's/.*"\([0-9]\+\).*/\1/')
 if [ "$JAVA_MAJOR" -lt 21 ] 2>/dev/null; then
     echo "ERROR: Java 21+ required for MC 1.21.11. Found: Java $JAVA_MAJOR" >&2
-    echo "  Set JAVA_HOME to a JDK 25+ installation." >&2
+    echo "  Set JAVA_HOME to a JDK 21 installation (this line BUILDS with 21 —" >&2
+    echo "  paperweight's codebook cannot parse Java 25 class files)." >&2
     exit 1
 fi
 
@@ -232,7 +234,7 @@ print(stable[0]['downloads']['server:default']['url']) if stable else print('')
 }
 
 # Resolve the newest Modrinth version file for a project/loader/MC-line and download it.
-# Used by the Via variant (no pinned URLs — Via ships frequently and any MC-26.2 build
+# Used by the Via variant (no pinned URLs — Via ships frequently and any current-MC build
 # works for the guard's live pull).
 download_modrinth_latest() {
     local slug="$1" loader="$2" mc_version="$3" dest="$4"
@@ -591,9 +593,9 @@ setup_folia() {
     # Folia lags Paper when a new Minecraft version lands — it may not have a build for
     # FOLIA_MC_VERSION yet. Skip the local Folia server gracefully (the Paper plugin jar already
     # carries Folia support) instead of aborting the whole script under `set -e`.
-    # 26.2 status: Folia published its first build (26.2-1) on 2026-07-28, channel BETA.
+    # 1.21.11 status: Folia ships 1.21.11 builds (fill-verified) — the probe resolves them.
     # download_papermc_jar falls back from STABLE to whatever exists, so this resolves the
-    # BETA build — deliberate, since BETA is the only channel Folia 26.2 has.
+    # BETA build when that is the only channel the line has.
     if ! curl -fsSL -A "lod-server-support/test-server" -o /dev/null \
             "https://fill.papermc.io/v3/projects/folia/versions/${FOLIA_MC_VERSION}/builds" 2>/dev/null; then
         echo "  NOTE: Folia has no MC ${FOLIA_MC_VERSION} build published upstream yet — skipping the local Folia server."
@@ -612,7 +614,7 @@ setup_folia() {
     write_lss_config "$FOLIA_DIR/plugins/LodServerSupport"
 
     echo "=== Installing Folia plugins ==="
-    echo "  Installing LSS (same jar as Paper — folia-supported: true, EXPERIMENTAL on 26.2)..."
+    echo "  Installing LSS (same jar as Paper — folia-supported: true, EXPERIMENTAL)..."
     local lss_jar
     lss_jar=$(build_paper_jar)
     rm -f "$plugins_dir"/lod-server-support-paper*.jar
@@ -693,7 +695,7 @@ setup_legacy() {
     local mods_dir="$LEGACY_DIR/mods"
     mkdir -p "$LEGACY_DIR" "$mods_dir"
 
-    # Same MC 26.2 Fabric server launcher + Fabric API as the current Fabric server — only the
+    # Same Fabric server launcher + Fabric API family as the current Fabric server — only the
     # LSS jar differs (an old release instead of the local build). No C2ME: keep the legacy
     # server a clean vanilla-IO protocol-16 baseline so nothing confounds the compat eyeball.
     download "$FABRIC_SERVER_URL" "$LEGACY_DIR/fabric-server-launch.jar"

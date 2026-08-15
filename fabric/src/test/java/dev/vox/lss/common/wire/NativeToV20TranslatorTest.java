@@ -519,6 +519,19 @@ class NativeToV20TranslatorTest {
         byte[] viaTranslate = NativeToV20Translator.translate(
                 nativeBody(shapes.toArray(new WireSection[0])), BLOCKS, BIOMES);
 
+        // Review 2026-08-15: this fixture assembles with the CURSOR's line fold while
+        // production emitV20Direct uses the FABRIC family fold — byte-identical only
+        // while the two folds COINCIDE on this line. Pin the coincidence so a future
+        // line that diverges them reds HERE and splits the arms consciously instead of
+        // leaving the direct/translate identity blind.
+        if (NativeSectionShape.NATIVE_COUNT_SHORTS != 2) {
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    NativeSectionShape.foldedCountForNativeHeader(7, 3),
+                    NativeSectionShape.foldedCountFabricFamily(7, 3),
+                    "line fold and fabric family fold diverged — this fixture's"
+                            + " direct arm must switch to the family fold to keep"
+                            + " mirroring emitV20Direct");
+        }
         var dict = new IdentityDictionary();
         var sections = new java.util.ArrayList<WireSection>();
         for (var s : shapes) {

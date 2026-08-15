@@ -436,16 +436,20 @@ public class PaperRequestProcessingService {
             var maskFingerprints = new java.util.HashMap<String, String>();
             for (ServerLevel level : server.getAllLevels()) {
                 String dim = level.dimension().identifier().toString();
-                // Paper 26.x uses the vanilla UNIFIED world layout (one world dir,
-                // dimensions/minecraft/<dim>/region — verified on disk against a live
-                // 26.2 Paper server), so the server worldRoot is the correct
-                // getStorageFolder root, same as Fabric. BACKPORT CAVEAT: the 1.21.x
-                // lines use Bukkit's legacy SPLIT world dirs (world_nether/DIM-1,
-                // world_the_end/DIM1) — a backport must re-root per level (e.g. via
-                // getWorld().getWorldFolder()) or the sweep fail-safe-drops every
-                // non-overworld dim's rows at each boot.
+                // 1.21.x line: Bukkit uses the legacy SPLIT world dirs (world/,
+                // world_nether/DIM-1, world_the_end/DIM1), so the storage root is
+                // re-rooted PER LEVEL via the Bukkit world's own folder — exactly the
+                // fix the 26.x code's BACKPORT CAVEAT prescribed (the unified-layout
+                // worldRoot resolved world/DIM-1 here, which does not exist, and the
+                // sweep fail-safe-dropped every non-overworld dim's rows at each
+                // boot + resweep; review 2026-08-15). getStorageFolder keeps the
+                // overworld at <folder> and nests DIM-1/DIM1 for the others, matching
+                // CraftBukkit's on-disk layout. The store DB itself stays under the
+                // MAIN world folder (brandedStoreDir(worldRoot) below) — one DB, all
+                // dims, unchanged.
+                var levelRoot = level.getWorld().getWorldFolder().toPath().normalize();
                 regionDirs.put(dim, net.minecraft.world.level.dimension.DimensionType
-                        .getStorageFolder(level.dimension(), worldRoot)
+                        .getStorageFolder(level.dimension(), levelRoot)
                         .resolve("region").normalize());
                 var maskEntry = PaperXrayMaskManager.entryForActive(level);
                 maskFingerprints.put(dim, maskEntry == null ? "off"

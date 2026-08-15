@@ -64,7 +64,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>Threading: every touchpoint runs on the client MAIN thread, which IS the render
  * thread (network receivers hop via execute(), ENTITY_LOAD fires from addEntity,
- * AFTER_ENTITIES is the main-thread extract/submit phase). snapshot() is a shallow
+ * BEFORE_ENTITIES is the main-thread extract/submit phase). snapshot() is a shallow
  * copy sharing mutable FarPlayerMotion — it is defense-in-depth, NOT a thread
  * boundary; do not move this pass off-thread trusting it (E2 review n9).
  */
@@ -178,7 +178,13 @@ public final class FarPlayerRenderer {
         itemCache.clear(); // C-M2: the memo empties with the session's proxies
     }
 
-    /** The AFTER_ENTITIES pass. */
+    /** The BEFORE_ENTITIES pass (1.21.11 line: BEFORE, not 26.2's COLLECT_SUBMITS
+     *  analog AFTER_ENTITIES — on this line AFTER_ENTITIES fires after
+     *  FeatureRenderDispatcher.renderAllFeatures() has already drained AND CLEARED the
+     *  submit-node storage, so submits landed there are drawn in the later particles
+     *  pass or dropped. BEFORE_ENTITIES fires at popPush("submitEntities"), before
+     *  vanilla's own submits and the drain — the actual COLLECT_SUBMITS semantics;
+     *  bytecode-verified against LevelRenderer + fabric-api 16.2.10, review 2026-08-15). */
     public void render(WorldRenderContext context) {
         if (crashLatched) return;
         try {
@@ -697,7 +703,7 @@ public final class FarPlayerRenderer {
     /**
      * E2 renderer wiring, called once from {@link dev.vox.lss.LSSClient} (moved here
      * from FarPlayerClientSupport at N-1b — Fabric event registration is per-loader
-     * wiring; the support class is xplat): the AFTER_ENTITIES pass (contained — a
+     * wiring; the support class is xplat): the BEFORE_ENTITIES pass (contained — a
      * renderer bug degrades to no proxies) plus the ENTITY_LOAD edge trigger (a real
      * player entity appearing kills its proxy the same frame — the crossfade guard;
      * UNLOAD needs no hook, the per-frame real-present conjunct picks it up next pass).
@@ -706,7 +712,7 @@ public final class FarPlayerRenderer {
         var renderer = new FarPlayerRenderer();
         FarPlayerRenderer.install(renderer);
         net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents
-                .AFTER_ENTITIES.register(renderer::render);
+                .BEFORE_ENTITIES.register(renderer::render);
         net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientEntityEvents
                 .ENTITY_LOAD.register((entity, world) -> {
                     if (entity instanceof net.minecraft.world.entity.player.Player p) {
