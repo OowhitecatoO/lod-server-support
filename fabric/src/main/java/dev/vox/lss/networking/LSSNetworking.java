@@ -25,7 +25,7 @@ public class LSSNetworking {
                 ClientInfoC2SPayload.TYPE,
                 ClientInfoC2SPayload.CODEC
         );
-        PayloadTypeRegistry.serverboundPlay().register(
+        PayloadTypeRegistry.playC2S().register(
                 dev.vox.lss.networking.payloads.FarPlayerPrefsC2SPayload.TYPE,
                 dev.vox.lss.networking.payloads.FarPlayerPrefsC2SPayload.CODEC
         );
@@ -47,11 +47,11 @@ public class LSSNetworking {
                 VoxelColumnS2CPayload.TYPE,
                 VoxelColumnS2CPayload.CODEC
         );
-        PayloadTypeRegistry.clientboundPlay().register(
+        PayloadTypeRegistry.playS2C().register(
                 dev.vox.lss.networking.payloads.FarPlayerRosterS2CPayload.TYPE,
                 dev.vox.lss.networking.payloads.FarPlayerRosterS2CPayload.CODEC
         );
-        PayloadTypeRegistry.clientboundPlay().register(
+        PayloadTypeRegistry.playS2C().register(
                 dev.vox.lss.networking.payloads.FarPlayerUpdatesS2CPayload.TYPE,
                 dev.vox.lss.networking.payloads.FarPlayerUpdatesS2CPayload.CODEC
         );

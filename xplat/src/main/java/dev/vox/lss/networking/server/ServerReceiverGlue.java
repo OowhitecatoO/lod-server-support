@@ -97,7 +97,7 @@ public final class ServerReceiverGlue {
                 key -> key.identifier().toString());
         var obs = service.getDirtyContentFilter().observeSave(level, levelChunk, dimension);
         if (obs.changed()) {
-            service.getDirtyTracker().markDirty(dimension, chunk.getPos().x(), chunk.getPos().z());
+            service.getDirtyTracker().markDirty(dimension, chunk.getPos().x, chunk.getPos().z);
             // Save-hook store bridge, DELETE-only (4-agent round R2-M2): the write-
             // through deposit this branch used to make could never survive — the same
             // mark it sets is drained by the broadcaster into the unconditional
@@ -111,7 +111,7 @@ public final class ServerReceiverGlue {
             // actually re-warmed edited columns all along). Runs OUTSIDE the filter
             // monitor; tombstone put + control-queue add, safe off-main.
             applySaveObservationToStore(service.getLodStore(), dimension,
-                    chunk.getPos().x(), chunk.getPos().z(), obs);
+                    chunk.getPos().x, chunk.getPos().z, obs);
         }
     }
 

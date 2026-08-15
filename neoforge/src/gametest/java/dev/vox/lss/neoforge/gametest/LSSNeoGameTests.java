@@ -226,7 +226,7 @@ public final class LSSNeoGameTests {
         boolean placed = level.setBlock(editPos, Blocks.DIAMOND_BLOCK.defaultBlockState(), 3);
         var second = filter.observeSave(level, chunk, dim);
         var probe = SectionSerializer.serializeColumn(level, chunk,
-                chunk.getPos().x(), chunk.getPos().z());
+                chunk.getPos().x, chunk.getPos().z);
         helper.assertTrue(second.changed(),
                 "a content edit must hash as changed: first.changed=" + first.changed()
                         + " placed=" + placed
@@ -253,9 +253,9 @@ public final class LSSNeoGameTests {
      */
     private static void diskReadBytesMatchLiveBytes(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
-        var origin = ChunkPos.containing(helper.absolutePos(BlockPos.ZERO));
-        int cx = origin.x() + 120;
-        int cz = origin.z() + 7;
+        var origin = new ChunkPos(helper.absolutePos(BlockPos.ZERO))  /* 1.21.11: no ChunkPos.containing */;
+        int cx = origin.x + 120;
+        int cz = origin.z + 7;
         var chunkPos = new ChunkPos(cx, cz);
         var chunkSource = level.getChunkSource();
         var torchPos = new BlockPos(cx * 16 + 8, -60, cz * 16 + 8);

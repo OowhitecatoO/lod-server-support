@@ -1033,7 +1033,7 @@ public class PaperRequestProcessingService {
             if (!state.hasCompletedHandshake()) continue;
             var player = state.getPlayer();
             this.v16Compat.tickPlayer(player.getUUID(), state,
-                    player.chunkPosition().x(), player.chunkPosition().z(), maxDist);
+                    player.chunkPosition().x, player.chunkPosition().z, maxDist);
         }
     }
 
@@ -1114,7 +1114,7 @@ public class PaperRequestProcessingService {
             // Ring origin for the generation order-spread gate — must be the REAL player
             // chunk (the want-set's first entry sits at ~viewDistance on a ring perimeter,
             // which wedged the gate — see AbstractPlayerRequestState.updatePlayerChunk).
-            state.updatePlayerChunk(player.chunkPosition().x(), player.chunkPosition().z());
+            state.updatePlayerChunk(player.chunkPosition().x, player.chunkPosition().z);
             String dimension = this.dimensionStringCache.computeIfAbsent(level.dimension(),
                     k -> k.identifier().toString());
 

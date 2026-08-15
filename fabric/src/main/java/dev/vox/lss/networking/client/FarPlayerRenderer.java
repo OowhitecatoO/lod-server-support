@@ -5,7 +5,7 @@ import dev.vox.lss.common.LSSLogger;
 import dev.vox.lss.common.farplayers.FarPlayerClientTracker;
 import dev.vox.lss.common.farplayers.FarPlayerWire;
 import dev.vox.lss.config.LSSClientConfig;
-import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
+import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.multiplayer.PlayerInfo;
@@ -30,7 +30,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The far-player proxy renderer (E2, FARP §3.3/§7-B — the SeeU
- * {@code RemotePlayer}-proxy + {@code LevelRenderContext} submission approach, proven
+ * {@code RemotePlayer}-proxy + {@code WorldRenderContext} submission approach, proven
  * on 26.2, reimplemented in LSS idiom). Differences from SeeU that are DECISIONS, not
  * drift (all review-pinned in the FARP plan):
  *
@@ -64,7 +64,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>Threading: every touchpoint runs on the client MAIN thread, which IS the render
  * thread (network receivers hop via execute(), ENTITY_LOAD fires from addEntity,
- * COLLECT_SUBMITS is the main-thread extract/submit phase). snapshot() is a shallow
+ * AFTER_ENTITIES is the main-thread extract/submit phase). snapshot() is a shallow
  * copy sharing mutable FarPlayerMotion — it is defense-in-depth, NOT a thread
  * boundary; do not move this pass off-thread trusting it (E2 review n9).
  */
@@ -178,8 +178,8 @@ public final class FarPlayerRenderer {
         itemCache.clear(); // C-M2: the memo empties with the session's proxies
     }
 
-    /** The COLLECT_SUBMITS pass. */
-    public void render(LevelRenderContext context) {
+    /** The AFTER_ENTITIES pass. */
+    public void render(WorldRenderContext context) {
         if (crashLatched) return;
         try {
             renderContained(context);
@@ -191,7 +191,7 @@ public final class FarPlayerRenderer {
         }
     }
 
-    private void renderContained(LevelRenderContext context) {
+    private void renderContained(WorldRenderContext context) {
         var config = LSSClientConfig.CONFIG;
         // The bit gate covers arm + the soak/benchmark properties; the EFFECTIVE
         // enabled term (config AND the SeeU-coexist gate, E3) is checked HERE because
@@ -206,9 +206,9 @@ public final class FarPlayerRenderer {
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
         var localPlayer = minecraft.player;
-        var poseStack = context.poseStack();
+        var poseStack = context.matrices();
         if (level == null || localPlayer == null || poseStack == null
-                || context.submitNodeCollector() == null) {
+                || context.commandQueue() == null) {
             clear();
             return;
         }
@@ -221,7 +221,7 @@ public final class FarPlayerRenderer {
             return;
         }
 
-        Vec3 cameraPosition = minecraft.gameRenderer.mainCamera().position();
+        Vec3 cameraPosition = minecraft.gameRenderer.getMainCamera().position();
         var dispatcher = minecraft.getEntityRenderDispatcher();
         float partialTick = minecraft.getDeltaTracker().getGameTimeDeltaPartialTick(false);
         int animationTick = localPlayer.tickCount;
@@ -331,12 +331,12 @@ public final class FarPlayerRenderer {
                     var renderState = dispatcher.extractEntity(proxy, partialTick);
                     dispatcher.submit(
                             renderState,
-                            context.levelState().cameraRenderState,
+                            context.worldState().cameraRenderState,
                             position.x - cameraPosition.x,
                             position.y - cameraPosition.y,
                             position.z - cameraPosition.z,
                             poseStack,
-                            context.submitNodeCollector());
+                            context.commandQueue());
                 } catch (Throwable t) {
                     latchSeatedFailure(tracked, proxy, t);
                 }
@@ -344,12 +344,12 @@ public final class FarPlayerRenderer {
                 var renderState = dispatcher.extractEntity(proxy, partialTick);
                 dispatcher.submit(
                         renderState,
-                        context.levelState().cameraRenderState,
+                        context.worldState().cameraRenderState,
                         position.x - cameraPosition.x,
                         position.y - cameraPosition.y,
                         position.z - cameraPosition.z,
                         poseStack,
-                        context.submitNodeCollector());
+                        context.commandQueue());
             }
         }
         // Prune with the ride link BROKEN (E3 review m2): a proxy dropped while
@@ -413,7 +413,7 @@ public final class FarPlayerRenderer {
                              net.minecraft.client.renderer.entity.EntityRenderDispatcher dispatcher,
                              float partialTick, Vec3 cameraPosition,
                              com.mojang.blaze3d.vertex.PoseStack poseStack,
-                             LevelRenderContext context) {
+                             WorldRenderContext context) {
         var mount = mountFor(wireVehicle, tracked, level, now);
         if (mount == null) {
             if (proxy.isPassenger()) {
@@ -438,12 +438,12 @@ public final class FarPlayerRenderer {
             var vState = dispatcher.extractEntity(mount.entity, partialTick);
             dispatcher.submit(
                     vState,
-                    context.levelState().cameraRenderState,
+                    context.worldState().cameraRenderState,
                     vSample.x() - cameraPosition.x,
                     vSample.y() - cameraPosition.y,
                     vSample.z() - cameraPosition.z,
                     poseStack,
-                    context.submitNodeCollector());
+                    context.commandQueue());
         }
     }
 
@@ -697,7 +697,7 @@ public final class FarPlayerRenderer {
     /**
      * E2 renderer wiring, called once from {@link dev.vox.lss.LSSClient} (moved here
      * from FarPlayerClientSupport at N-1b — Fabric event registration is per-loader
-     * wiring; the support class is xplat): the COLLECT_SUBMITS pass (contained — a
+     * wiring; the support class is xplat): the AFTER_ENTITIES pass (contained — a
      * renderer bug degrades to no proxies) plus the ENTITY_LOAD edge trigger (a real
      * player entity appearing kills its proxy the same frame — the crossfade guard;
      * UNLOAD needs no hook, the per-frame real-present conjunct picks it up next pass).
@@ -705,8 +705,8 @@ public final class FarPlayerRenderer {
     public static void initRenderer() {
         var renderer = new FarPlayerRenderer();
         FarPlayerRenderer.install(renderer);
-        net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
-                .COLLECT_SUBMITS.register(renderer::render);
+        net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents
+                .AFTER_ENTITIES.register(renderer::render);
         net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientEntityEvents
                 .ENTITY_LOAD.register((entity, world) -> {
                     if (entity instanceof net.minecraft.world.entity.player.Player p) {
