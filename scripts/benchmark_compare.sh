@@ -36,7 +36,7 @@ root_for_arm() {
 prebuild() {
     local root="$1"
     log "Prebuilding $root ..."
-    (cd "$root" && ./gradlew :fabric:build -x test -x runGameTest -x runClientGameTest --quiet)
+    (cd "$root" && ./gradlew :fabric:build -x test -x runGameTest --quiet)
 }
 
 cmd_setup() {

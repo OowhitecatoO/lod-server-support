@@ -1,5 +1,9 @@
 package dev.vox.lss.test;
 
+import static dev.vox.lss.test.TestPositions.chunkAt;
+import static dev.vox.lss.test.TestPositions.holdChunk;
+import static dev.vox.lss.test.TestPositions.releaseChunk;
+
 import dev.vox.lss.benchmark.BenchmarkMetricsExporter;
 import dev.vox.lss.common.DiagnosticsFormatter;
 import dev.vox.lss.common.LSSConstants;
@@ -373,18 +377,18 @@ public class CommandGameTests {
         int pcx = mock.getBlockX() >> 4;
         int pcz = mock.getBlockZ() >> 4;
         var chunkSource = level.getChunkSource();
-        var pos1 = new ChunkPos(pcx - DIAG_CHUNK_OFFSET, pcz);
-        var pos2 = new ChunkPos(pcx - DIAG_CHUNK_OFFSET, pcz + 1);
-        long packed1 = PositionUtil.packPosition(pos1.x, pos1.z);
-        chunkSource.addRegionTicket(TicketType.PLAYER, pos1, 0, pos1);
-        chunkSource.addRegionTicket(TicketType.PLAYER, pos2, 0, pos2);
-        level.getChunk(pos1.x, pos1.z);
-        level.getChunk(pos2.x, pos2.z);
+        var pos1 = chunkAt(pcx - DIAG_CHUNK_OFFSET, pcz);
+        var pos2 = chunkAt(pcx - DIAG_CHUNK_OFFSET, pcz + 1);
+        long packed1 = PositionUtil.packPosition(pos1.x(), pos1.z());
+        holdChunk(chunkSource, pos1);
+        holdChunk(chunkSource, pos2);
+        level.getChunk(pos1.x(), pos1.z());
+        level.getChunk(pos2.x(), pos2.z());
 
         var service = new RequestProcessingService(server);
         var state = service.registerPlayer(mock, LSSConstants.CAPABILITY_VOXEL_COLUMNS);
         GameTestSeeding.seedRequests(state,
-                new long[]{packed1, PositionUtil.packPosition(pos2.x, pos2.z)},
+                new long[]{packed1, PositionUtil.packPosition(pos2.x(), pos2.z())},
                 new long[]{-1L, -1L});
         var step = new AtomicInteger();
 
@@ -470,8 +474,8 @@ public class CommandGameTests {
                             && ((Number) players.get(0).get("requests")).longValue() == 3,
                     "the exporter's per-player row must carry the same request total");
 
-            chunkSource.removeRegionTicket(TicketType.PLAYER, pos1, 0, pos1);
-            chunkSource.removeRegionTicket(TicketType.PLAYER, pos2, 0, pos2);
+            releaseChunk(chunkSource, pos1);
+            releaseChunk(chunkSource, pos2);
             service.shutdown();
             playerList.remove(mock);
         });

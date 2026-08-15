@@ -93,7 +93,7 @@ root_for_arm() {
 
 prebuild() { # <root>
     log "Prebuilding $1 ..."
-    (cd "$1" && ./gradlew :fabric:build -x test -x runGameTest -x runClientGameTest --quiet)
+    (cd "$1" && ./gradlew :fabric:build -x test -x runGameTest --quiet)
 }
 
 ensure_base_worktree() {

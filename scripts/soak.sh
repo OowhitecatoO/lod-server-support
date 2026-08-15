@@ -325,7 +325,7 @@ python3 "$PROJECT_ROOT/scripts/check_soak.py" --validate "$SCENARIO"
 # the dev plugin jar that retains the soak package)
 echo "[soak] Building mod..."
 cd "$PROJECT_ROOT"
-./gradlew :fabric:build -x test -x runGameTest -x runClientGameTest --quiet
+./gradlew :fabric:build -x test -x runGameTest --quiet
 if [[ "$SOAK_PLATFORM" == "paper" || "$SOAK_PLATFORM" == "folia" ]]; then
     ./gradlew :paper:soakShadowJar --quiet
 fi

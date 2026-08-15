@@ -24,7 +24,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > SerializableChunkData on this line — vanilla/Moonrise/C2ME routing
 > bytecode-verified, see the mixin javadoc); goldens line-regenerated per the
 > two-stage T1 rule (duplicate-air.bin + xray-masked.bin are hand/lever rows,
-> production-verified by the golden byte-match).
+> production-verified by the golden byte-match). V-3 seams landed branch-first
+> here (surfaces rows 1 + 11): `BackgroundIoSubmit` (S4 — this file carries the
+> ProcessorMailbox/tell flavor; ChunkDiskReader's signatures are line-invariant)
+> and the gametest `TestPositions` (T2 — ctor/field/asLong/addRegionTicket
+> flavors concentrated in one file).
 
 ## Project
 

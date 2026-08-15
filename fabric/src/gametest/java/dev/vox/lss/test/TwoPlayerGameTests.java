@@ -1,5 +1,9 @@
 package dev.vox.lss.test;
 
+import static dev.vox.lss.test.TestPositions.chunkAt;
+import static dev.vox.lss.test.TestPositions.holdChunk;
+import static dev.vox.lss.test.TestPositions.releaseChunk;
+
 import dev.vox.lss.common.LSSConstants;
 import dev.vox.lss.common.PositionUtil;
 import dev.vox.lss.common.SharedBandwidthLimiter;
@@ -66,18 +70,18 @@ public class TwoPlayerGameTests {
         var chunkSource = level.getChunkSource();
 
         var positions = new long[3];
-        var chunkPositions = new ChunkPos[3];
+        var chunkPositions = new TestPositions.ChunkAt[3];
         for (int i = 0; i < 3; i++) {
-            chunkPositions[i] = new ChunkPos(pcx - DEDUP_CHUNK_OFFSET, pcz + i);
-            positions[i] = PositionUtil.packPosition(chunkPositions[i].x, chunkPositions[i].z);
-            chunkSource.addRegionTicket(TicketType.PLAYER, chunkPositions[i], 0, chunkPositions[i]);
-            level.getChunk(chunkPositions[i].x, chunkPositions[i].z);
+            chunkPositions[i] = chunkAt(pcx - DEDUP_CHUNK_OFFSET, pcz + i);
+            positions[i] = PositionUtil.packPosition(chunkPositions[i].x(), chunkPositions[i].z());
+            holdChunk(chunkSource, chunkPositions[i]);
+            level.getChunk(chunkPositions[i].x(), chunkPositions[i].z());
         }
         // Release after generation: the serves must come from DISK (a loaded chunk
         // probe-serves and never engages the dedup tracker).
         helper.runAfterDelay(4, () -> {
             for (var pos : chunkPositions) {
-                chunkSource.removeRegionTicket(TicketType.PLAYER, pos, 0, pos);
+                releaseChunk(chunkSource, pos);
             }
         });
 
@@ -90,7 +94,7 @@ public class TwoPlayerGameTests {
             helper.assertTrue(helper.getTick() >= 6, "waiting for the ticket release");
             if (step.get() == 0) {
                 for (var pos : chunkPositions) {
-                    helper.assertTrue(chunkSource.getChunkNow(pos.x, pos.z) == null,
+                    helper.assertTrue(chunkSource.getChunkNow(pos.x(), pos.z()) == null,
                             "waiting for the dedup chunks to unload");
                 }
                 level.save(null, true, false);
@@ -267,11 +271,11 @@ public class TwoPlayerGameTests {
         var registered = placeMockServerPlayer(helper);
         int pcx = registered.getBlockX() >> 4;
         int pcz = registered.getBlockZ() >> 4;
-        var chunkPos = new ChunkPos(pcx - VANILLA_CHUNK_OFFSET, pcz + 6);
-        long packed = PositionUtil.packPosition(chunkPos.x, chunkPos.z);
+        var chunkPos = chunkAt(pcx - VANILLA_CHUNK_OFFSET, pcz + 6);
+        long packed = PositionUtil.packPosition(chunkPos.x(), chunkPos.z());
         var chunkSource = level.getChunkSource();
-        chunkSource.addRegionTicket(TicketType.PLAYER, chunkPos, 0, chunkPos);
-        level.getChunk(chunkPos.x, chunkPos.z);
+        holdChunk(chunkSource, chunkPos);
+        level.getChunk(chunkPos.x(), chunkPos.z());
 
         var service = new RequestProcessingService(server);
         var state = service.registerPlayer(registered, LSSConstants.CAPABILITY_VOXEL_COLUMNS);
@@ -299,7 +303,7 @@ public class TwoPlayerGameTests {
                             == state.getTotalBytesSent(),
                     "every LSS byte must be attributed to the registered player — there is no "
                             + "state through which the vanilla player could be sent anything");
-            chunkSource.removeRegionTicket(TicketType.PLAYER, chunkPos, 0, chunkPos);
+            releaseChunk(chunkSource, chunkPos);
             service.shutdown();
             playerList.remove(vanilla);
             playerList.remove(registered);
@@ -333,15 +337,15 @@ public class TwoPlayerGameTests {
         var mockB = placeMockServerPlayer(helper);
         int pcx = mockA.getBlockX() >> 4;
         int pcz = mockA.getBlockZ() >> 4;
-        var chunkPos = new ChunkPos(pcx - FANOUT_CHUNK_OFFSET, pcz + 4);
+        var chunkPos = chunkAt(pcx - FANOUT_CHUNK_OFFSET, pcz + 4);
         helper.assertTrue(FANOUT_CHUNK_OFFSET <= LSSServerConfig.CONFIG.lodDistanceChunks,
                 "premise: the column must be inside the broadcaster's RAW lodDistance range");
-        long packed = PositionUtil.packPosition(chunkPos.x, chunkPos.z);
+        long packed = PositionUtil.packPosition(chunkPos.x(), chunkPos.z());
         var dim = LSSConstants.DIM_STR_OVERWORLD;
         var chunkSource = level.getChunkSource();
-        chunkSource.addRegionTicket(TicketType.PLAYER, chunkPos, 0, chunkPos);
-        level.getChunk(chunkPos.x, chunkPos.z);
-        var editPos = new BlockPos(chunkPos.x * 16 + 4, -61, chunkPos.z * 16 + 4);
+        holdChunk(chunkSource, chunkPos);
+        level.getChunk(chunkPos.x(), chunkPos.z());
+        var editPos = new BlockPos(chunkPos.x() * 16 + 4, -61, chunkPos.z() * 16 + 4);
 
         var service = new RequestProcessingService(server);
         var stateA = service.registerPlayer(mockA, LSSConstants.CAPABILITY_VOXEL_COLUMNS);
@@ -361,7 +365,7 @@ public class TwoPlayerGameTests {
                                     && stateB.getTotalSectionsSent() == 1,
                             "waiting for both holders' initial probe serves to flush");
                     // Baseline the LIVE filter pre-edit (an earlier save's state).
-                    var chunk = level.getChunk(chunkPos.x, chunkPos.z);
+                    var chunk = level.getChunk(chunkPos.x(), chunkPos.z());
                     var liveFilter = liveService.getDirtyContentFilter();
                     liveFilter.contentChanged(level, chunk, dim);
                     helper.assertTrue(!liveFilter.contentChanged(level, chunk, dim),
@@ -381,11 +385,11 @@ public class TwoPlayerGameTests {
                     // expects the client to RETRY (the one-shot re-ask was a documented flake).
                     // Keep the chunk resident and re-issue until the re-serve lands — but only
                     // when no re-ask is in flight, so A re-serves EXACTLY once (step 2 asserts A==3).
-                    level.getChunk(chunkPos.x, chunkPos.z);
+                    level.getChunk(chunkPos.x(), chunkPos.z());
                     if (stateA.getTotalSectionsSent() < 2
                             && GameTestSeeding.noDeclarationOutstanding(stateA)
                             && !stateA.hasEnqueuedColumn(packed)
-                            && !stateA.hasPendingRequest(chunkPos.x, chunkPos.z)) {
+                            && !stateA.hasPendingRequest(chunkPos.x(), chunkPos.z())) {
                         GameTestSeeding.seedRequest(stateA, packed, -1L);
                     }
                     service.tick();
@@ -410,7 +414,7 @@ public class TwoPlayerGameTests {
                                     + "column dirty (save hook -> live filter -> live tracker)");
                     // Forward the mark to this test's own service and fire ITS broadcaster:
                     // intervalTicks manual ticks guarantee at least one broadcast pass.
-                    service.getDirtyTracker().markDirty(dim, chunkPos.x, chunkPos.z);
+                    service.getDirtyTracker().markDirty(dim, chunkPos.x(), chunkPos.z());
                     int intervalTicks = LSSServerConfig.CONFIG.dirtyBroadcastIntervalSeconds
                             * LSSConstants.TICKS_PER_SECOND;
                     for (int i = 0; i < intervalTicks; i++) {
@@ -437,17 +441,17 @@ public class TwoPlayerGameTests {
                     // and the counts stay frozen — the regression this test pins still fails at
                     // maxTicks. The step-1 guards keep at most one ask in flight per holder, so
                     // each holder re-serves EXACTLY once.
-                    level.getChunk(chunkPos.x, chunkPos.z);
+                    level.getChunk(chunkPos.x(), chunkPos.z());
                     if (stateA.getTotalSectionsSent() < 3
                             && GameTestSeeding.noDeclarationOutstanding(stateA)
                             && !stateA.hasEnqueuedColumn(packed)
-                            && !stateA.hasPendingRequest(chunkPos.x, chunkPos.z)) {
+                            && !stateA.hasPendingRequest(chunkPos.x(), chunkPos.z())) {
                         GameTestSeeding.seedRequest(stateA, packed, 1L);
                     }
                     if (stateB.getTotalSectionsSent() < 2
                             && GameTestSeeding.noDeclarationOutstanding(stateB)
                             && !stateB.hasEnqueuedColumn(packed)
-                            && !stateB.hasPendingRequest(chunkPos.x, chunkPos.z)) {
+                            && !stateB.hasPendingRequest(chunkPos.x(), chunkPos.z())) {
                         GameTestSeeding.seedRequest(stateB, packed, 1L);
                     }
                     service.tick();
@@ -457,7 +461,7 @@ public class TwoPlayerGameTests {
                                     + "(an undelivered clear resolves the re-request up-to-date "
                                     + "off the stale done-bit): A=" + stateA.getTotalSectionsSent()
                                     + " B=" + stateB.getTotalSectionsSent());
-                    chunkSource.removeRegionTicket(TicketType.PLAYER, chunkPos, 0, chunkPos);
+                    releaseChunk(chunkSource, chunkPos);
                     service.shutdown();
                     playerList.remove(mockA);
                     playerList.remove(mockB);

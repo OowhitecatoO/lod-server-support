@@ -85,7 +85,7 @@ root_for_arm() {
 
 prebuild() { # <root>
     log "Prebuilding $1 ..."
-    (cd "$1" && ./gradlew :fabric:build -x test -x runGameTest -x runClientGameTest --quiet)
+    (cd "$1" && ./gradlew :fabric:build -x test -x runGameTest --quiet)
 }
 
 ensure_base_worktree() {
@@ -167,7 +167,7 @@ PROPS
           "$server_run_dir/logs/latest.log"
 
     log "Building mod ($root)..."
-    (cd "$root" && ./gradlew :fabric:build -x test -x runGameTest -x runClientGameTest --quiet)
+    (cd "$root" && ./gradlew :fabric:build -x test -x runGameTest --quiet)
 
     "$MAIN_ROOT/scripts/lib/proc_sampler.sh" "$RUN_OUT/cpu.jsonl" $((duration + 300)) &
     local sampler_pid=$!
