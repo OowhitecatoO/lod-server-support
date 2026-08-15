@@ -5,7 +5,6 @@ import net.minecraft.SharedConstants;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.EntityTypes;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -33,14 +32,14 @@ class FarPlayerMountLadderTest {
     @Test
     void rung1RealRegistryPinGetOptionalNotTheDefaultedGetValue() {
         var unknown = Identifier.parse("modx:definitely_not_an_entity");
-        assertEquals(EntityTypes.PIG, BuiltInRegistries.ENTITY_TYPE.getValue(unknown),
+        assertEquals(EntityType.PIG, BuiltInRegistries.ENTITY_TYPE.getValue(unknown),
                 "the trap this pin exists for: the DefaultedRegistry's plain lookup"
                         + " returns PIG for unknown ids — if this ever fails, MC"
                         + " changed the default and the pin needs re-derivation");
         assertTrue(FarPlayerMountLadder.resolveTypeStrict("modx:definitely_not_an_entity")
                         .isEmpty(),
                 "rung 1 resolves unknown identities EMPTY (getOptional), never PIG");
-        assertEquals(Optional.of(EntityTypes.HORSE),
+        assertEquals(Optional.of(EntityType.HORSE),
                 FarPlayerMountLadder.resolveTypeStrict("minecraft:horse"),
                 "known identities resolve to the real type");
         assertTrue(FarPlayerMountLadder.resolveTypeStrict("not a valid ##identifier")
@@ -64,14 +63,14 @@ class FarPlayerMountLadderTest {
     @Test
     void rung2NullCreationAndThrowingCreationBothLatchPerType() {
         var ladder = new FarPlayerMountLadder(
-                id -> Optional.of(EntityTypes.HORSE),
+                id -> Optional.of(EntityType.HORSE),
                 (type, level) -> null);
         assertNull(ladder.createMount("minecraft:horse", null),
                 "a non-creatable type degrades to unmounted");
         assertTrue(ladder.isLatched("minecraft:horse"));
 
         var throwing = new FarPlayerMountLadder(
-                id -> Optional.of(EntityTypes.HORSE),
+                id -> Optional.of(EntityType.HORSE),
                 (type, level) -> { throw new IllegalStateException("modded ctor"); });
         assertNull(throwing.createMount("modmod:cursed_mount", null),
                 "a THROWING creation is contained to unmounted, never a crash");
@@ -84,7 +83,7 @@ class FarPlayerMountLadderTest {
     void theFactoryRunsForResolvableTypesAndOnlyFailureLatches() {
         var calls = new AtomicInteger();
         var ladder = new FarPlayerMountLadder(
-                id -> Optional.of(EntityTypes.HORSE),
+                id -> Optional.of(EntityType.HORSE),
                 (type, level) -> { calls.incrementAndGet(); return null; });
         // A real Entity needs a live ClientLevel (Tier 3 territory) — the factory-ran
         // counter plus the null-latch pin the control flow: resolution reached the

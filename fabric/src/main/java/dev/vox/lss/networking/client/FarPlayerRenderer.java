@@ -221,7 +221,8 @@ public final class FarPlayerRenderer {
             return;
         }
 
-        Vec3 cameraPosition = minecraft.gameRenderer.mainCamera().position();
+        // 26.1 line flavor: getMainCamera() (26.2 renamed it mainCamera()).
+        Vec3 cameraPosition = minecraft.gameRenderer.getMainCamera().position();
         var dispatcher = minecraft.getEntityRenderDispatcher();
         float partialTick = minecraft.getDeltaTracker().getGameTimeDeltaPartialTick(false);
         int animationTick = localPlayer.tickCount;

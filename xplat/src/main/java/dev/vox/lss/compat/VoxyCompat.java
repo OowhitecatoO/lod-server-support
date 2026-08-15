@@ -554,12 +554,12 @@ class VoxyCompat {
                 VoxyCompat::fallbackVoxyBasePath,
                 () -> net.minecraft.client.Minecraft.getInstance().levelRenderer,
                 () -> {
-                    // 26.2's render-extract rework moved allChanged() off LevelRenderer
-                    // onto Minecraft.levelExtractor — this is what the 26.2 Voxy
-                    // build's own reload calls (bytecode-verified), and it re-triggers
-                    // Voxy's renderer rebuild against the new instance.
-                    var extractor = net.minecraft.client.Minecraft.getInstance().levelExtractor;
-                    if (extractor != null) extractor.allChanged();
+                    // 26.1 line flavor: the render-extract rework is 26.2-only, so the
+                    // rebuild call is the classic LevelRenderer.allChanged() here
+                    // (javap-verified against the 26.1.2 artifact; 26.2 uses
+                    // Minecraft.levelExtractor instead).
+                    var renderer = net.minecraft.client.Minecraft.getInstance().levelRenderer;
+                    if (renderer != null) renderer.allChanged();
                 }));
     }
 
