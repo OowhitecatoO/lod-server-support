@@ -1,7 +1,7 @@
 # Plan: reopened-ring scanning — the client scan walk stops costing O(disc) on every reset
 
-**Status:** REVIEWED (2-Fable, 2026-08-18) — both SOUND-WITH-CHANGES, all findings
-folded below (v1.1) · client-side only, no wire change · 26.2/main first, backport
+**Status:** IMPLEMENTED 2026-08-18 (fix/scanner-reopened-rings; plan v1.1 — 2-Fable
+reviewed, both SOUND-WITH-CHANGES, all findings folded) · client-side only, no wire change · 26.2/main first, backport
 after live confirmation · companion to `gen-frontier-acquisition-anchor-plan.md`
 (the server-side twin of the same design flaw: "a reset costs O(disc)")
 
