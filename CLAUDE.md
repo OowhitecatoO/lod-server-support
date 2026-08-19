@@ -48,7 +48,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-LOD Server Support (LSS) — distributes LOD chunk data from servers to clients over a custom networking protocol. Clients request distant chunks individually; the server reads them from disk or memory and streams serialized sections back, enabling LOD rendering mods (Voxy) to display terrain beyond vanilla render distance. Supports Fabric (client + server), Paper (server only), and NeoForge (see tiers below). The one plugin jar also serves Folia (regionized probing + lifecycle mailbox code paths; `folia-supported` is declared on lines where a Folia build exists upstream — on THIS branch a hand-maintained plugin.yml value hard-asserted by PluginYmlContractTest (the R2-5 line.env derivation is main-only)). **Folia support is experimental on every line**: all four Folia soak scenarios pass single-player, but the stated exit criterion — concurrent MULTI-REGION ingress — has never been produced by the harness. Do not retire the experimental label on soak greens alone.
+LOD Server Support (LSS) — distributes LOD chunk data from servers to clients over a custom networking protocol. Clients request distant chunks individually; the server reads them from disk or memory and streams serialized sections back, enabling LOD rendering mods (Voxy) to display terrain beyond vanilla render distance. Supports Fabric (client + server), Paper (server only), and NeoForge (see tiers below). The one plugin jar also serves Folia (regionized probing + lifecycle mailbox code paths; `folia-supported` is declared on lines where a Folia build exists upstream — on THIS line its ABSENCE is the hand-maintained fact, hard-asserted by PluginYmlContractTest's inverted pins (no 1.21.1 Folia exists; the R2-5 line.env derivation is main-only)). **Folia support is experimental on every line**: all four Folia soak scenarios pass single-player, but the stated exit criterion — concurrent MULTI-REGION ingress — has never been produced by the harness. Do not retire the experimental label on soak greens alone.
 
 ## Support tiers (v0.11.0+; docs/planning/neoforge-support-plan.md is normative)
 
@@ -91,7 +91,7 @@ lod-server-support/
 ## Build Commands
 
 ```bash
-./gradlew :fabric:build -x runClientGameTest  # Build Fabric mod + Tier 1 & 2 tests
+./gradlew :fabric:build                       # Build Fabric mod + Tier 1 & 2 tests (Tier 3 is CUT on this line — the task does not exist)
 ./gradlew :paper:shadowJar                    # Build Paper plugin JAR
 ./gradlew :neoforge:build                     # Build NeoForge mod (shadowJar + contract tests + vssJar)
 ./gradlew :neoforge:runGameTestServer         # NeoForge 8-test gametest smoke (exit = failed count)
@@ -109,12 +109,13 @@ CI builds (env `CI=true`) name the jars `lod-server-support-<platform>-<mod_vers
 ## Test Commands
 
 ```bash
-./gradlew :fabric:test -x runGameTest -x runClientGameTest  # Tier 1: JUnit unit tests only (~40s)
+./gradlew :fabric:test -x runGameTest                        # Tier 1: JUnit unit tests only (~40s)
 ./gradlew :fabric:runGameTest                                # Tier 2: server gametests (starts dedicated server, ~13s)
 # NOTE: `:fabric:test` alone runs Tier 1 ONLY — runGameTest hangs off check/build, not test.
-# For Tier 1 + 2 run both commands above, or `:fabric:build -x runClientGameTest`.
-./gradlew :fabric:runClientGameTest                          # Tier 3: client gametests (starts integrated server + client)
-./gradlew :fabric:build -x runClientGameTest                 # Full build + Tier 1 + 2 tests
+# For Tier 1 + 2 run both commands above, or `:fabric:build`.
+# Tier 3 (runClientGameTest) is CUT on this line (pre-authorized-cuts.md) — the task
+# is not registered (enableClientGameTests = false) and `-x runClientGameTest` FAILS.
+./gradlew :fabric:build                                      # Full build + Tier 1 + 2 tests
 ./gradlew :paper:test                                       # Paper JUnit tests (wire parity, NBT serialization, config)
 ```
 
@@ -509,8 +510,8 @@ Releases are triggered by pushing an **annotated tag** (`git tag -a`). The tag a
 
 1. Review commits since the last tag: `git log $(git describe --tags --abbrev=0)..HEAD --oneline`
 2. **Pre-flight the exact release build locally** before tagging — the tag triggers an irreversible GitHub + Modrinth publish, so it must be green first:
-   `CI=true ./gradlew :fabric:build -x runClientGameTest :paper:test :paper:shadowJar :neoforge:build -Pmod_version=<version> && python3 scripts/release_check.py --version <version>`
-   (`release_check.py` must print `OK`; `--version` pins the check to the jars just built — stale jars in build/libs otherwise fail the run; `:fabric:build` runs Tier 1 + Tier 2, `:paper:test` gates the Paper jar, `:neoforge:build` runs the contract suite (still a gate), but this line does NOT ship NeoForge (`LINE_SHIP_NEOFORGE=false` — v0.11.0 ships it on 1.21.1 only), so `release_check.py` hard-requires only the four Fabric/Paper families and merely sanity-checks any NeoForge jars it finds. CI runs Tier 3 (`:fabric:runClientGameTest`) as a separate build.yml job — check it is green on the release commit before tagging.)
+   `CI=true ./gradlew :fabric:build :paper:test :paper:shadowJar :neoforge:build -Pmod_version=<version> && python3 scripts/release_check.py --version <version>`
+   (`release_check.py` must print `OK`; `--version` pins the check to the jars just built — stale jars in build/libs otherwise fail the run; `:fabric:build` runs Tier 1 + Tier 2, `:paper:test` gates the Paper jar, `:neoforge:build` runs the contract suite + builds the six-family jar set `release_check.py` hard-requires — this is the ONLY line that ships NeoForge (`LINE_SHIP_NEOFORGE=true`). There is NO Tier 3 on this line — build.yml has no client-gametest job.)
 3. Get the release commit onto `main` via PR (protected branch): push the release branch, `gh pr create --base main`, then `gh pr merge --merge`. Use **`--merge`** (a merge commit) — `--squash`/`--rebase` rewrite SHAs and orphan the tag.
 4. Write release notes to a file (format below) and create the annotated tag with **`--cleanup=verbatim`** so the `###` headers survive:
    `git tag -a v<version> -F <notes-file> --cleanup=verbatim`
