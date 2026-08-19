@@ -2,9 +2,53 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **Support branch: `support/mc1.21.1`** — the v0.11.0 FRESH CUT (stage G-3, off
+> main @ e4c0a4cc) targeting **Minecraft 1.21.1** on Fabric + Paper + NeoForge
+> (the ONLY line SHIPPING NeoForge at v0.11.0 — LINE_SHIP_NEOFORGE=true, user
+> decision 2026-08-15; the working client pairing is the community Voxy port),
+> **Java 21** (build with a Java 21 JDK — paperweight's codebook cannot parse
+> Java 25 class files). **BEST-EFFORT tier, whole line** (user decision
+> 2026-08-14): the spike's pre-authorized feature-drop list applies
+> (docs/planning/pre-authorized-cuts.md), further cuts need a dated decisions-log
+> entry. **Cut actually TAKEN: Tier 3 client gametests only.** The other two
+> pre-authorized headline cuts were NOT needed: the Fabric far-player RENDER path
+> is LIVE (reworked to immediate-mode `dispatcher.render` on
+> `WorldRenderEvents.AFTER_ENTITIES` — only the NeoForge renderer is the no-op
+> stub, which is main's pre-existing state, not a line cut) and the Sodium config
+> screen is LIVE (ported, registered under `sodium:config_api_user`). Release
+> notes must describe the shipped set, not the pre-authorization. **Folia does
+> NOT exist on this line** (no 1.21.1 build — the 1.21 family starts at 1.21.4):
+> `folia-supported` is ABSENT from plugin.yml with the pins INVERTED to absence
+> (PluginYmlContractTest + release_check), the Modrinth loaders list drops folia,
+> and `run-folia`/`SOAK_PLATFORM=folia` are unavailable here — the mainline prose
+> below about Folia describes 26.2, not this line. Do NOT merge to `main`; releases tag
+> `v<x.y.z>+mc1.21.1` (make_latest false). Per-line surfaces live in
+> **docs/planning/per-version-surfaces.md** (canonical — this banner is a
+> POINTER) and the line identity in `.github/line.env` + `gradle.properties`
+> (loom-remap toolchain, intermediary mapping namespace, accessWidener "named").
+> Line status at the cut: `NativeSectionShape` carries the FULL flavor —
+> NATIVE_COUNT_SHORTS = 1, the three folds, and **NATIVE_LONG_ARRAY_PREFIXED =
+> true** (the fourth axis, found AT this port: 1.21.1's vanilla container write
+> VarInt-prefixes the long array; 26.x/1.21.11 write bare words; V20 is
+> prefix-free everywhere by wire spec); `ScopedCarrier` is the pass-through
+> variant; `SectionConstruction` twins carry the Registry-of-Biome-param ctor
+> flavor; the dirty hook targets `ChunkSerializer.write` RETURN (no
+> SerializableChunkData on this line — vanilla/Moonrise/C2ME routing
+> bytecode-verified, see the mixin javadoc); goldens line-regenerated per the
+> two-stage T1 rule (duplicate-air.bin + xray-masked.bin are hand/lever rows,
+> production-verified by the golden byte-match). V-3 seams landed branch-first
+> here (surfaces rows 1 + 11): `BackgroundIoSubmit` (S4 — this file carries the
+> ProcessorMailbox/tell flavor; ChunkDiskReader's signatures are line-invariant)
+> and the gametest `TestPositions` (T2 — ctor/field/asLong/addRegionTicket
+> flavors concentrated in one file).
+> **v0.11.1 port (2026-08-18):** the stutter-fix pair (scan prefix retention +
+> acquisition frontier, main PRs #203/#204 + folds) cherry-picked from main —
+> pure xplat/common, no line flavor points; the body below is main's CLAUDE.md
+> as of that port, with the hand-mirror corrections noted inline.
+
 ## Project
 
-LOD Server Support (LSS) — distributes LOD chunk data from servers to clients over a custom networking protocol. Clients request distant chunks individually; the server reads them from disk or memory and streams serialized sections back, enabling LOD rendering mods (Voxy) to display terrain beyond vanilla render distance. Supports Fabric (client + server), Paper (server only), and NeoForge (see tiers below). The one plugin jar also serves Folia (regionized probing + lifecycle mailbox code paths; `folia-supported` is declared on lines where a Folia build exists upstream — DERIVED from line.env since R2-5). **Folia support is experimental on every line**: all four Folia soak scenarios pass single-player, but the stated exit criterion — concurrent MULTI-REGION ingress — has never been produced by the harness. Do not retire the experimental label on soak greens alone.
+LOD Server Support (LSS) — distributes LOD chunk data from servers to clients over a custom networking protocol. Clients request distant chunks individually; the server reads them from disk or memory and streams serialized sections back, enabling LOD rendering mods (Voxy) to display terrain beyond vanilla render distance. Supports Fabric (client + server), Paper (server only), and NeoForge (see tiers below). The one plugin jar also serves Folia (regionized probing + lifecycle mailbox code paths; `folia-supported` is declared on lines where a Folia build exists upstream — on THIS branch a hand-maintained plugin.yml value hard-asserted by PluginYmlContractTest (the R2-5 line.env derivation is main-only)). **Folia support is experimental on every line**: all four Folia soak scenarios pass single-player, but the stated exit criterion — concurrent MULTI-REGION ingress — has never been produced by the harness. Do not retire the experimental label on soak greens alone.
 
 ## Support tiers (v0.11.0+; docs/planning/neoforge-support-plan.md is normative)
 
@@ -19,9 +63,7 @@ release notes must name the tier and any cut). Best-effort is a SUPPORT-commitme
 axis, distinct from Folia's *experimental* (a correctness-confidence axis — see
 below). **v0.11.0 ships NeoForge on the 1.21.1 line ONLY** (the one line with a
 working client pairing — the community Voxy port; other lines' NeoForge clients
-have no Voxy route). Gated by `LINE_SHIP_NEOFORGE` in `.github/line.env`, from
-which release.yml, release_check.py, and the contract tests all DERIVE (R2-5) —
-one line.env edit is the whole flip; build.yml still builds + tests the NeoForge
+have no Voxy route). Gated by `LINE_SHIP_NEOFORGE` in `.github/line.env`, which on THIS branch release_check.py MIRRORS by hand (`SHIP_NEOFORGE` — flip BOTH together, per its comment; the R2-5 derivation chain is main-only); build.yml still builds + tests the NeoForge
 module on EVERY line so the port stays maintained. **Wire compatibility is NEVER
 tiered** — every jar speaks the same protocol at full fidelity, and every
 never-tiered claim names a test that reds when violated (plan §1.2).
@@ -76,11 +118,11 @@ CI builds (env `CI=true`) name the jars `lod-server-support-<platform>-<mod_vers
 ./gradlew :paper:test                                       # Paper JUnit tests (wire parity, NBT serialization, config)
 ```
 
-Most tests live in the Fabric module. Paper has its own Tier 1 JUnit suite (~330 tests, run by CI): Fabric/Paper wire parity, NBT serialization (golden cross-module corpus + transcode fuzz), the platform twins of the filter/manager/service/broadcaster suites via injection seams, plugin enable/dispatch/handshake glue, plugin.yml + release-workflow contracts (per-line flavors DERIVED from line.env since R2-5), the Folia seams (lifecycle mailbox, regionized probe scheduling incl. the `republishHeldBatch` CAS/offer-generation guards, `FoliaWiringContractTest`'s constant-pool scan), exporter schema parity, and command output. Paper runtime behavior is validated live by the soak harness on both Bukkit platforms (`SOAK_PLATFORM=paper` / `folia` — four scenarios each against real servers).
+Most tests live in the Fabric module. Paper has its own Tier 1 JUnit suite (~330 tests, run by CI): Fabric/Paper wire parity, NBT serialization (golden cross-module corpus + transcode fuzz), the platform twins of the filter/manager/service/broadcaster suites via injection seams, plugin enable/dispatch/handshake glue, plugin.yml + release-workflow contracts (per-line flavors hand-mirrored on this branch; the R2-5 line.env derivations are main-only), the Folia seams (lifecycle mailbox, regionized probe scheduling incl. the `republishHeldBatch` CAS/offer-generation guards, `FoliaWiringContractTest`'s constant-pool scan), exporter schema parity, and command output. Paper runtime behavior is validated live by the soak harness on both Bukkit platforms (`SOAK_PLATFORM=paper` / `folia` — four scenarios each against real servers).
 
 ### Test Architecture
 
-- **Tier 1** (`fabric/src/test/java/dev/vox/lss/`, ~1250 tests): JUnit 5 via `fabric-loader-junit`. Covers every subsystem — the LOD store family, position packing, bandwidth limiter, config validation, column caches (timestamp tiles + miss memo, column cache store), the want-set pipeline (scanner/tracker/state-map/request-manager incl. the adaptive-cadence and backpressure pins), payload codecs + wire parity + the NBT transcode goldens, the palette memo, the router ladder (duplicate-serve grace, probe suppression, miss-memo rung, generation pacing/spread gates, drain rotation), OffThreadProcessor lifecycle + stale guards, the compat rungs (v16/v18/v19, Via guard), x-ray masking, the reflective bridges (Voxy, Moonrise, AntiXray — against real-package-name stubs), far players (wire/tracker/motion/broadcast), the transfer-rate pair + send pacing + transport yield, the move-desync tracer, and the contract tests (release workflow, plugin.yml, toolchain, entrypoint listing, xplat purity, save hook, LAN hook, workflow/line.env derivations). The suite class names are discoverable; each test class's javadoc records its pins and the decisions they protect — READ THE TEST before "fixing" behavior it pins (many findings that look like bugs are deliberate, test-pinned tradeoffs; see memory `review-findings-vs-pinned-decisions`).
+- **Tier 1** (`fabric/src/test/java/dev/vox/lss/`, ~1250 tests): JUnit 5 via `fabric-loader-junit`. Covers every subsystem — the LOD store family, position packing, bandwidth limiter, config validation, column caches (timestamp tiles + miss memo, column cache store), the want-set pipeline (scanner/tracker/state-map/request-manager incl. the adaptive-cadence and backpressure pins), payload codecs + wire parity + the NBT transcode goldens, the palette memo, the router ladder (duplicate-serve grace, probe suppression, miss-memo rung, generation pacing/spread gates, drain rotation), OffThreadProcessor lifecycle + stale guards, the compat rungs (v16/v18/v19, Via guard), x-ray masking, the reflective bridges (Voxy, Moonrise, AntiXray — against real-package-name stubs), far players (wire/tracker/motion/broadcast), the transfer-rate pair + send pacing + transport yield, the move-desync tracer, and the contract tests (release workflow, plugin.yml, toolchain, entrypoint listing, xplat purity, save hook, LAN hook, workflow contracts — hand-mirrored line facts on this branch). The suite class names are discoverable; each test class's javadoc records its pins and the decisions they protect — READ THE TEST before "fixing" behavior it pins (many findings that look like bugs are deliberate, test-pinned tradeoffs; see memory `review-findings-vs-pinned-decisions`).
 - **Tier 2** (`fabric/src/gametest/java/dev/vox/lss/test/`): 71 Fabric server gametests across 8 classes — service lifecycle, serializer byte-parity (disk vs live, incl. masked), generation lifecycle, commands (incl. the `set` apply-clamp-restore), two-player dedup/fairness/fan-out, corrupt-region containment, move-trace hooks, plus the crafted-frame handshake pins. Every class MUST be listed in the `fabric-gametest` entrypoint of `fabric/src/gametest/resources/fabric.mod.json` (compiles-but-never-runs otherwise; `GameTestEntrypointContractTest` derives the listing from source both ways). Seeding goes through `GameTestSeeding` — the mailbox is latest-wins, so multi-position seeds must be ONE batch. Mock-player gotchas: `primeListenerForMoves` before movement packets; the stock mock hard-codes CREATIVE (hand-roll a survival player for survival-gated paths). Gametest JVMs run with `-Dlss.test.integratedServer=true`; timing tests must never race the product's WALL-clock windows with tick-denominated waits (an unthrottled gametest server ticks at ~0.2-0.4 ms — see the fan-out entry in the flake catalog).
 - **Tier 3** (`fabric/src/gametest/java/dev/vox/lss/test/LSSClientGameTests.java`): End-to-end client-server flow test. Validates handshake, session config, spiral scanning, chunk section receipt, decoded section content asserted at a registered `LSSApi` consumer (flat-world block layers, off-render-thread dispatch), and the ingest-failure recovery loop (a consumer rejecting a column — by `LSSApi.reportIngestFailure` or by throwing — gets it re-served end-to-end). Fabric Loom handles headless rendering automatically.
 
