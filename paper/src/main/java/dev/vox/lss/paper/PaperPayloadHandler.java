@@ -31,6 +31,7 @@ public final class PaperPayloadHandler {
     private static final ResourceLocation ID_DIRTY_COLUMNS = ResourceLocation.parse(LSSConstants.CHANNEL_DIRTY_COLUMNS);
     static final ResourceLocation ID_VOXEL_COLUMN = ResourceLocation.parse(LSSConstants.CHANNEL_VOXEL_COLUMN);
     private static final ResourceLocation ID_BATCH_RESPONSE = ResourceLocation.parse(LSSConstants.CHANNEL_BATCH_RESPONSE);
+    private static final ResourceLocation ID_REGION_SUMMARY = ResourceLocation.parse(LSSConstants.CHANNEL_REGION_SUMMARY);
 
     // ---- S2C Encoding ----
 
@@ -333,5 +334,15 @@ public final class PaperPayloadHandler {
         // 1.21.1 line: Paper's DiscardedPayload carries a ByteBuf (26.x takes byte[]).
         nmsPlayer.connection.send(new ClientboundCustomPayloadPacket(
                 new DiscardedPayload(channelId, io.netty.buffer.Unpooled.wrappedBuffer(data))));
+    }
+
+    /** Region-summary S2C frame (P2 §5): the dedicated send lane's carrier — the raw
+     *  RegionSummaryWire body on the NMS connection (DiscardedPayload, like every LSS
+     *  S2C). Takes the NMS player directly — the pump looks players up by UUID. */
+    public static void sendRegionSummary(net.minecraft.server.level.ServerPlayer nmsPlayer,
+                                         byte[] body) {
+        if (nmsPlayer.connection == null) return;
+        nmsPlayer.connection.send(new ClientboundCustomPayloadPacket(
+                new DiscardedPayload(ID_REGION_SUMMARY, body)));
     }
 }
