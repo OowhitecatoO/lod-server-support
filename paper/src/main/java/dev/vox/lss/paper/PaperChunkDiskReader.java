@@ -46,7 +46,8 @@ public class PaperChunkDiskReader extends AbstractChunkDiskReader {
     }
 
     public void submitReadDirect(UUID playerUuid, String dimension, ServerLevel level,
-                                  int chunkX, int chunkZ, long submissionOrder) {
+                                  int chunkX, int chunkZ, long submissionOrder,
+                                  long clientTimestamp) {
         var registryAccess = level.registryAccess();
         var override = this.readOverride;
         PaperNbtSectionSerializer.ChunkNbtRead read;
@@ -64,7 +65,7 @@ public class PaperChunkDiskReader extends AbstractChunkDiskReader {
         // 1.21.1 line: getMinSection()/getMaxSection() (max EXCLUSIVE -> -1 for inclusive).
         int minSectionY = level.getMinSection();
         int maxSectionY = level.getMaxSection() - 1;
-        submitRead(playerUuid, chunkX, chunkZ, dimension, submissionOrder,
+        submitRead(playerUuid, chunkX, chunkZ, dimension, submissionOrder, clientTimestamp,
                 () -> PaperNbtSectionSerializer.readAndSerializeSections(read, registryAccess, chunkX, chunkZ,
                         maskEntry, minSectionY, maxSectionY, this.useNbtTranscode));
     }
