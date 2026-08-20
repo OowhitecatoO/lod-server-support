@@ -32,6 +32,7 @@ public final class PaperPayloadHandler {
     static final ResourceLocation ID_VOXEL_COLUMN = ResourceLocation.parse(LSSConstants.CHANNEL_VOXEL_COLUMN);
     private static final ResourceLocation ID_BATCH_RESPONSE = ResourceLocation.parse(LSSConstants.CHANNEL_BATCH_RESPONSE);
     private static final ResourceLocation ID_REGION_SUMMARY = ResourceLocation.parse(LSSConstants.CHANNEL_REGION_SUMMARY);
+    private static final ResourceLocation ID_COL_STAMPS = ResourceLocation.parse(LSSConstants.CHANNEL_COL_STAMPS);
 
     // ---- S2C Encoding ----
 
@@ -346,6 +347,16 @@ public final class PaperPayloadHandler {
         if (nmsPlayer.connection == null) return false;
         nmsPlayer.connection.send(new ClientboundCustomPayloadPacket(
                 new DiscardedPayload(ID_REGION_SUMMARY, body)));
+        return true;
+    }
+
+    /** Column-stamps S2C frame (stamped-up-to-date-plan.md §3): the raw
+     *  ColumnStampsWire body, same carrier discipline as the summary frame. */
+    public static boolean sendColumnStamps(net.minecraft.server.level.ServerPlayer nmsPlayer,
+                                           byte[] body) {
+        if (nmsPlayer.connection == null) return false;
+        nmsPlayer.connection.send(new ClientboundCustomPayloadPacket(
+                new DiscardedPayload(ID_COL_STAMPS, body)));
         return true;
     }
 }
