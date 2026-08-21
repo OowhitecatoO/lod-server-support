@@ -1441,13 +1441,13 @@ public class ServiceLifecycleGameTests {
      * own region writer end to end. Chunk band 250 (negative quadrant — disjoint from
      * every other class's bands per the header comment).
      */
-    @GameTest(structure = "fabric-gametest-api-v1:empty", maxTicks = 1200)
+    @GameTest(template = "fabric-gametest-api-v1:empty", timeoutTicks = 1200)
     public void regionFreshnessServesRealRegionHeaders(GameTestHelper helper) {
         var level = helper.getLevel();
         var server = level.getServer();
         var mock = placeMockServerPlayer(helper);
         var service = new RequestProcessingService(server);
-        String dim = level.dimension().identifier().toString();
+        String dim = level.dimension().location().toString();
         int pcx = mock.getBlockX() >> 4;
         int pcz = mock.getBlockZ() >> 4;
         int cx = pcx - 250;
