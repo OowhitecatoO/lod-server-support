@@ -4,7 +4,7 @@ import dev.vox.lss.common.LSSConstants;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 
 /**
  * Region summaries (region-summary-sync-plan.md §4): S2C stamp-window frame. The BODY
@@ -15,7 +15,7 @@ import net.minecraft.resources.Identifier;
 public record RegionSummaryS2CPayload(byte[] body) implements CustomPacketPayload {
 
     public static final CustomPacketPayload.Type<RegionSummaryS2CPayload> TYPE =
-            new CustomPacketPayload.Type<>(Identifier.parse(LSSConstants.CHANNEL_REGION_SUMMARY));
+            new CustomPacketPayload.Type<>(ResourceLocation.parse(LSSConstants.CHANNEL_REGION_SUMMARY));
 
     public static final StreamCodec<FriendlyByteBuf, RegionSummaryS2CPayload> CODEC =
             StreamCodec.of(

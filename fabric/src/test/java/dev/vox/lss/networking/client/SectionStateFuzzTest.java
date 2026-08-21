@@ -6,7 +6,7 @@ import it.unimi.dsi.fastutil.longs.LongArrayList;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.Level;
 import org.junit.jupiter.api.Test;
 
@@ -336,7 +336,7 @@ class SectionStateFuzzTest {
     // ---- cache lifecycle: detach/adopt vs the legacy copy paths ----
 
     private static ResourceKey<Level> testDimension(String name) {
-        return ResourceKey.create(Registries.DIMENSION, Identifier.parse("lss_test:" + name));
+        return ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse("lss_test:" + name));
     }
 
     @Test

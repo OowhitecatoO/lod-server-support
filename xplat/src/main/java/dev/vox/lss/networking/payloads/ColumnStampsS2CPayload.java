@@ -4,7 +4,7 @@ import dev.vox.lss.common.LSSConstants;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 
 /**
  * Stamped up_to_date (stamped-up-to-date-plan.md §3): S2C verification-stamp frame.
@@ -16,7 +16,7 @@ import net.minecraft.resources.Identifier;
 public record ColumnStampsS2CPayload(byte[] body) implements CustomPacketPayload {
 
     public static final CustomPacketPayload.Type<ColumnStampsS2CPayload> TYPE =
-            new CustomPacketPayload.Type<>(Identifier.parse(LSSConstants.CHANNEL_COL_STAMPS));
+            new CustomPacketPayload.Type<>(ResourceLocation.parse(LSSConstants.CHANNEL_COL_STAMPS));
 
     public static final StreamCodec<FriendlyByteBuf, ColumnStampsS2CPayload> CODEC =
             StreamCodec.of(
