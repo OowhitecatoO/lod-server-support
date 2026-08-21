@@ -2,7 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **Support branch: `support/mc1.21.11-v0.11`** — the v0.11.0 delta-port of main
+> **Support branch: `support/mc1.21.11-v0.12`** (v0.12.0 port of the branch below)
+> **Previous: `support/mc1.21.11-v0.11`** — the v0.11.0 delta-port of main
 > (@ 9cb32ade, the last pre-G merge) onto the v0.10.0 1.21.11 line, targeting
 > **Minecraft 1.21.11** on Fabric + Paper + NeoForge (the NeoForge module BUILDS
 > but does NOT SHIP at v0.11.0 — LINE_SHIP_NEOFORGE=false, user decision
@@ -18,6 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > variant (Java 21 has no ScopedValue — the S5 whole-file swap); mechanical
 > renames per the recipe (ClientCommandManager, ChunkPos fields, EntityType
 > constants); goldens line-regenerated per the two-stage T1 rule.
+> **v0.12.0 port (2026-08-21):** the region-summary/stamped-up_to_date/quadtree stack (main 79e49951..e0cdf6f2, 20 picks + the #215 checker floor) — adaptations: playC2S/playS2C registration idiom, the split-dir resolver re-root + CraftWorld mock, panel-fold pin hardening (69e7ef75); full smoke set green.
 > **v0.11.1 port (2026-08-18):** the stutter-fix pair (scan prefix retention +
 > acquisition frontier, main PRs #203/#204 + folds) cherry-picked from main —
 > pure xplat/common, no line flavor points; the body below is main's CLAUDE.md
