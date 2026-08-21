@@ -559,7 +559,7 @@ public class PaperRequestProcessingService {
      *  builder above; extracted for the v0.12.0 B.0 wiring pin —
      *  {@code PaperRegionFreshnessWiringTest} drives it with mocked levels). The
      *  PER-LINE INVARIANT (surfaces row 17) lives HERE now, at the one swappable
-     *  site: Paper 26.x uses the vanilla UNIFIED layout ({@code getStorageFolder}
+     *  site — THIS LINE (1.21.x) uses the per-level SPLIT form; 26.x uses the unified layout ({@code getStorageFolder}
      *  under the server worldRoot, same as Fabric); the 1.21.x lines use Bukkit's
      *  legacy SPLIT world dirs and must re-root PER LEVEL via
      *  {@code getWorld().getWorldFolder()} — the two forms are NOT interchangeable
@@ -579,9 +579,17 @@ public class PaperRequestProcessingService {
             String dim = null;
             try {
                 dim = level.dimension().identifier().toString();
+                // 1.21.x line (row 17): Bukkit legacy SPLIT world dirs — re-root PER
+                // LEVEL via the Bukkit world's own folder (the unified-layout
+                // worldRoot resolved world/DIM-1 here, which does not exist, and the
+                // sweep fail-safe-dropped every non-overworld dim's rows at each
+                // boot; review 2026-08-15). getStorageFolder keeps the overworld at
+                // <folder> and nests DIM-1/DIM1 for the others, matching
+                // CraftBukkit's on-disk layout.
+                var levelRoot = level.getWorld().getWorldFolder().toPath().normalize();
                 regionDirs.put(dim,
                         net.minecraft.world.level.dimension.DimensionType
-                                .getStorageFolder(level.dimension(), worldRoot)
+                                .getStorageFolder(level.dimension(), levelRoot)
                                 .resolve("region").normalize());
             } catch (Throwable t) {
                 LSSLogger.warn("Could not resolve the region directory for "

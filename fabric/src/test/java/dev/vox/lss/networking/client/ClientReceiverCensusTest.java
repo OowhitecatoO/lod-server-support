@@ -24,11 +24,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ClientReceiverCensusTest {
 
     private static final Pattern S2C_REGISTRATION = Pattern.compile(
-            "clientboundPlay\\(\\)\\.register\\(\\s*(?:[\\w.]*\\bpayloads\\.)?(\\w+S2CPayload)\\.TYPE");
+            "playS2C\\(\\)\\.register\\(\\s*(?:[\\w.]*\\bpayloads\\.)?(\\w+S2CPayload)\\.TYPE");
     private static final Pattern RECEIVER = Pattern.compile(
             "registerGlobalReceiver\\(\\s*(?:[\\w.]*\\bpayloads\\.)?(\\w+S2CPayload)\\.TYPE");
     private static final Pattern C2S_REGISTRATION = Pattern.compile(
-            "serverboundPlay\\(\\)\\.register\\(\\s*(?:[\\w.]*\\bpayloads\\.)?(\\w+C2SPayload)\\.TYPE");
+            "playC2S\\(\\)\\.register\\(\\s*(?:[\\w.]*\\bpayloads\\.)?(\\w+C2SPayload)\\.TYPE");
     private static final Pattern SERVER_RECEIVER = Pattern.compile(
             "registerGlobalReceiver\\(\\s*(?:[\\w.]*\\bpayloads\\.)?(\\w+C2SPayload)\\.TYPE");
 
@@ -52,12 +52,12 @@ class ClientReceiverCensusTest {
                 "expected the full S2C payload surface in LSSNetworking, found only "
                         + registered);
         // Growth guard (P2 integration review m5): the name-extracting regex must
-        // account for EVERY clientboundPlay registration — an 8th payload named
+        // account for EVERY playS2C registration — an 8th payload named
         // outside the *S2CPayload convention (or moved out of a payloads package)
         // would otherwise hide from both scans and stay green while unhandled.
-        int s2cCalls = networking.split("clientboundPlay\\(\\)\\s*\\.register\\(", -1).length - 1;
+        int s2cCalls = networking.split("playS2C\\(\\)\\s*\\.register\\(", -1).length - 1;
         assertEquals(s2cCalls, registered.size(),
-                "every clientboundPlay().register call must parse into a payload name "
+                "every playS2C().register call must parse into a payload name "
                         + "this census recognizes — got " + s2cCalls + " calls vs "
                         + registered);
         assertEquals(registered, handled,
@@ -67,7 +67,7 @@ class ClientReceiverCensusTest {
     }
 
     /** The C2S twin (final panel — this was the census family's one unpinned link):
-     *  every serverboundPlay registration needs a ServerPlayNetworking
+     *  every playC2S registration needs a ServerPlayNetworking
      *  registerGlobalReceiver in LSSServerNetworking, or the server silently drops
      *  every frame that client sends on the channel — the identical failure mode the
      *  S2C half was created for, on the one platform where it stayed possible
@@ -86,9 +86,9 @@ class ClientReceiverCensusTest {
         assertTrue(registered.size() >= 5,
                 "expected the full C2S payload surface in LSSNetworking, found only "
                         + registered);
-        int c2sCalls = networking.split("serverboundPlay\\(\\)\\s*\\.register\\(", -1).length - 1;
+        int c2sCalls = networking.split("playC2S\\(\\)\\s*\\.register\\(", -1).length - 1;
         assertEquals(c2sCalls, registered.size(),
-                "every serverboundPlay().register call must parse into a payload name "
+                "every playC2S().register call must parse into a payload name "
                         + "this census recognizes — got " + c2sCalls + " calls vs "
                         + registered);
         assertEquals(registered, handled,

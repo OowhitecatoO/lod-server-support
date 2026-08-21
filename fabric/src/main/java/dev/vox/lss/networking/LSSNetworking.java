@@ -29,7 +29,7 @@ public class LSSNetworking {
                 dev.vox.lss.networking.payloads.FarPlayerPrefsC2SPayload.TYPE,
                 dev.vox.lss.networking.payloads.FarPlayerPrefsC2SPayload.CODEC
         );
-        PayloadTypeRegistry.serverboundPlay().register(
+        PayloadTypeRegistry.playC2S().register(
                 dev.vox.lss.networking.payloads.RegionSummaryRequestC2SPayload.TYPE,
                 dev.vox.lss.networking.payloads.RegionSummaryRequestC2SPayload.CODEC
         );
@@ -59,11 +59,11 @@ public class LSSNetworking {
                 dev.vox.lss.networking.payloads.FarPlayerUpdatesS2CPayload.TYPE,
                 dev.vox.lss.networking.payloads.FarPlayerUpdatesS2CPayload.CODEC
         );
-        PayloadTypeRegistry.clientboundPlay().register(
+        PayloadTypeRegistry.playS2C().register(
                 dev.vox.lss.networking.payloads.RegionSummaryS2CPayload.TYPE,
                 dev.vox.lss.networking.payloads.RegionSummaryS2CPayload.CODEC
         );
-        PayloadTypeRegistry.clientboundPlay().register(
+        PayloadTypeRegistry.playS2C().register(
                 dev.vox.lss.networking.payloads.ColumnStampsS2CPayload.TYPE,
                 dev.vox.lss.networking.payloads.ColumnStampsS2CPayload.CODEC
         );
