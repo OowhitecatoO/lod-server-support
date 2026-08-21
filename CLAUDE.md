@@ -2,7 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **Support branch: `support/mc26.1-v0.11`** — the v0.11.0 delta-port of main
+> **Support branch: `support/mc26.1-v0.12`** (v0.12.0 port of the branch below)
+> **Previous: `support/mc26.1-v0.11`** — the v0.11.0 delta-port of main
 > (@ 9cb32ade, the last pre-G merge) onto the v0.10.0 26.1 line, targeting
 > **Minecraft 26.1.2** on Fabric + Paper + NeoForge (the NeoForge module BUILDS
 > but does NOT SHIP at v0.11.0 — LINE_SHIP_NEOFORGE=false, user decision
@@ -15,6 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > the single-overload 26.1 flavor, `xray-masked` goldens are line-regenerated,
 > `xver-live-corpus` must decode STRICTLY (zero fallbacks), NeoForge pins
 > 26.1.2.95.
+> **v0.12.0 port (2026-08-21):** the region-summary/stamped-up_to_date/quadtree stack (main 79e49951..e0cdf6f2, 20 picks + the #215 checker floor) — clean re-application, zero line adaptations needed beyond the version bump; per-line 1-Fable+3-Opus panel found nothing; full smoke set green (wrs both platforms, stamp-heal chain, armed wrs accepted per doctrine, store-second-join).
 > **v0.11.1 port (2026-08-18):** the stutter-fix pair (scan prefix retention +
 > acquisition frontier, main PRs #203/#204 + folds) cherry-picked from main —
 > pure xplat/common, no line flavor points; the body below is main's CLAUDE.md
