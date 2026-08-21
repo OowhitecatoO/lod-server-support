@@ -56,12 +56,18 @@ jobs:
 
       - name: NeoForge gametest smoke (retry once on flake)
         run: |
-          ./gradlew :neoforge:runGameTestServer || {
+          # ran_some_tests: a gametest-server BOOT failure exits 0 (observed 2026-08-21:
+          # the 26.2-only --tests argument made this step a SILENT NO-OP since the
+          # v0.11.0 cut — server never started, zero tests, step green). Green now
+          # additionally requires the run summary line proving tests EXECUTED.
+          ran_some_tests() { grep -qE "[0-9]+ required tests" neoforge/run/logs/latest.log; }
+          ./gradlew :neoforge:runGameTestServer && ran_some_tests || {
             echo "::warning title=NeoForge gametest flake::runGameTestServer failed once; retrying (first-attempt logs in the gametest-flake-evidence-server artifact under neoforge/)"
             mkdir -p flake-evidence/neoforge
             cp -r neoforge/run/logs flake-evidence/neoforge/logs 2>/dev/null || true
             cp -r neoforge/run/crash-reports flake-evidence/neoforge/crash-reports 2>/dev/null || true
             ./gradlew :neoforge:runGameTestServer
+            ran_some_tests
           }
 
       - name: Soak checker + report selftests

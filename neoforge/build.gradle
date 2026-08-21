@@ -24,6 +24,9 @@ repositories {
     mavenCentral()
 }
 
+// The mods{} block below folds common's source set into the dev-run mod.
+evaluationDependsOn(':common')
+
 // The gametest smoke subset (plan §5.2) lives in its own source set — like the
 // fabric module's, it exists only for the dev gametest run and never ships
 // (shadowJar packs sourceSets.main alone).
@@ -47,6 +50,14 @@ neoForge {
     mods {
         lss {
             sourceSet sourceSets.main
+            // THIS LINE'S FML (4.x) does not surface plain-classpath libraries to
+            // the TRANSFORMER layer the mod constructs in — dev runs died at
+            // construction with NoClassDefFoundError: dev/vox/lss/common/Brand
+            // (unnoticed while the gametest smoke was a silent no-op). Fold the
+            // common module INTO the mod for dev runs, exactly what the shadowJar
+            // does for production. 26.2's FML resolves classpath classes into the
+            // game layer, hence no twin of this line on main.
+            sourceSet project(':common').sourceSets.main
         }
         lsstest {
             sourceSet sourceSets.gametest
@@ -73,9 +84,15 @@ neoForge {
         }
         gameTestServer {
             type = "gameTestServer"
-            // Filter to OUR tests: the 26.2 TEST_INSTANCE registry also carries every
-            // vanilla datapack test; unfiltered, the run executes hundreds of them.
-            programArguments.addAll('--tests', 'lsstest:*')
+            // Filter to OUR tests — THIS LINE'S IDIOM (repaired 2026-08-21): MC 1.21.1's
+            // server Main has NO --tests option; the 26.2 argument carried in at the
+            // v0.11.0 stage-G cut made the whole run a SILENT NO-OP (joptsimple
+            // "tests is not a recognized option" -> server never started -> Gradle
+            // still exited 0 -> zero tests reported as PASS, locally AND in CI).
+            // On 1.21.1 NeoForge the filter is the enabled-namespaces property; the
+            // GameTestServer runs every registered test in the enabled namespaces and
+            // exits with the failed count.
+            systemProperty 'neoforge.enabledGameTestNamespaces', 'lsstest'
             // GameTestServer is not a DedicatedServer — the same activation gate the
             // fabric gametest JVMs open (see fabric/build.gradle).
             systemProperty 'lss.test.integratedServer', 'true'
@@ -128,6 +145,15 @@ dependencies {
     jarJarStore "org.xerial:sqlite-jdbc:${sqliteJdbcVersion}"
     implementation 'com.github.luben:zstd-jni:1.5.7-3'
     shade 'com.github.luben:zstd-jni:1.5.7-3'
+    // DEV-RUN visibility on THIS LINE'S FML (4.x) — same class of problem as the
+    // common fold in mods{} below: plain implementation deps are not reachable
+    // from the mod's transformer layer, so dev runs booted store-LESS (sqlite
+    // unresolvable -> LodStores degrade), which also closed the skipDirtyHash
+    // gate and killed the dirty-hook gametest. additionalRuntimeClasspath puts
+    // them on the game layer the mod CAN see. Production is untouched (shadowJar
+    // + jarJar carry both).
+    additionalRuntimeClasspath "org.xerial:sqlite-jdbc:${sqliteJdbcVersion}"
+    additionalRuntimeClasspath 'com.github.luben:zstd-jni:1.5.7-3'
 
     testImplementation platform('org.junit:junit-bom:5.11.3')
     testImplementation 'org.junit.jupiter:junit-jupiter'
