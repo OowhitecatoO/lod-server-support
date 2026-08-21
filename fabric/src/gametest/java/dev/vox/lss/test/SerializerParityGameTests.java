@@ -80,13 +80,16 @@ public class SerializerParityGameTests {
     private static final int END_VOID_DISK_CZ = 8;
 
     /**
-     * R2-5's production range gate feeds {@code level.getMinSectionY()}/{@code getMaxSectionY()}
-     * into the NBT serializers as an INCLUSIVE [min, max]. Nothing else would red if a future MC
-     * version flipped the max accessor to exclusive (the 1.20-era {@code getMaxSection()} WAS
-     * exclusive — a live hazard given this project's backport habit): the gate would silently
-     * drop every chunk's top section on the disk path only. Pin the inclusivity against the
-     * live section array — {@code getSectionsCount()} is what the live serializer iterates,
-     * with sectionY = minSectionY + index.
+     * R2-5's production range gate feeds an INCLUSIVE [min, max] into the NBT serializers.
+     * On THIS line the live accessors are {@code getMinSection()}/{@code getMaxSection()}
+     * with an EXCLUSIVE max, so the gate compensates with {@code getMaxSection() - 1}
+     * (26.x renamed them {@code getMinSectionY()}/{@code getMaxSectionY()} and made the
+     * max inclusive — the two conventions are exactly one off, the classic backport
+     * hazard). Nothing else would red if the -1 compensation were dropped or doubled:
+     * the gate would silently drop (or overrun) every chunk's top section on the disk
+     * path only. Pin the derived inclusive range against the live section array —
+     * {@code getSectionsCount()} is what the live serializer iterates, with
+     * sectionY = minSection + index.
      */
     @GameTest(template = "fabric-gametest-api-v1:empty")
     public void worldSectionRangeAccessorsAreInclusive(GameTestHelper helper) {
@@ -96,7 +99,7 @@ public class SerializerParityGameTests {
         int max = level.getMaxSection() - 1;
         int count = level.getSectionsCount();
         helper.assertTrue(max - min + 1 == count,
-                "getMaxSectionY must stay INCLUSIVE: min=" + min + " max=" + max
+                "the derived [min, max] must stay INCLUSIVE (getMaxSection() - 1 on this line): min=" + min + " max=" + max
                         + " sectionsCount=" + count
                         + " — if this reds, the R2-5 disk range gate is dropping top sections");
         helper.succeed();

@@ -24,11 +24,13 @@ import static org.mockito.Mockito.when;
  * shipped the resolver half of that bug once (world/DIM-1 does not exist under the
  * unified layout — its own port comment records it).
  *
- * <p>PORTS: the resolver pin's EXPECTATIONS are per-line (surfaces row 17): this
- * line (26.x unified layout) expects {@code getStorageFolder} under the server
- * worldRoot; the 1.21.x lines expect the per-level {@code getWorldFolder()} split
- * roots. Adapt the expected paths WITH the resolver — a port that leaves either
- * behind reds here.
+ * <p>PORTS: the resolver pin's EXPECTATIONS are per-line (surfaces row 17): THIS
+ * line (1.21.1, Bukkit SPLIT world dirs) expects the per-level
+ * {@code getWorldFolder()} re-root with {@code getStorageFolder} nesting nether/end
+ * as {@code DIM-1}/{@code DIM1} under their own Bukkit folders; the 26.x lines
+ * instead expect the unified {@code dimensions/minecraft/<dim>/region} layout under
+ * the server worldRoot. Adapt the expected paths WITH the resolver — a port that
+ * leaves either behind reds here.
  */
 class PaperRegionFreshnessWiringTest {
 
@@ -76,12 +78,16 @@ class PaperRegionFreshnessWiringTest {
         // root). These expectations change WITH the resolver form per line.
         assertEquals(root.resolve("world/region").normalize(), ow,
                 "overworld = <bukkit world folder>/region on the split layout");
-        assertTrue(ne.startsWith(root.resolve("world_nether")),
-                "nether under its own Bukkit folder: " + ne);
-        assertTrue(en.startsWith(root.resolve("world_the_end")),
-                "end under its own Bukkit folder: " + en);
-        assertTrue(ne.toString().endsWith("region"), "nether path targets a region dir: " + ne);
-        assertTrue(en.toString().endsWith("region"), "end path targets a region dir: " + en);
+        // EXACT nether/end pins (panel fold): the overworld leg cannot distinguish
+        // levelRoot.resolve("region") from getStorageFolder (they coincide there), so
+        // the DIM-1/DIM1 nesting is the ONE fact only these two assertions protect —
+        // a resolver simplified to levelRoot.resolve("region") reads region files
+        // from directories that do not exist and every non-overworld dim silently
+        // degrades to NEVER_CLEAN (the shipped-once failure class).
+        assertEquals(root.resolve("world_nether/DIM-1/region").normalize(), ne,
+                "nether = <bukkit nether folder>/DIM-1/region on the split layout: " + ne);
+        assertEquals(root.resolve("world_the_end/DIM1/region").normalize(), en,
+                "end = <bukkit end folder>/DIM1/region on the split layout: " + en);
         assertEquals(3, java.util.Set.of(ow, ne, en).size(),
                 "the three dimensions' region dirs must be DISTINCT — a resolver that"
                 + " collapses them serves cross-dimension freshness claims");
@@ -94,12 +100,24 @@ class PaperRegionFreshnessWiringTest {
         var overworld = level(Level.OVERWORLD, Path.of("world"));
         var exotic = mock(ServerLevel.class);
         when(exotic.dimension()).thenThrow(new IllegalStateException("exotic dimension"));
-        when(server.getAllLevels()).thenReturn(List.of(overworld, exotic));
+        // Line-exclusive throw source (panel fold): on the split-dir lines the belt
+        // also covers getWorld() — a CraftBukkit-only accessor invoked at enable for
+        // EVERY level, store-less servers included. It must stay INSIDE the per-level
+        // try; a hoisted "resolve the folder once" cleanup would let one unattachable
+        // level abort service start, and only this mock catches that.
+        var unattachable = mock(ServerLevel.class);
+        when(unattachable.dimension()).thenReturn(ResourceKey.create(
+                net.minecraft.core.registries.Registries.DIMENSION,
+                net.minecraft.resources.ResourceLocation.parse("lss_test:unattachable")));
+        when(unattachable.getWorld()).thenThrow(new IllegalStateException("no CraftWorld"));
+        when(server.getAllLevels()).thenReturn(List.of(overworld, exotic, unattachable));
 
         var dirs = assertDoesNotThrow(() -> PaperRequestProcessingService
                         .resolveRegionDirs(server, Path.of("root")),
                 "the per-level belt: one exotic dimension must never take down start");
         assertNotNull(dirs.get("minecraft:overworld"), "the healthy dimension still resolves");
+        assertNull(dirs.get("lss_test:unattachable"),
+                "the unattachable level degrades to absent (UNKNOWN downstream), never a throw");
     }
 
     /** The ATTACH half (source-scan — the contract-test idiom; the production wiring
