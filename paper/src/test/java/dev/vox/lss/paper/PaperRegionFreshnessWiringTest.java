@@ -41,8 +41,9 @@ class PaperRegionFreshnessWiringTest {
     private static ServerLevel level(ResourceKey<Level> key, Path bukkitFolder) {
         var l = mock(ServerLevel.class);
         when(l.dimension()).thenReturn(key);
-        // 1.21.x line: the resolver re-roots per level via the Bukkit world folder.
-        var w = mock(org.bukkit.World.class);
+        // 1.21.x line: the resolver re-roots per level via the Bukkit world folder
+        // (ServerLevel.getWorld() returns the concrete CraftWorld on this line).
+        var w = mock(org.bukkit.craftbukkit.CraftWorld.class);
         when(w.getWorldFolder()).thenReturn(bukkitFolder.toFile());
         when(l.getWorld()).thenReturn(w);
         return l;
