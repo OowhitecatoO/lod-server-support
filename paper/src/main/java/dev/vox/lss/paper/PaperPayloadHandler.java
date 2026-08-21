@@ -346,7 +346,7 @@ public final class PaperPayloadHandler {
                                             byte[] body) {
         if (nmsPlayer.connection == null) return false;
         nmsPlayer.connection.send(new ClientboundCustomPayloadPacket(
-                new DiscardedPayload(ID_REGION_SUMMARY, body)));
+                new DiscardedPayload(ID_REGION_SUMMARY, io.netty.buffer.Unpooled.wrappedBuffer(body))));
         return true;
     }
 
@@ -356,7 +356,7 @@ public final class PaperPayloadHandler {
                                            byte[] body) {
         if (nmsPlayer.connection == null) return false;
         nmsPlayer.connection.send(new ClientboundCustomPayloadPacket(
-                new DiscardedPayload(ID_COL_STAMPS, body)));
+                new DiscardedPayload(ID_COL_STAMPS, io.netty.buffer.Unpooled.wrappedBuffer(body))));
         return true;
     }
 }

@@ -250,13 +250,13 @@ public class RequestProcessingService {
             // must degrade that one dimension to UNKNOWN (the table's designed
             // fail-safe), never take down service start.
             try {
-                regionDirs.put(level.dimension().identifier().toString(),
+                regionDirs.put(level.dimension().location().toString(),
                         net.minecraft.world.level.dimension.DimensionType
                                 .getStorageFolder(level.dimension(), worldRoot)
                                 .resolve("region").normalize());
             } catch (Throwable t) {
                 LSSLogger.warn("Could not resolve the region directory for "
-                        + level.dimension().identifier() + " — region freshness there"
+                        + level.dimension().location() + " — region freshness there"
                         + " falls through to full reads", t);
             }
         }

@@ -578,10 +578,16 @@ public class PaperRequestProcessingService {
             // escaped the belt and killed start — capture the name first).
             String dim = null;
             try {
-                dim = level.dimension().identifier().toString();
+                dim = level.dimension().location().toString();
+                // 1.21.x line (row 17): Bukkit legacy SPLIT world dirs — re-root PER
+                // LEVEL via the Bukkit world's own folder (the unified-layout
+                // worldRoot resolved world/DIM-1, which does not exist; review
+                // 2026-08-15). getStorageFolder keeps the overworld at <folder> and
+                // nests DIM-1/DIM1 for the others, matching CraftBukkit's layout.
+                var levelRoot = level.getWorld().getWorldFolder().toPath().normalize();
                 regionDirs.put(dim,
                         net.minecraft.world.level.dimension.DimensionType
-                                .getStorageFolder(level.dimension(), worldRoot)
+                                .getStorageFolder(level.dimension(), levelRoot)
                                 .resolve("region").normalize());
             } catch (Throwable t) {
                 LSSLogger.warn("Could not resolve the region directory for "

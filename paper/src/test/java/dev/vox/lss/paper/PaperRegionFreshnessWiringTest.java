@@ -38,9 +38,14 @@ class PaperRegionFreshnessWiringTest {
         net.minecraft.server.Bootstrap.bootStrap();
     }
 
-    private static ServerLevel level(ResourceKey<Level> key) {
+    private static ServerLevel level(ResourceKey<Level> key, Path bukkitFolder) {
         var l = mock(ServerLevel.class);
         when(l.dimension()).thenReturn(key);
+        // 1.21.x line: the resolver re-roots per level via the Bukkit world folder
+        // (ServerLevel.getWorld() returns the concrete CraftWorld on this line).
+        var w = mock(org.bukkit.craftbukkit.CraftWorld.class);
+        when(w.getWorldFolder()).thenReturn(bukkitFolder.toFile());
+        when(l.getWorld()).thenReturn(w);
         return l;
     }
 
@@ -48,9 +53,10 @@ class PaperRegionFreshnessWiringTest {
     void resolverMapsAllThreeVanillaDimensionsToTheirRegionDirs() throws Exception {
         Path root = Files.createTempDirectory("lss-resolver-pin");
         var server = mock(MinecraftServer.class);
-        var overworld = level(Level.OVERWORLD);
-        var nether = level(Level.NETHER);
-        var end = level(Level.END);
+        // Bukkit SPLIT layout (row 17): three separate world folders.
+        var overworld = level(Level.OVERWORLD, root.resolve("world"));
+        var nether = level(Level.NETHER, root.resolve("world_nether"));
+        var end = level(Level.END, root.resolve("world_the_end"));
         when(server.getAllLevels()).thenReturn(List.of(overworld, nether, end));
 
         var dirs = PaperRequestProcessingService.resolveRegionDirs(server, root);
@@ -64,29 +70,28 @@ class PaperRegionFreshnessWiringTest {
                 + " nether/end dir that does not exist, silently degrading every"
                 + " non-overworld dim to NEVER_CLEAN");
         assertNotNull(en, "end resolved");
-        // 26.x unified layout (row 17): EVERY dimension, overworld included, lives
-        // under dimensions/minecraft/<dim>/region (verified against the real
-        // getStorageFolder at pin-writing time — the classic root/region overworld is
-        // a PRE-26 shape). PORTS: on the 1.21.x split-dir lines these expectations
-        // change WITH the resolver form — see the class javadoc.
-        assertEquals(root.resolve("dimensions/minecraft/overworld/region").normalize(), ow,
-                "overworld = worldRoot/dimensions/minecraft/overworld/region on 26.x");
+        // 1.21.x SPLIT layout (row 17): the overworld sits at its own Bukkit
+        // folder's region dir; nether/end nest DIM-1/DIM1 under THEIR folders
+        // (CraftBukkit's on-disk layout — getStorageFolder against the per-level
+        // root). These expectations change WITH the resolver form per line.
+        assertEquals(root.resolve("world/region").normalize(), ow,
+                "overworld = <bukkit world folder>/region on the split layout");
+        assertTrue(ne.startsWith(root.resolve("world_nether")),
+                "nether under its own Bukkit folder: " + ne);
+        assertTrue(en.startsWith(root.resolve("world_the_end")),
+                "end under its own Bukkit folder: " + en);
         assertTrue(ne.toString().endsWith("region"), "nether path targets a region dir: " + ne);
         assertTrue(en.toString().endsWith("region"), "end path targets a region dir: " + en);
         assertEquals(3, java.util.Set.of(ow, ne, en).size(),
                 "the three dimensions' region dirs must be DISTINCT — a resolver that"
                 + " collapses them serves cross-dimension freshness claims");
-        // The vanilla storage-folder derivation must keep nether/end under the root
-        // (the unified layout's invariant — a resolver re-rooted per-level on this
-        // line would escape the worldRoot, the R2-9 probe's failure shape inverted).
-        assertTrue(ne.startsWith(root), "nether dir under the world root: " + ne);
-        assertTrue(en.startsWith(root), "end dir under the world root: " + en);
+
     }
 
     @Test
     void exoticDimensionDegradesThatDimensionOnlyNeverServiceStart() {
         var server = mock(MinecraftServer.class);
-        var overworld = level(Level.OVERWORLD);
+        var overworld = level(Level.OVERWORLD, Path.of("world"));
         var exotic = mock(ServerLevel.class);
         when(exotic.dimension()).thenThrow(new IllegalStateException("exotic dimension"));
         when(server.getAllLevels()).thenReturn(List.of(overworld, exotic));

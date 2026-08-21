@@ -775,7 +775,7 @@ public class LodRequestManager {
         if (this.lastDimension == null) return;
         try {
             var summary = dev.vox.lss.common.region.RegionSummaryWire.decodeSummary(body);
-            if (!this.lastDimension.identifier().toString().equals(summary.dimension())) return;
+            if (!this.lastDimension.location().toString().equals(summary.dimension())) return;
             if (this.pendingCacheLoad != null) {
                 this.pendingSummaryFrame = body;
                 return;
@@ -854,7 +854,7 @@ public class LodRequestManager {
         try {
             this.summarySender.send(dev.vox.lss.common.region.RegionSummaryWire.encodeRequest(
                     new dev.vox.lss.common.region.RegionSummaryWire.Request(
-                            dimension.identifier().toString(),
+                            dimension.location().toString(),
                             playerCx >> 5, playerCz >> 5, radius)));
             if (ClientTraceLog.enabled()) {
                 ClientTraceLog.event("summary_req", "\"r\":" + radius);
@@ -891,7 +891,7 @@ public class LodRequestManager {
         try {
             var stamps = dev.vox.lss.common.region.ColumnStampsWire.decode(
                     body, System.currentTimeMillis() / 1000L);
-            if (!this.lastDimension.identifier().toString().equals(stamps.dimension())) return;
+            if (!this.lastDimension.location().toString().equals(stamps.dimension())) return;
             long[] positions = stamps.packedPositions();
             long[] seconds = stamps.stampSeconds();
             for (int i = 0; i < positions.length; i++) {
