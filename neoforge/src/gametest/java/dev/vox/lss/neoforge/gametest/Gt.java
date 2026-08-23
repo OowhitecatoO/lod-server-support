@@ -6,7 +6,7 @@ import net.minecraft.network.chat.Component;
 /**
  * 1.21.10 LINE SHIM — the NeoForge twin of the fabric gametest {@code Gt}
  * (docs/planning/mc1.21.10-line-notes.md): this MC's {@link GameTestHelper}
- * takes {@link Component} assertion messages; the port sed-reroutes
+ * drops the String overloads of assertTrue/assertFalse (fail(String) survives — the reroute wraps it anyway for uniformity); the port sed-reroutes
  * {@code helper.assertTrue(} → {@code Gt.assertTrue(helper, } and
  * {@code helper.fail(} → {@code Gt.fail(helper, } so every condition and
  * message expression stays byte-identical to the parent line.

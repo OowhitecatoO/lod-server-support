@@ -5,7 +5,7 @@ import net.minecraft.network.chat.Component;
 
 /**
  * 1.21.10 LINE SHIM (docs/planning/mc1.21.10-line-notes.md): this MC's
- * {@link GameTestHelper} takes {@link Component} assertion messages — the
+ * {@link GameTestHelper} drops the String overloads of assertTrue/assertFalse (fail(String) survives — the reroute wraps it anyway for uniformity) — the
  * 1.21.9/1.21.10 window; every sibling line (26.x, 1.21.11, 1.21.1) has the
  * String overloads the shared test bodies were written against. One adapter
  * beats ~550 wrapped message expressions: the port sed-reroutes

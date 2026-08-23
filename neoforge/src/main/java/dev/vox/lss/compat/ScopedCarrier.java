@@ -5,7 +5,7 @@ import java.util.function.Supplier;
 /**
  * The 1.21.11 PASS-THROUGH variant of the ScopedCarrier (V-2/S5's whole-file swap —
  * see main's twin for the 26.x ScopedValue shim): Java 21 has no final ScopedValue,
- * and this line's AntiXray (1.4.14+1.21.11) threads its obfuscation context through
+ * and this line's AntiXray (1.4.12+1.21.10) threads its obfuscation context through
  * ThreadLocals its own mixins null-check, so LSS's serialize paths need no binding
  * shim here — {@code callSerializing} calls straight through. The crash floor on this
  * line is the probe-path containment plus the S2 constraint (never the section

@@ -129,3 +129,15 @@ pre-flight at `-Pmod_version=0.12.0` + `release_check.py --version 0.12.0`,
 T1/T2 via `:fabric:build -x runClientGameTest`, `:paper:test`,
 `:neoforge:build`, CI on push, and a 2-Opus review pair (the per-line
 discipline this release used everywhere).
+
+## Client pairing status + carries (creation review B)
+
+- **No recorded Voxy build for 1.21.10**: the Fabric client half is inert
+  until a Voxy 1.21.10 pairing exists (no consumer -> no capability bit);
+  the server side serves wire-compatible clients on other lines regardless.
+  The fabric.mod.json voxy suggests row stays (advisory).
+- Carries: derive neoforge.mods.toml's loader floor from neoforge_version (a
+  pin — this row was the port's one flatly-wrong value and nothing guards
+  it); verify row 16 against a real 0.8.x moonrise-opt jar (label updated to
+  say UNVERIFIED); the tree-wide stale "verified against 1.21.11" prose
+  labels (row 15 is now closed-verified; the rest are golden/pin-covered).

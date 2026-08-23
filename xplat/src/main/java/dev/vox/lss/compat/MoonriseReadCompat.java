@@ -20,7 +20,7 @@ import java.util.function.BiConsumer;
  * resolved at runtime, and any failure shape degrades to {@code null} = unavailable, which
  * leaves {@code ChunkDiskReader}'s existing ladder bit-identical to today.
  *
- * <p>The target overload (verified against moonrise-opt 1.1.0 bytecode, MC 26.2):
+ * <p>The target overload (verified against moonrise-opt 1.1.0 bytecode, MC 26.2; 1.21.10 line: the shape is UNVERIFIED against a real 0.8.x moonrise-opt jar (surfaces row 16 — per-platform, never transferred; the scan degrades fail-safe to the unchanged ladder + one warn, and the dev arm's 0.8.0-beta.4 pin is the verification lever)):
  * <pre>
  * public static Cancellable loadDataAsync(ServerLevel, int, int, RegionFileType,
  *         BiConsumer&lt;CompoundTag, Throwable&gt;, boolean intendingToBlock, Priority)

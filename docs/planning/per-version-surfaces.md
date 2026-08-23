@@ -49,10 +49,12 @@ status (docs/planning/mc1.21.10-line-notes.md is the dated record):
   step name).
 - **Rows 9/14 (native shapes)**: hold the parent's values as verified by the
   passing line goldens/T2 byte pins (goldens inherited unchanged, 73/73).
-- **Rows 6/15/17**: copyOf exists (T2 green through the save hook); the
-  render-phase event and split world dirs carry the parent's values — row 15
-  remains a HAND row not re-bytecode-verified on 1.21.10 (flagged at the
-  line's creation review; carried open).
+- **Rows 6/15/17**: copyOf exists (T2 green through the save hook, descriptor
+  byte-identical); split world dirs carry the parent's split re-root (pinned).
+  Row 15 is VERIFIED on 1.21.10 (creation review B, 2026-08-22): the
+  LevelRenderer keeps the 1.21.11 deferred-submit architecture and fabric-api
+  16.2.0's BEFORE_ENTITIES fires at the pre-drain popPush("submitEntities")
+  anchor — BEFORE_ENTITIES is the correct COLLECT_SUBMITS analog here.
 - **Ecosystem cut with no row**: the Sodium options page + ModMenu
   integration (Sodium 0.7.3 predates the 0.8 structured config API).
   fabric-api floor drops to 0.138.0.
