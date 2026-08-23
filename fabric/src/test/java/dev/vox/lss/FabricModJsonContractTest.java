@@ -31,8 +31,8 @@ class FabricModJsonContractTest {
     // ---- the line's expected constants (each branch carries its own values) ----
     // Exact-version pin (no range): see the class doc — every neighboring 1.21.x differs
     // in at least one required-mixin surface, so the jar declares exactly this version.
-    private static final String EXPECTED_MINECRAFT_DEPENDS = "1.21.11";
-    private static final String EXPECTED_MINECRAFT_VERSION_PREFIX = "1.21.11";
+    private static final String EXPECTED_MINECRAFT_DEPENDS = "1.21.10";
+    private static final String EXPECTED_MINECRAFT_VERSION_PREFIX = "1.21.10";
 
     private static JsonObject modJson;
     private static Properties gradleProps;
