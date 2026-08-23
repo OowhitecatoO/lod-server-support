@@ -190,28 +190,21 @@ public class MoveTraceGameTests {
 
     /** A mock connection never sends the client's side of the placement handshake:
      *  the placement teleport latches {@code awaitingPositionFromClient} (every move is
-     *  swallowed by updateAwaitingTeleport) and placeNewPlayer arms the 60-tick
-     *  {@code clientLoadedTimeoutTimer} (hasClientLoaded() reads false until a real
-     *  client confirms). Both cleared here — test-only reflection, dev runtime = named
-     *  mappings; a vanilla rename reds this loudly. */
+     *  swallowed by updateAwaitingTeleport). 1.21.10 line: that latch is the ONLY move
+     *  gate on this MC — the 60-tick {@code clientLoadedTimeoutTimer} /
+     *  {@code waitingForRespawn} pair arrives at 1.21.11 (javap-verified absent here;
+     *  the 1.21.1 line carries the same one-field form), so priming clears just the
+     *  one field. Test-only reflection, dev runtime = named mappings; a vanilla
+     *  rename reds this loudly. */
     private static void primeListenerForMoves(ServerGamePacketListenerImpl connection) {
         try {
             var awaiting = ServerGamePacketListenerImpl.class
                     .getDeclaredField("awaitingPositionFromClient");
             awaiting.setAccessible(true);
             awaiting.set(connection, null);
-            var timer = ServerGamePacketListenerImpl.class
-                    .getDeclaredField("clientLoadedTimeoutTimer");
-            timer.setAccessible(true);
-            timer.setInt(connection, 0);
-            var waiting = ServerGamePacketListenerImpl.class
-                    .getDeclaredField("waitingForRespawn");
-            waiting.setAccessible(true);
-            waiting.setBoolean(connection, false);
         } catch (ReflectiveOperationException e) {
             throw new AssertionError("could not prime the listener for moves — "
-                    + "did vanilla rename a field? (awaitingPositionFromClient /"
-                    + " clientLoadedTimeoutTimer / waitingForRespawn)", e);
+                    + "did vanilla rename a field? (awaitingPositionFromClient)", e);
         }
     }
 
