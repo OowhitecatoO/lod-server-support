@@ -190,13 +190,15 @@ public class MoveTraceGameTests {
 
     /** A mock connection never sends the client's side of the placement handshake:
      *  the placement teleport latches {@code awaitingPositionFromClient} (every move is
-     *  swallowed by updateAwaitingTeleport). 1.21.10 line: that latch is the ONLY move
-     *  gate on this MC — the 60-tick {@code clientLoadedTimeoutTimer} /
-     *  {@code waitingForRespawn} pair arrives at 1.21.11 (javap-verified absent here;
-     *  the 1.21.1 line carries the same one-field form), so priming clears just the
-     *  one field. Test-only reflection, dev runtime = named mappings; a vanilla
-     *  rename reds this loudly. */
+     *  swallowed by updateAwaitingTeleport). 1.21.10 line: the client-loaded gate
+     *  ({@code hasClientLoaded()} at the very top of handleMovePlayer — a mock never
+     *  acks) lives on {@code Player} on this MC with a PUBLIC setter (javap-verified:
+     *  {@code clientLoaded}/{@code clientLoadedTimeoutTimer} move to the LISTENER at
+     *  1.21.11, where priming needs reflection; the 1.21.1 line predates the gate
+     *  entirely), so priming is the setter plus the one reflective field. Test-only
+     *  reflection, dev runtime = named mappings; a vanilla rename reds this loudly. */
     private static void primeListenerForMoves(ServerGamePacketListenerImpl connection) {
+        connection.player.setClientLoaded(true);
         try {
             var awaiting = ServerGamePacketListenerImpl.class
                     .getDeclaredField("awaitingPositionFromClient");
