@@ -72,6 +72,16 @@ class FabricModJsonContractTest {
     }
 
     @Test
+    void suggestsXaeroWorldMapAsLiteralWildcard() {
+        // Deliberately a literal "*", NOT a version range: the Xaero bridge binds
+        // reflectively and fails soft across Xaero versions (xaero-map-bridge-plan.md
+        // §2.2) — a range here would claim a compatibility pin we don't have.
+        assertEquals("*",
+                modJson.getAsJsonObject("suggests").get("xaeroworldmap").getAsString(),
+                "suggests.xaeroworldmap must be the literal any-version wildcard");
+    }
+
+    @Test
     void gradlePropertiesTargetsTheSameLine() {
         String mc = gradleProps.getProperty("minecraft_version", "");
         // equals-or-dot: a bare prefix match would also accept e.g. 26.10, which the
