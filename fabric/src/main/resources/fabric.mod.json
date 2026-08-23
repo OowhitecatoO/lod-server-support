@@ -40,6 +40,7 @@
     "fabric-api": ">=0.138.4"
   },
   "suggests": {
-    "voxy": ">=0.2.15-beta"
+    "voxy": ">=0.2.15-beta",
+    "xaeroworldmap": "*"
   }
 }
