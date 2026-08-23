@@ -18,9 +18,11 @@ Clients use the Fabric mod on every version; on 1.21.1 a NeoForge client works a
 | 1.21.10 | ✅ | ✅ | - | - |
 | 1.21.1 | ✅ | ✅ | - | ✅ |
 
-On 1.21.10 there is no Folia build upstream and the in-game Sodium options page is not available (Sodium 0.7.x there predates its config API) — every setting remains in the JSON config files.
+On 1.21.10 there is no Folia build upstream. The in-game options page renders through Sodium 0.7.x's own settings screen from v0.13.0 (earlier 1.21.10 builds had no page) — every setting also remains in the JSON config files.
 
 On NeoForge (1.21.1) the recommended client path is the community [Voxy NeoForge port](https://github.com/j-shelfwood/voxy-neoforge) with [Forgified Fabric API](https://modrinth.com/mod/forgified-fabric-api) in place of Fabric API. Tested working with Forgified Fabric API 0.116.15, Sodium 0.6.13, and Voxy NeoForge port 0.2.9-alpha.
+
+The in-game settings page (Sodium's Video Settings → the LSS tab / page, or ModMenu's Configure button) renders on every supported Sodium generation: on Sodium 0.8+ it appears under LSS's own entry in the settings screen; on Sodium 0.6/0.7 (MC ≤1.21.10 and the 1.21.1 Voxy-fork pairing) it appears as LSS tabs beside Sodium's own. On NeoForge only the 0.6/0.7 tabs exist so far — the 0.8.12/Connector path is configured through the JSON config files.
 
 Compatible with [AntiXray](https://modrinth.com/mod/anti-xray), [Moonrise](https://modrinth.com/mod/moonrise-opt), [C2ME](https://modrinth.com/mod/c2me-fabric), [ViaVersion](https://modrinth.com/plugin/viaversion)/[ViaBackwards](https://modrinth.com/plugin/viabackwards), and most other mods. Can be run alongside Distant Horizons on the same server to support DH clients and Voxy clients simultaneously. 
 

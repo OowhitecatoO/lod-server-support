@@ -20,11 +20,15 @@
     ],
     "client": [
       "dev.vox.lss.LSSClient"
+    ],
+    "modmenu": [
+      "dev.vox.lss.config.LSSModMenuIntegration"
     ]
   },
   "mixins": [
     "lss.mixins.json",
-    "lss-trace.mixins.json"
+    "lss-trace.mixins.json",
+    "lss-sodium-legacy.mixins.json"
   ],
   "jars": [
     {
@@ -41,6 +45,8 @@
   },
   "suggests": {
     "voxy": ">=0.2.15-beta",
+    "sodium": "*",
+    "modmenu": "*",
     "xaeroworldmap": "*"
   }
 }

@@ -57,6 +57,24 @@ nothing functional is lost, only the in-game pages. The release notes must
 name this cut. Revisit only if Sodium backports 0.8 to 1.21.10 (they will
 not).
 
+**Amended 2026-08-23 (the options-page-generations round, main PR #236 ported
+per sodium-options-page-generations-plan.md §12): the cut is NARROWED to the
+0.8 walker.** The page is BACK on this line — rendered through
+`LegacySodiumPage` (Sodium 0.6/0.7's internal options API, bound reflectively
+with no compile dependency) injected by the `@Pseudo` `SodiumLegacyOptionsHook`
+at `SodiumOptionsGUI.<init>`; this is the 0.7-ONLY proof line, so
+`sodium_legacy_golden` pins its own `mc1.21.10-0.7.3-neoforge` (the
+`setTooltip(Function)` overload generation). The ModMenu integration is
+RESTORED (ModMenu 16.0.1 compile dep + the `modmenu` entrypoint + suggests):
+its Configure button opens the legacy screen through `SodiumConfigScreens`'
+reflective generation switch. Still cut: `LSSConfigMenu` (the 0.8+ walker) and
+the `sodium:config_api_user` entrypoint (`ClientMenuEntrypointContractTest`
+pins entrypoint ⇔ file, so both stay absent together) — and there is no
+`sodium_version` (no 0.8 artifact), so the resolves-test's modern golden arm is
+unresolvable-by-design here (`fabric/build.gradle` guards on the property).
+The v0.13.0 line release notes must say the page is back (legacy Sodium
+screen) rather than repeat the cut.
+
 ## Findings at first compile (the real 1.21.10↔1.21.11 API boundary)
 
 The lateral-port premise "1.21.11's MC surface verbatim" was WRONG in three

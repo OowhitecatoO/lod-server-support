@@ -40,6 +40,15 @@ configurations {
     storeDeps
 }
 
+configurations {
+    // sodium-options-page-generations-plan.md §4 — see the dependency's comment.
+    sodiumLegacyGolden {
+        canBeConsumed = false
+        canBeResolved = true
+        transitive = false
+    }
+}
+
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     // 1.21.11 line: loom-remap needs explicit mappings + mod-aware dependency scopes
@@ -66,14 +75,23 @@ dependencies {
     storeDeps "com.github.luben:zstd-jni:1.5.7-3"
     localRuntime "org.xerial:sqlite-jdbc:3.49.1.0"
     localRuntime "com.github.luben:zstd-jni:1.5.7-3"
-    // 1.21.10 line CUT (the 1.21.8 precedent): Sodium for MC 1.21.10 tops out at
-    // 0.7.3, which predates the structured config API (net.caffeinemc.mods.sodium
-    // .api.config) the LSS options page binds — LSSConfigMenu + the
-    // sodium:config_api_user entrypoint are dropped, and the ModMenu integration
-    // goes WITH it (it was only a deep-link into the Sodium 0.8 settings screen —
-    // ConfigManager/VideoSettingsScreen are 0.8 client classes). Decisions log:
-    // docs/planning/mc1.21.10-line-notes.md. RateSliderStops stays (Sodium-free,
-    // ConfigValidationTest classloads it); config via the JSON files.
+    // 1.21.10 line: Sodium for MC 1.21.10 tops out at 0.7.3, which predates the
+    // structured config API (net.caffeinemc.mods.sodium.api.config) the 0.8+ walker
+    // binds — LSSConfigMenu + the sodium:config_api_user entrypoint stay CUT here.
+    // Since the options-page-generations round (sodium-options-page-generations-plan.md
+    // §12) the page renders anyway, through LegacySodiumPage (0.6/0.7's internal
+    // options API bound reflectively — zero compile dep, so no Sodium artifact is
+    // needed on the compile classpath), and the ModMenu integration is RESTORED: its
+    // Configure button opens the legacy screen through SodiumConfigScreens' reflective
+    // generation switch. Decisions log: docs/planning/mc1.21.10-line-notes.md.
+    modCompileOnly "maven.modrinth:modmenu:16.0.1"
+    // The legacy (0.6/0.7) Sodium options surface SodiumLegacySurfaceResolvesTest checks
+    // LegacySodiumPage.SURFACE against by NAME + ARITY (sodium-options-page-generations-
+    // plan.md §4): a PLAIN configuration, resolved outside loom and never on any compile
+    // or test classpath (the test opens the jar as a zip — a Sodium class on the T1
+    // classpath would be shadowed by the stub package anyway). Offline or unresolvable
+    // = the test skips itself (see the test task below).
+    sodiumLegacyGolden "maven.modrinth:sodium:${sodium_legacy_golden}"
     // Compat validation arm: -Pbenchmark.moonrise=true puts Moonrise on the dev runtime
     // (the same Modrinth version issue #69 was reported against), so the soak harness can
     // drive the full dirty pipeline — the SerializableChunkData.copyOf hook, broadcast,
@@ -97,6 +115,19 @@ dependencies {
 
 test {
     useJUnitPlatform()
+    // SodiumLegacySurfaceResolvesTest's input: the legacy Sodium jar (gradle.properties
+    // sodium_legacy_golden). Resolved at EXECUTION so an offline box still runs Tier 1 —
+    // the test then skips with an assumption instead of failing the build.
+    inputs.property "sodium_legacy_golden", project.sodium_legacy_golden
+    doFirst {
+        def goldenJar = ''
+        try {
+            goldenJar = configurations.sodiumLegacyGolden.files.find { it.name.endsWith('.jar') }?.absolutePath ?: ''
+        } catch (Exception e) {
+            logger.warn("sodiumLegacyGolden unresolvable (offline?) — SodiumLegacySurfaceResolvesTest will skip: ${e.message}")
+        }
+        systemProperty 'lss.sodiumLegacyGoldenJar', goldenJar
+    }
     // GameTestEntrypointContractTest reads these at runtime (repo-walk); without declaring
     // them as inputs, adding a gametest class or editing the entrypoint list leaves the
     // task UP-TO-DATE locally and the contract never re-checks.
