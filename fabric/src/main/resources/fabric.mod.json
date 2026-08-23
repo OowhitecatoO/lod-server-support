@@ -47,6 +47,7 @@
   },
   "suggests": {
     "sodium": ">=0.8.13-beta.2",
-    "modmenu": "*"
+    "modmenu": "*",
+    "xaeroworldmap": "*"
   }
 }
