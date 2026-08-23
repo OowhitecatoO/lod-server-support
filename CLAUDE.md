@@ -17,6 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > `xver-live-corpus` must decode STRICTLY (zero fallbacks), NeoForge pins
 > 26.1.2.95.
 > **v0.12.0 port (2026-08-21):** the region-summary/stamped-up_to_date/quadtree stack (main 79e49951..e0cdf6f2, 20 picks + the #215 checker floor) — clean re-application, zero line adaptations needed beyond the version bump; per-line 1-Fable+3-Opus panel found nothing; full smoke set green (wrs both platforms, stamp-heal chain, armed wrs accepted per doctrine, store-second-join).
+> **Xaero map bridge port (2026-08-23):** the issue #223 stack (main PRs #229/#230/#231 + the #232 default-OFF flip) — byte-clean re-application; only line adaptation: `BLUE_/RED_STAINED_GLASS` test constants (26.2's ColorCollection is 26.2-only). 2-Opus port review: no MAJORs. Still owed: one live check of the 26.1 Xaero 1.45.0 jar in the test instance (reflective surface member-verified against the 26.2/1.21.1 jars; resolve failure fails soft to `state=unavailable`).
 > **v0.11.1 port (2026-08-18):** the stutter-fix pair (scan prefix retention +
 > acquisition frontier, main PRs #203/#204 + folds) cherry-picked from main —
 > pure xplat/common, no line flavor points; the body below is main's CLAUDE.md
