@@ -506,7 +506,7 @@ public class PaperRequestProcessingService {
         if (storeMode != dev.vox.lss.common.store.LodStoreMode.OFF) {
             var maskFingerprints = new java.util.HashMap<String, String>();
             for (ServerLevel level : server.getAllLevels()) {
-                String dim = level.dimension().identifier().toString();
+                String dim = level.dimension().location().toString();
                 var maskEntry = PaperXrayMaskManager.entryForActive(level);
                 maskFingerprints.put(dim, maskEntry == null ? "off"
                         : maskEntry.sourceLabel() + ":"
@@ -581,7 +581,7 @@ public class PaperRequestProcessingService {
             // escaped the belt and killed start — capture the name first).
             String dim = null;
             try {
-                dim = level.dimension().identifier().toString();
+                dim = level.dimension().location().toString();
                 // 1.21.x line (row 17): Bukkit legacy SPLIT world dirs — re-root PER
                 // LEVEL via the Bukkit world's own folder (the unified-layout
                 // worldRoot resolved world/DIM-1 here, which does not exist, and the
@@ -878,7 +878,7 @@ public class PaperRequestProcessingService {
                     this.config.generationConcurrencyLimitPerPlayer);
             // Session identity for the router's stale-snapshot guard (set before the map
             // publish so the processing thread never sees it null on a live state).
-            s.setRegisteredDimension(player.level().dimension().identifier().toString());
+            s.setRegisteredDimension(player.level().dimension().location().toString());
             // Transport-pressure gauge (elytra-wall §8.3), Fabric-parity.
             s.setChannelPressureProbe(PaperChannelPressure.forPlayer(player));
             return s;
@@ -1308,7 +1308,7 @@ public class PaperRequestProcessingService {
             // which wedged the gate — see AbstractPlayerRequestState.updatePlayerChunk).
             state.updatePlayerChunk(player.chunkPosition().x, player.chunkPosition().z);
             String dimension = this.dimensionStringCache.computeIfAbsent(level.dimension(),
-                    k -> k.identifier().toString());
+                    k -> k.location().toString());
 
             this.offThreadProcessor.updateDimensionContext(dimension, level);
 
@@ -1571,7 +1571,7 @@ public class PaperRequestProcessingService {
             }
         }
         if (found == null) return;
-        var batch = new RegionProbeBatch(level.dimension().identifier().toString(), found);
+        var batch = new RegionProbeBatch(level.dimension().location().toString(), found);
         this.regionProbeResults.compute(uuid, (k, prev) -> {
             if (prev == null || !prev.dimension().equals(batch.dimension())) return batch;
             prev.probes().putAll(batch.probes());
@@ -1626,7 +1626,7 @@ public class PaperRequestProcessingService {
             var player = state.getPlayer();
             var level = player.level();
             String dimension = this.dimensionStringCache.computeIfAbsent(level.dimension(),
-                    k -> k.identifier().toString());
+                    k -> k.location().toString());
             // Ticket queued before a dimension change targets the old dimension's coordinates.
             // Dropping it leaks nothing: the admitting state was discarded by
             // removePlayer+registerPlayer (its slot dies with it), AND that same removePlayer
@@ -1707,14 +1707,14 @@ public class PaperRequestProcessingService {
         player.connection.send(new net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket(
                 new net.minecraft.network.protocol.common.custom.DiscardedPayload(
                         FAR_PLAYER_CHANNEL_IDS.computeIfAbsent(channel,
-                                net.minecraft.resources.Identifier::parse), body)));
+                                net.minecraft.resources.ResourceLocation::parse), body)));
         this.bandwidthLimiter.recordSend(body.length);
         return true;
     }
 
     // Two entries ever (roster + updates) — parse once, not per frame (review NIT).
     private static final java.util.concurrent.ConcurrentHashMap<String,
-            net.minecraft.resources.Identifier> FAR_PLAYER_CHANNEL_IDS =
+            net.minecraft.resources.ResourceLocation> FAR_PLAYER_CHANNEL_IDS =
             new java.util.concurrent.ConcurrentHashMap<>();
 
     public dev.vox.lss.common.farplayers.FarPlayerBroadcastService getFarPlayerService() {

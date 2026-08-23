@@ -13,7 +13,7 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.FunctionGameTestInstance;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.gametest.framework.TestData;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.TicketType;
@@ -106,7 +106,7 @@ public final class LSSNeoGameTests {
     private static void registerFunctions(RegisterEvent event) {
         for (Smoke t : TESTS) {
             event.register(Registries.TEST_FUNCTION,
-                    Identifier.fromNamespaceAndPath("lsstest", t.name()),
+                    ResourceLocation.fromNamespaceAndPath("lsstest", t.name()),
                     t::body);
         }
     }
@@ -114,13 +114,13 @@ public final class LSSNeoGameTests {
     private static void registerTests(RegisterGameTestsEvent event) {
         // Fires per datapack load (server start AND /reload) with FRESH registries —
         // this listener is deliberately re-runnable and touches no other state.
-        var env = event.registerEnvironment(Identifier.fromNamespaceAndPath("lsstest", "default"));
+        var env = event.registerEnvironment(ResourceLocation.fromNamespaceAndPath("lsstest", "default"));
         for (Smoke t : TESTS) {
             ResourceKey<Consumer<GameTestHelper>> fn = ResourceKey.create(Registries.TEST_FUNCTION,
-                    Identifier.fromNamespaceAndPath("lsstest", t.name()));
-            event.registerTest(Identifier.fromNamespaceAndPath("lsstest", t.name()),
+                    ResourceLocation.fromNamespaceAndPath("lsstest", t.name()));
+            event.registerTest(ResourceLocation.fromNamespaceAndPath("lsstest", t.name()),
                     td -> new FunctionGameTestInstance(fn, td),
-                    new TestData<>(env, Identifier.withDefaultNamespace("empty"),
+                    new TestData<>(env, ResourceLocation.withDefaultNamespace("empty"),
                             t.maxTicks(), 1, true));
         }
     }
@@ -221,7 +221,7 @@ public final class LSSNeoGameTests {
         var filter = service.getDirtyContentFilter();
         var editPos = helper.absolutePos(new BlockPos(1, 2, 1));
         var chunk = level.getChunkAt(editPos);
-        String dim = level.dimension().identifier().toString();
+        String dim = level.dimension().location().toString();
         var first = filter.observeSave(level, chunk, dim);
         boolean placed = level.setBlock(editPos, Blocks.DIAMOND_BLOCK.defaultBlockState(), 3);
         var second = filter.observeSave(level, chunk, dim);

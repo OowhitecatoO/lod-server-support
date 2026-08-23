@@ -4,7 +4,7 @@ import dev.vox.lss.common.LSSConstants;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 
 /**
  * Far players (v0.11.0 stage E1): S2C roster frame (FarPlayerWire.encodeRoster bytes).
@@ -17,7 +17,7 @@ import net.minecraft.resources.Identifier;
 public record FarPlayerRosterS2CPayload(byte[] body) implements CustomPacketPayload {
 
     public static final CustomPacketPayload.Type<FarPlayerRosterS2CPayload> TYPE =
-            new CustomPacketPayload.Type<>(Identifier.parse(LSSConstants.CHANNEL_FAR_PLAYER_ROSTER));
+            new CustomPacketPayload.Type<>(ResourceLocation.parse(LSSConstants.CHANNEL_FAR_PLAYER_ROSTER));
 
     public static final StreamCodec<FriendlyByteBuf, FarPlayerRosterS2CPayload> CODEC =
             StreamCodec.of(

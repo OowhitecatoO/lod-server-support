@@ -20,9 +20,6 @@
     ],
     "client": [
       "dev.vox.lss.LSSClient"
-    ],
-    "modmenu": [
-      "dev.vox.lss.config.LSSModMenuIntegration"
     ]
   },
   "mixins": [

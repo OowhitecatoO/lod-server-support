@@ -79,7 +79,7 @@ public class RegionFaultGameTests {
             }
             Files.write(regionFile, bytes.array());
         } catch (Exception e) {
-            helper.fail("could not stage the corrupt region file: " + e);
+            Gt.fail(helper, "could not stage the corrupt region file: " + e);
             return;
         }
 
@@ -97,9 +97,9 @@ public class RegionFaultGameTests {
         var step = new AtomicInteger();
 
         helper.succeedWhen(() -> {
-            helper.assertTrue(helper.getTick() >= 6, "waiting for the ticket release");
+            Gt.assertTrue(helper, helper.getTick() >= 6, "waiting for the ticket release");
             if (step.get() == 0) {
-                helper.assertTrue(chunkSource.getChunkNow(validPos.x, validPos.z) == null,
+                Gt.assertTrue(helper, chunkSource.getChunkNow(validPos.x, validPos.z) == null,
                         "waiting for the valid chunk to unload");
                 level.save(null, true, false);
                 // ONE batch: two sequential offers would supersede the corrupt position and
@@ -107,7 +107,7 @@ public class RegionFaultGameTests {
                 GameTestSeeding.seedRequests(state,
                         new long[]{corruptPacked, validPacked}, new long[]{-1L, -1L});
                 step.set(1);
-                helper.assertTrue(false, "requests queued, awaiting both disk resolutions");
+                Gt.assertTrue(helper, false, "requests queued, awaiting both disk resolutions");
             }
             service.tick();
             var diskDiag = service.getDiskReader().getDiag();
@@ -115,7 +115,7 @@ public class RegionFaultGameTests {
             // resolved not-found (vanilla swallowed the inflate failure) WITHOUT erroring or
             // saturating, and the valid read still served — proof the pool survived the corrupt
             // read intact. This is the FP-027 guarantee; the not-found vs error label is vanilla's.
-            helper.assertTrue(diskDiag.getSubmittedCount() == 2 && diskDiag.getCompletedCount() == 2
+            Gt.assertTrue(helper, diskDiag.getSubmittedCount() == 2 && diskDiag.getCompletedCount() == 2
                             && diskDiag.getSuccessfulReadCount() == 1 && state.getTotalSectionsSent() == 1
                             && (diskDiag.getNotFoundCount() + diskDiag.getErrorCount()) == 1
                             && diskDiag.getSaturationCount() == 0,
@@ -127,12 +127,12 @@ public class RegionFaultGameTests {
                             + " completed=" + diskDiag.getCompletedCount()
                             + " not_found=" + diskDiag.getNotFoundCount()
                             + " saturated=" + diskDiag.getSaturationCount() + ")");
-            helper.assertTrue(!state.hasDiskReadDone(corruptCx, corruptCz),
+            Gt.assertTrue(helper, !state.hasDiskReadDone(corruptCx, corruptCz),
                     "a not-found read must not mark the position done — the client's "
                             + "NOT_GENERATED retry path must stay open");
-            helper.assertTrue(state.getHeldSyncSlots() == 0,
+            Gt.assertTrue(helper, state.getHeldSyncSlots() == 0,
                     "the contained corrupt read must free its sync slot (no pending leak)");
-            helper.assertTrue(service.getDiskReader().getPendingResultCount() == 0,
+            Gt.assertTrue(helper, service.getDiskReader().getPendingResultCount() == 0,
                     "no undrained results may linger after both resolutions");
             service.shutdown();
             playerList.remove(mock);

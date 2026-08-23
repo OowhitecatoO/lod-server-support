@@ -55,18 +55,18 @@ public class MoveTraceGameTests {
                 new ServerboundMovePlayerPacket.Pos(x + 18.5, 200, z, false, false));
 
         var tooQuickly = rowsOfType(rows, "too_quickly", player.getUUID());
-        helper.assertTrue(tooQuickly.size() == 1,
+        Gt.assertTrue(helper, tooQuickly.size() == 1,
                 "expected exactly one too_quickly row, got " + tooQuickly.size() + " in " + rows);
         var row = tooQuickly.get(0);
-        helper.assertTrue(row.has("delta_packets") && row.has("delta_packets_used"),
+        Gt.assertTrue(helper, row.has("delta_packets") && row.has("delta_packets_used"),
                 "both packet-count fields must be present (review F-8): " + row);
-        helper.assertTrue(row.get("delta_packets_used").getAsInt() >= 1,
+        Gt.assertTrue(helper, row.get("delta_packets_used").getAsInt() >= 1,
                 "the post-clamp count the check applied must be >= 1: " + row);
-        helper.assertTrue(row.has("expected_dist_sq") && row.has("origin") && row.has("claimed"),
+        Gt.assertTrue(helper, row.has("expected_dist_sq") && row.has("origin") && row.has("claimed"),
                 "check-input reconstruction fields must be present: " + row);
-        helper.assertTrue(!row.has("simulated") && !row.has("residual"),
+        Gt.assertTrue(helper, !row.has("simulated") && !row.has("residual"),
                 "too_quickly fires before move() — no simulated stop may exist (U-14): " + row);
-        helper.assertTrue(rowsOfType(rows, "rejected", player.getUUID()).isEmpty(),
+        Gt.assertTrue(helper, rowsOfType(rows, "rejected", player.getUUID()).isEmpty(),
                 "the too-quickly teleport is NOT the slice-anchored rejection: " + rows);
         helper.succeed();
     }
@@ -94,29 +94,29 @@ public class MoveTraceGameTests {
                 new ServerboundMovePlayerPacket.Pos(x + 3, 210, z, false, false));
 
         var rejected = rowsOfType(rows, "rejected", player.getUUID());
-        helper.assertTrue(rejected.size() == 1,
+        Gt.assertTrue(helper, rejected.size() == 1,
                 "expected exactly one rejected row, got " + rejected.size() + " in " + rows);
         var row = rejected.get(0);
-        helper.assertTrue(row.has("logged_wrongly") && !row.get("logged_wrongly").getAsBoolean(),
+        Gt.assertTrue(helper, row.has("logged_wrongly") && !row.get("logged_wrongly").getAsBoolean(),
                 "a CREATIVE player cannot fire the wrongly warn — this rejection is the"
                         + " SILENT path (logged_wrongly=false), the tracer's whole point: " + row);
-        helper.assertTrue(rowsOfType(rows, "wrongly", player.getUUID()).isEmpty(),
+        Gt.assertTrue(helper, rowsOfType(rows, "wrongly", player.getUUID()).isEmpty(),
                 "no wrongly warn may fire for a creative player: " + rows);
-        helper.assertTrue(row.has("simulated") && row.has("residual") && row.has("restored"),
+        Gt.assertTrue(helper, row.has("simulated") && row.has("residual") && row.has("restored"),
                 "collision-event geometry must be present: " + row);
-        helper.assertTrue(row.get("residual").getAsDouble() > 0.25,
+        Gt.assertTrue(helper, row.get("residual").getAsDouble() > 0.25,
                 "the claim ended inside the wall — residual must be substantial: " + row);
-        helper.assertTrue(row.has("send_state") && row.has("send_state_claimed"),
+        Gt.assertTrue(helper, row.has("send_state") && row.has("send_state_claimed"),
                 "send-state for BOTH the simulated-stop and claimed chunks: " + row);
         // The gametest JVM has no Moonrise — this IS the vanilla rung's end-to-end
         // coverage (review C-7): rung tag, the U-12 not_pending name, and no
         // moonrise-rung keys leaking across.
         var sendState = row.getAsJsonObject("send_state");
-        helper.assertTrue("vanilla".equals(sendState.get("rung").getAsString()),
+        Gt.assertTrue(helper, "vanilla".equals(sendState.get("rung").getAsString()),
                 "the gametest server resolves the vanilla rung: " + sendState);
-        helper.assertTrue(sendState.has("not_pending") && sendState.has("anchor"),
+        Gt.assertTrue(helper, sendState.has("not_pending") && sendState.has("anchor"),
                 "the vanilla rung carries not_pending + anchor: " + sendState);
-        helper.assertTrue(!sendState.has("sent_mask_5x5") && !sendState.has("stage"),
+        Gt.assertTrue(helper, !sendState.has("sent_mask_5x5") && !sendState.has("stage"),
                 "moonrise-rung keys must not leak onto the vanilla rung (U-12): " + sendState);
         helper.succeed();
     }
@@ -154,16 +154,16 @@ public class MoveTraceGameTests {
                     new ServerboundMovePlayerPacket.Pos(x + 3, 220, z, false, false));
 
             var wrongly = rowsOfType(rows, "wrongly", player.getUUID());
-            helper.assertTrue(wrongly.size() == 1,
+            Gt.assertTrue(helper, wrongly.size() == 1,
                     "expected exactly one wrongly row, got " + wrongly.size() + " in " + rows);
             var rejected = rowsOfType(rows, "rejected", player.getUUID());
-            helper.assertTrue(rejected.size() == 1,
+            Gt.assertTrue(helper, rejected.size() == 1,
                     "the wrongly claim must also reject, got " + rejected.size() + " in " + rows);
-            helper.assertTrue(rejected.get(0).get("logged_wrongly").getAsBoolean(),
+            Gt.assertTrue(helper, rejected.get(0).get("logged_wrongly").getAsBoolean(),
                     "the rejection follows the warn for the SAME packet — the identity token"
                             + " must read true (review F-3): " + rejected.get(0));
             var restored = rejected.get(0).getAsJsonArray("restored");
-            helper.assertTrue(Math.abs(restored.get(0).getAsDouble() - x) < 1e-6,
+            Gt.assertTrue(helper, Math.abs(restored.get(0).getAsDouble() - x) < 1e-6,
                     "restored must be the pre-move position (the player-felt snap target,"
                             + " review F-9): " + rejected.get(0));
         } finally {

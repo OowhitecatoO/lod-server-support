@@ -166,7 +166,7 @@ final class MoveTraceTelemetry {
         }
         return new MoveRow.Envelope(tracer.bootId(), now, server.getTickCount(),
                 player.getUUID().toString(), player.getPlainTextName(),
-                player.level().dimension().identifier().toString(), obuf, latency,
+                player.level().dimension().location().toString(), obuf, latency,
                 server.getAverageTickTimeNanos() / 1_000_000.0, server.getPlayerCount(),
                 tracer.droppedCount());
     }

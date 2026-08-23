@@ -3,7 +3,7 @@ package dev.vox.lss.networking.server;
 import dev.vox.lss.common.LSSLogger;
 import dev.vox.lss.common.XrayMaskPolicy.FallbackKind;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -51,14 +51,14 @@ public final class XrayMaskFilter {
             int resolved = 0;
             for (String id : blockIds) {
                 if (id == null || id.isBlank()) {
-                    // GSON deserializes ["iron_ore", null] verbatim and Identifier.tryParse
+                    // GSON deserializes ["iron_ore", null] verbatim and ResourceLocation.tryParse
                     // NPEs on null — masking must be throw-free by construction: a throw
                     // here escapes into serve choke points whose ladders turn it into
                     // session-permanent NOT_GENERATED (generation) or tick aborts (probe).
                     LSSLogger.warn("xrayHiddenBlocks: null/blank entry — skipped");
                     continue;
                 }
-                Identifier rl = Identifier.tryParse(id);
+                ResourceLocation rl = ResourceLocation.tryParse(id);
                 if (rl == null || !BuiltInRegistries.BLOCK.containsKey(rl)) {
                     LSSLogger.warn("xrayHiddenBlocks: unknown block id '" + id + "' — skipped");
                     continue;

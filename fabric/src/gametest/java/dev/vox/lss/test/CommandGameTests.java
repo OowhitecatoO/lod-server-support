@@ -14,7 +14,6 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.TicketType;
-import net.minecraft.server.permissions.PermissionSet;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
@@ -90,22 +89,22 @@ public class CommandGameTests {
         var commands = server.getCommands();
         var lines = new ArrayList<String>();
         var stripped = new CommandSourceStack(recorder(lines), Vec3.ZERO, Vec2.ZERO, level,
-                PermissionSet.NO_PERMISSIONS, "lss-test", Component.literal("lss-test"),
+                0, "lss-test", Component.literal("lss-test"),
                 server, null);
 
         var strippedParse = commands.getDispatcher().parse("lsslod diag", stripped);
-        helper.assertTrue(strippedParse.getContext().getNodes().isEmpty(),
+        Gt.assertTrue(helper, strippedParse.getContext().getNodes().isEmpty(),
                 "a non-gamemaster source must not see the lsslod root (deleting the requires "
                         + "gate makes this parse consume nodes)");
 
         var fullParse = commands.getDispatcher().parse("lsslod diag",
                 server.createCommandSourceStack());
-        helper.assertTrue(!fullParse.getContext().getNodes().isEmpty()
+        Gt.assertTrue(helper, !fullParse.getContext().getNodes().isEmpty()
                         && fullParse.getExceptions().isEmpty(),
                 "control: a full-permission source must parse lsslod cleanly");
 
         commands.performPrefixedCommand(stripped, "lsslod diag");
-        helper.assertTrue(!anyLineContains(lines, "LSS"),
+        Gt.assertTrue(helper, !anyLineContains(lines, "LSS"),
                 "executing as a stripped source must never reach an LSS handler (diag header "
                         + "or not-active line), got: " + lines);
         helper.succeed();
@@ -126,21 +125,21 @@ public class CommandGameTests {
         var commands = server.getCommands();
         var lines = new ArrayList<String>();
         var source = new CommandSourceStack(recorder(lines), Vec3.ZERO, Vec2.ZERO, level,
-                PermissionSet.ALL_PERMISSIONS, "lss-test", Component.literal("lss-test"),
+                4, "lss-test", Component.literal("lss-test"),
                 server, null);
 
         commands.performPrefixedCommand(source, "lsslod store status");
-        helper.assertTrue(anyLineContains(lines, "LOD store: off/unavailable"),
+        Gt.assertTrue(helper, anyLineContains(lines, "LOD store: off/unavailable"),
                 "store status with lodStore=off must answer off/unavailable, got: " + lines);
 
         lines.clear();
         commands.performPrefixedCommand(source, "lsslod store backfill status");
-        helper.assertTrue(anyLineContains(lines, "Store backfill unavailable"),
+        Gt.assertTrue(helper, anyLineContains(lines, "Store backfill unavailable"),
                 "backfill status without a SQLite store must answer unavailable, got: " + lines);
 
         lines.clear();
         commands.performPrefixedCommand(source, "lsslod store invalidate all");
-        helper.assertTrue(anyLineContains(lines, "LOD store not active"),
+        Gt.assertTrue(helper, anyLineContains(lines, "LOD store not active"),
                 "invalidate all with no store must answer not-active, got: " + lines);
         helper.succeed();
     }
@@ -153,18 +152,18 @@ public class CommandGameTests {
         var commands = server.getCommands();
         var lines = new ArrayList<String>();
         var source = new CommandSourceStack(recorder(lines), Vec3.ZERO, Vec2.ZERO, level,
-                PermissionSet.ALL_PERMISSIONS, "lss-test", Component.literal("lss-test"),
+                4, "lss-test", Component.literal("lss-test"),
                 server, null);
 
         commands.performPrefixedCommand(source, "lsslod help");
-        helper.assertTrue(anyLineContains(lines, "set <key> <value>"),
+        Gt.assertTrue(helper, anyLineContains(lines, "set <key> <value>"),
                 "help must document the set verb, got: " + lines);
-        helper.assertTrue(anyLineContains(lines, "store backfill start|stop|status"),
+        Gt.assertTrue(helper, anyLineContains(lines, "store backfill start|stop|status"),
                 "Fabric help includes the backfill verbs, got: " + lines);
 
         lines.clear();
         commands.performPrefixedCommand(source, "lsslod");
-        helper.assertTrue(anyLineContains(lines, "set <key> <value>"),
+        Gt.assertTrue(helper, anyLineContains(lines, "set <key> <value>"),
                 "the bare root must render the same help (was a parse error), got: " + lines);
         helper.succeed();
     }
@@ -184,32 +183,32 @@ public class CommandGameTests {
         var commands = server.getCommands();
         var lines = new ArrayList<String>();
         var source = new CommandSourceStack(recorder(lines), Vec3.ZERO, Vec2.ZERO, level,
-                PermissionSet.ALL_PERMISSIONS, "lss-test", Component.literal("lss-test"),
+                4, "lss-test", Component.literal("lss-test"),
                 server, null);
         var config = dev.vox.lss.config.LSSServerConfig.CONFIG;
         int savedDistance = config.lodDistanceChunks;
         int savedDirty = config.dirtyBroadcastIntervalSeconds;
         try {
             commands.performPrefixedCommand(source, "lsslod set");
-            helper.assertTrue(anyLineContains(lines, "lodDistanceChunks = " + savedDistance),
+            Gt.assertTrue(helper, anyLineContains(lines, "lodDistanceChunks = " + savedDistance),
                     "the listing shows current values, got: " + lines);
 
             lines.clear();
             commands.performPrefixedCommand(source, "lsslod set lodDistanceChunks 96");
-            helper.assertTrue(anyLineContains(lines, "lodDistanceChunks = 96"),
+            Gt.assertTrue(helper, anyLineContains(lines, "lodDistanceChunks = 96"),
                     "the apply replies with the effective value, got: " + lines);
-            helper.assertTrue(config.lodDistanceChunks == 96, "the mutation applied");
+            Gt.assertTrue(helper, config.lodDistanceChunks == 96, "the mutation applied");
 
             lines.clear();
             commands.performPrefixedCommand(source, "lsslod set dirtyBroadcastIntervalSeconds 0");
-            helper.assertTrue(config.dirtyBroadcastIntervalSeconds == 0,
+            Gt.assertTrue(helper, config.dirtyBroadcastIntervalSeconds == 0,
                     "0 = off must survive the real command surface (R-2)");
 
             lines.clear();
             commands.performPrefixedCommand(source, "lsslod set lodDistanceChunks many");
-            helper.assertTrue(anyLineContains(lines, "not an integer"),
+            Gt.assertTrue(helper, anyLineContains(lines, "not an integer"),
                     "a parse error replies without mutating, got: " + lines);
-            helper.assertTrue(config.lodDistanceChunks == 96, "parse error assigned nothing");
+            Gt.assertTrue(helper, config.lodDistanceChunks == 96, "parse error assigned nothing");
         } finally {
             config.lodDistanceChunks = savedDistance;
             config.dirtyBroadcastIntervalSeconds = savedDirty;
@@ -233,23 +232,23 @@ public class CommandGameTests {
         var server = level.getServer();
         var commands = server.getCommands();
         var service = dev.vox.lss.networking.server.LSSServerNetworking.getRequestService();
-        helper.assertTrue(service != null, "service active on the gametest server");
+        Gt.assertTrue(helper, service != null, "service active on the gametest server");
         var player = placeMockServerPlayer(helper);
         var config = dev.vox.lss.config.LSSServerConfig.CONFIG;
         int savedDistance = config.lodDistanceChunks;
         var lines = new ArrayList<String>();
         var source = new CommandSourceStack(recorder(lines), Vec3.ZERO, Vec2.ZERO, level,
-                PermissionSet.ALL_PERMISSIONS, "lss-test", Component.literal("lss-test"),
+                4, "lss-test", Component.literal("lss-test"),
                 server, null);
         try {
             service.registerPlayer(player, dev.vox.lss.common.LSSConstants.CAPABILITY_VOXEL_COLUMNS);
             int target = savedDistance == 96 ? 128 : 96; // must differ or the re-push is skipped
             commands.performPrefixedCommand(source, "lsslod set lodDistanceChunks " + target);
-            helper.assertTrue(config.lodDistanceChunks == target,
+            Gt.assertTrue(helper, config.lodDistanceChunks == target,
                     "the real command path applied the distance");
-            helper.assertTrue(anyLineContains(lines, "re-pushed to "),
+            Gt.assertTrue(helper, anyLineContains(lines, "re-pushed to "),
                     "the reply must carry the re-push receipt, got: " + lines);
-            helper.assertTrue(!anyLineContains(lines, "re-pushed to 0 "),
+            Gt.assertTrue(helper, !anyLineContains(lines, "re-pushed to 0 "),
                     "the registered CURRENT-dialect mock must be counted, got: " + lines);
         } finally {
             service.removePlayer(player.getUUID());
@@ -271,7 +270,7 @@ public class CommandGameTests {
         ServerLevel level = helper.getLevel();
         var server = level.getServer();
         var liveService = LSSServerNetworking.getRequestService();
-        helper.assertTrue(liveService != null, "live service required (/lsslod reads it)");
+        Gt.assertTrue(helper, liveService != null, "live service required (/lsslod reads it)");
         var playerList = server.getPlayerList();
         var mock = placeMockServerPlayer(helper);
         var uuid = mock.getUUID();
@@ -288,19 +287,19 @@ public class CommandGameTests {
             var source = server.createCommandSourceStack().withSource(recorder(lines));
             server.getCommands().performPrefixedCommand(source, "lsslod stats");
 
-            helper.assertTrue(anyLineContains(lines, "=== LSS LOD Request Stats ==="),
+            Gt.assertTrue(helper, anyLineContains(lines, "=== LSS LOD Request Stats ==="),
                     "stats must render the header for a populated service, got: " + lines);
             String expected = DiagnosticsFormatter.formatStatsLine(state);
-            helper.assertTrue(expected.contains("requests=2"),
+            Gt.assertTrue(helper, expected.contains("requests=2"),
                     "premise: the seeded state must read back its two requests");
-            helper.assertTrue(lines.contains(expected),
+            Gt.assertTrue(helper, lines.contains(expected),
                     "the command must render the registered player through the shared "
                             + "formatter, expected line: " + expected + " got: " + lines);
         } finally {
             liveService.removePlayer(uuid);
             playerList.remove(mock);
         }
-        helper.assertTrue(liveService.getPlayers().isEmpty(),
+        Gt.assertTrue(helper, liveService.getPlayers().isEmpty(),
                 "cleanup premise: the live service must leave this test player-free");
         helper.succeed();
     }
@@ -327,7 +326,7 @@ public class CommandGameTests {
         }
         var lines = new ArrayList<String>();
         try {
-            helper.assertTrue(genless.getGenerationService() == null,
+            Gt.assertTrue(helper, genless.getGenerationService() == null,
                     "premise: enableChunkGeneration=false must leave the generation service null");
             var source = server.createCommandSourceStack().withSource(recorder(lines));
             var previous = LSSServerNetworking.swapServiceForTesting(genless);
@@ -339,15 +338,15 @@ public class CommandGameTests {
         } finally {
             genless.shutdown();
         }
-        helper.assertTrue(anyLineContains(lines, "=== LSS LOD Diagnostics ==="),
+        Gt.assertTrue(helper, anyLineContains(lines, "=== LSS LOD Diagnostics ==="),
                 "diag must render against a generation-less service (an NPE at the call site "
                         + "surfaces as a missing header), got: " + lines);
-        helper.assertTrue(anyLineContains(lines, "Generation: disabled"),
+        Gt.assertTrue(helper, anyLineContains(lines, "Generation: disabled"),
                 "the null generation service must render as 'Generation: disabled', got: " + lines);
-        helper.assertTrue(anyLineContains(lines, "Xray: active="),
+        Gt.assertTrue(helper, anyLineContains(lines, "Xray: active="),
                 "the diag ladder must carry the always-present xray masking line "
                         + "(pins LSSServerCommands' withXrayLine attach), got: " + lines);
-        helper.assertTrue(anyLineContains(lines, "Yield: armed=true"),
+        Gt.assertTrue(helper, anyLineContains(lines, "Yield: armed=true"),
                 "the Yield line must be PRESENT and armed on the default config (the C-4"
                         + " pin inverted with the v0.11.0 default flip, user decision"
                         + " 2026-08-13: lodYieldsToVanillaTransport now defaults TRUE, so"
@@ -392,22 +391,22 @@ public class CommandGameTests {
         helper.succeedWhen(() -> {
             if (step.get() == 0) {
                 service.tick();
-                helper.assertTrue(state.getTotalSectionsSent() == 2,
+                Gt.assertTrue(helper, state.getTotalSectionsSent() == 2,
                         "waiting for both probe serves to flush (columns_sent=2)");
                 // Third request: done-bit cleared but the probe-serve timestamp stamp kept,
                 // so the ts>0 re-ask resolves through the timestamp ladder (up_to_date=1).
                 service.getOffThreadProcessor().clearDiskReadDone(uuid, new long[]{packed1});
                 GameTestSeeding.seedRequest(state, packed1, LSSConstants.epochSeconds() + 10_000);
                 step.set(1);
-                helper.assertTrue(false, "served workload staged, awaiting the up-to-date leg");
+                Gt.assertTrue(helper, false, "served workload staged, awaiting the up-to-date leg");
             }
             if (step.get() == 1) {
                 service.tick();
-                helper.assertTrue(
+                Gt.assertTrue(helper, 
                         service.getOffThreadProcessor().getDiagnostics().getTotalUpToDate() == 1,
                         "waiting for the timestamp-ladder up-to-date resolution");
                 step.set(2);
-                helper.assertTrue(false, "workload complete, comparing exporter and formatter");
+                Gt.assertTrue(helper, false, "workload complete, comparing exporter and formatter");
             }
 
             Map<String, Object> metrics;
@@ -417,7 +416,7 @@ public class CommandGameTests {
             } finally {
                 LSSServerNetworking.swapServiceForTesting(previous);
             }
-            helper.assertTrue(metrics != null, "exporter must produce metrics for a live service");
+            Gt.assertTrue(helper, metrics != null, "exporter must produce metrics for a live service");
 
             var config = LSSServerConfig.CONFIG;
             var genService = service.getGenerationService();
@@ -452,22 +451,22 @@ public class CommandGameTests {
             // dimension change), so exporter==formatter holds by construction. The genuinely
             // independent counting site is the per-player state's session counter — same
             // ground truth here (one player, no dimension change).
-            helper.assertTrue(columnsSent == 2 && data.totalSent() == 2
+            Gt.assertTrue(helper, columnsSent == 2 && data.totalSent() == 2
                             && state.getTotalSectionsSent() == 2,
                     "columns_sent must match ground truth at the service-scoped total "
                             + "(exporter=" + columnsSent + " formatter=" + data.totalSent()
                             + ") and at the independent per-state session counter (state="
                             + state.getTotalSectionsSent() + ")");
-            helper.assertTrue(upToDate == 1 && data.cumUtd() == 1,
+            Gt.assertTrue(helper, upToDate == 1 && data.cumUtd() == 1,
                     "up_to_date must agree: exporter=" + upToDate + " formatter=" + data.cumUtd());
-            helper.assertTrue(inMemory == 2 && data.cumInMem() == 2,
+            Gt.assertTrue(helper, inMemory == 2 && data.cumInMem() == 2,
                     "in_memory must agree: exporter=" + inMemory + " formatter=" + data.cumInMem());
-            helper.assertTrue(requests == 3 && state.getTotalRequestsReceived() == 3,
+            Gt.assertTrue(helper, requests == 3 && state.getTotalRequestsReceived() == 3,
                     "requests must agree with the player's received total: exporter="
                             + requests + " state=" + state.getTotalRequestsReceived());
             @SuppressWarnings("unchecked")
             var players = (List<Map<String, Object>>) metrics.get("players");
-            helper.assertTrue(players.size() == 1
+            Gt.assertTrue(helper, players.size() == 1
                             && ((Number) players.get(0).get("requests")).longValue() == 3,
                     "the exporter's per-player row must carry the same request total");
 

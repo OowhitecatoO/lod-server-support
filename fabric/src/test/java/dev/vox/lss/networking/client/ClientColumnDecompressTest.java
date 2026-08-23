@@ -13,7 +13,7 @@ import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.data.registries.VanillaRegistries;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.world.level.Level;
@@ -79,7 +79,7 @@ class ClientColumnDecompressTest {
         processor = new ClientColumnProcessor(
                 (d, cx, cz) -> reports.add(new Report(d, cx, cz)),
                 () -> null);
-        dim = ResourceKey.create(Registries.DIMENSION, Identifier.parse("lss_test:decompress"));
+        dim = ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse("lss_test:decompress"));
     }
 
     private void drainNow() {

@@ -68,11 +68,12 @@ dependencies {
     localRuntime "com.github.luben:zstd-jni:1.5.7-3"
     // 1.21.10 line CUT (the 1.21.8 precedent): Sodium for MC 1.21.10 tops out at
     // 0.7.3, which predates the structured config API (net.caffeinemc.mods.sodium
-    // .api.config) the LSS options page binds — the sodium:config_api_user
-    // entrypoint and LSSConfigMenu are dropped on this line (decisions log in
-    // docs/planning/mc1.21.10-line-notes.md). RateSliderStops stays (Sodium-free,
-    // ConfigValidationTest classloads it); the ModMenu integration stays.
-    modCompileOnly "maven.modrinth:modmenu:16.0.1"
+    // .api.config) the LSS options page binds — LSSConfigMenu + the
+    // sodium:config_api_user entrypoint are dropped, and the ModMenu integration
+    // goes WITH it (it was only a deep-link into the Sodium 0.8 settings screen —
+    // ConfigManager/VideoSettingsScreen are 0.8 client classes). Decisions log:
+    // docs/planning/mc1.21.10-line-notes.md. RateSliderStops stays (Sodium-free,
+    // ConfigValidationTest classloads it); config via the JSON files.
     // Compat validation arm: -Pbenchmark.moonrise=true puts Moonrise on the dev runtime
     // (the same Modrinth version issue #69 was reported against), so the soak harness can
     // drive the full dirty pipeline — the SerializableChunkData.copyOf hook, broadcast,

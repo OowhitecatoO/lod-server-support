@@ -107,7 +107,7 @@ class FabricOffThreadProcessorDropTest {
         assertEquals(3, column.chunkX());
         assertEquals(-4, column.chunkZ());
         assertEquals(77L, column.columnTimestamp());
-        assertEquals(LSSConstants.DIM_STR_THE_END, column.dimension().identifier().toString());
+        assertEquals(LSSConstants.DIM_STR_THE_END, column.dimension().location().toString());
         assertEquals(LSSConstants.MAX_SEND_SECTIONS_SIZE, column.shippedSections().length);
     }
 }

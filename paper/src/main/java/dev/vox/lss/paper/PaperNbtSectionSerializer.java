@@ -14,7 +14,7 @@ import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.StringTag;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.VarInt;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ChunkMap;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Block;
@@ -723,7 +723,7 @@ final class PaperNbtSectionSerializer {
         int idFor(String name) {
             Integer hit = this.byName.get(name);
             if (hit != null) return hit;
-            var rl = Identifier.tryParse(name);
+            var rl = ResourceLocation.tryParse(name);
             if (rl == null) return -1;
             var holder = this.registry.get(rl).orElse(null);
             if (holder == null) return -1;
@@ -772,7 +772,7 @@ final class PaperNbtSectionSerializer {
                 // otherwise surface as a per-serve translation failure much later.
                 throw new IllegalStateException("biome id " + id + " has no registry key");
             }
-            String identity = key.identifier().toString();
+            String identity = key.location().toString();
             dev.vox.lss.common.wire.IdentityCodec.validate(identity);
             table[id] = identity;
         }

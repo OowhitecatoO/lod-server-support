@@ -7,7 +7,6 @@ import dev.vox.lss.config.LSSServerConfig;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
-import net.minecraft.server.permissions.Permissions;
 
 
 /** The shared /lsslod tree + handlers (xplat since N-2): each loader registers it
@@ -19,7 +18,7 @@ public class LSSServerCommands {
     public static void register(com.mojang.brigadier.CommandDispatcher<CommandSourceStack> dispatcher) {
             dispatcher.register(
                     Commands.literal(Brand.serverCommand())
-                            .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER))
+                            .requires(source -> source.hasPermission(Commands.LEVEL_GAMEMASTERS))
                             // Bare root = help (v0.11.0 stage C; a bare /lsslod used to
                             // be a Brigadier parse error). Review-verified safe: the
                             // .requires gate sits on THIS root literal, so a

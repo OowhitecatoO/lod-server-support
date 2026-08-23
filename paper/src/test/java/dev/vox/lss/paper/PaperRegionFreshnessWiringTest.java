@@ -108,7 +108,7 @@ class PaperRegionFreshnessWiringTest {
         var unattachable = mock(ServerLevel.class);
         when(unattachable.dimension()).thenReturn(ResourceKey.create(
                 net.minecraft.core.registries.Registries.DIMENSION,
-                net.minecraft.resources.Identifier.parse("lss_test:unattachable")));
+                net.minecraft.resources.ResourceLocation.parse("lss_test:unattachable")));
         when(unattachable.getWorld()).thenThrow(new IllegalStateException("no CraftWorld"));
         when(server.getAllLevels()).thenReturn(List.of(overworld, exotic, unattachable));
 

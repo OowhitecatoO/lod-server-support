@@ -12,7 +12,7 @@ import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.client.player.RemotePlayer;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.Pose;
@@ -222,7 +222,7 @@ public final class FarPlayerRenderer {
         FarPlayerClientTracker tracker = FarPlayerClientSupport.tracker();
         String trackerDimension = tracker.dimension();
         if (trackerDimension == null
-                || !trackerDimension.equals(level.dimension().identifier().toString())) {
+                || !trackerDimension.equals(level.dimension().location().toString())) {
             clear();
             return;
         }
@@ -653,7 +653,7 @@ public final class FarPlayerRenderer {
                 // Cross-version sessions (Via) can carry identities this client's
                 // registry lacks — an unknown identity renders as an EMPTY slot,
                 // the far-player analogue of the column fallback ladder.
-                return BuiltInRegistries.ITEM.getValue(Identifier.parse(id));
+                return BuiltInRegistries.ITEM.getValue(ResourceLocation.parse(id));
             } catch (Exception e) {
                 return Items.AIR;
             }

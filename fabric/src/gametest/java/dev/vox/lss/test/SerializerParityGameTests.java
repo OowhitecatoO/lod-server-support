@@ -90,7 +90,7 @@ public class SerializerParityGameTests {
         int min = level.getMinSectionY();
         int max = level.getMaxSectionY();
         int count = level.getSectionsCount();
-        helper.assertTrue(max - min + 1 == count,
+        Gt.assertTrue(helper, max - min + 1 == count,
                 "getMaxSectionY must stay INCLUSIVE: min=" + min + " max=" + max
                         + " sectionsCount=" + count
                         + " — if this reds, the R2-5 disk range gate is dropping top sections");
@@ -133,40 +133,40 @@ public class SerializerParityGameTests {
         // succeedWhen re-runs every tick until no assertion throws; assertTrue(false, ...) is the
         // "not yet, retry next tick" idiom and its message names the stuck phase on timeout.
         helper.succeedWhen(() -> {
-            helper.assertTrue(helper.getTick() >= 10, "waiting for the torch dance to finish");
+            Gt.assertTrue(helper, helper.getTick() >= 10, "waiting for the torch dance to finish");
             switch (step.get()) {
                 case 0 -> {
-                    helper.assertTrue(chunkSource.getChunkNow(cx, cz) == null,
+                    Gt.assertTrue(helper, chunkSource.getChunkNow(cx, cz) == null,
                             "waiting for the chunk to unload");
                     // The unload save may still sit in the unload queue; saveAllChunks drains it
                     // and flushes storage so the region state is final before the read.
                     level.save(null, true, false);
                     reader.submitReadDirect(readerId, LSSConstants.DIM_STR_OVERWORLD, level, cx, cz, 0, 0L);
                     step.set(1);
-                    helper.assertTrue(false, "disk read submitted, awaiting result");
+                    Gt.assertTrue(helper, false, "disk read submitted, awaiting result");
                 }
                 case 1 -> {
                     var result = reader.getPlayerQueue(readerId).poll();
-                    helper.assertTrue(result != null, "waiting for the disk read result");
+                    Gt.assertTrue(helper, result != null, "waiting for the disk read result");
                     reader.shutdown();
-                    helper.assertTrue(!result.notFound(), "generated chunk must exist on disk after unload");
-                    helper.assertTrue(!result.saturated(), "single read on a fresh reader must not saturate");
-                    helper.assertTrue(result.sectionBytes() != null,
+                    Gt.assertTrue(helper, !result.notFound(), "generated chunk must exist on disk after unload");
+                    Gt.assertTrue(helper, !result.saturated(), "single read on a fresh reader must not saturate");
+                    Gt.assertTrue(helper, result.sectionBytes() != null,
                             "superflat chunk must have non-air content on disk");
                     diskBytes.set(result.sectionBytes());
                     step.set(2);
-                    helper.assertTrue(false, "disk bytes captured, reloading chunk");
+                    Gt.assertTrue(helper, false, "disk bytes captured, reloading chunk");
                 }
                 // Re-evaluated until equal or timeout, so one tick of post-load light settling
                 // only delays success instead of failing the test.
                 case 2 -> {
                     var chunk = level.getChunk(cx, cz);
                     var live = SectionSerializer.serializeColumn(level, chunk, cx, cz).serializedSections();
-                    helper.assertTrue(live != null, "reloaded superflat chunk must serialize live content");
-                    helper.assertTrue(Arrays.equals(diskBytes.get(), live),
+                    Gt.assertTrue(helper, live != null, "reloaded superflat chunk must serialize live content");
+                    Gt.assertTrue(helper, Arrays.equals(diskBytes.get(), live),
                             describeMismatch(diskBytes.get(), live));
                 }
-                default -> helper.fail("unexpected parity test step " + step.get());
+                default -> Gt.fail(helper, "unexpected parity test step " + step.get());
             }
         });
     }
@@ -224,10 +224,10 @@ public class SerializerParityGameTests {
         var maskedLive = new AtomicReference<byte[]>();
 
         helper.succeedWhen(() -> {
-            helper.assertTrue(helper.getTick() >= 10, "waiting for the ore placement to settle");
+            Gt.assertTrue(helper, helper.getTick() >= 10, "waiting for the ore placement to settle");
             switch (step.get()) {
                 case 0 -> {
-                    helper.assertTrue(chunkSource.getChunkNow(cx, cz) == null,
+                    Gt.assertTrue(helper, chunkSource.getChunkNow(cx, cz) == null,
                             "waiting for the ore chunk to unload");
                     level.save(null, true, false);
                     // Same tick as the submit: the entry is captured synchronously inside
@@ -240,17 +240,17 @@ public class SerializerParityGameTests {
                         XrayMaskManager.activate(LSSServerConfig.CONFIG);
                     }
                     step.set(1);
-                    helper.assertTrue(false, "masked disk read submitted, awaiting result");
+                    Gt.assertTrue(helper, false, "masked disk read submitted, awaiting result");
                 }
                 case 1 -> {
                     var result = reader.getPlayerQueue(readerId).poll();
-                    helper.assertTrue(result != null, "waiting for the masked disk read result");
+                    Gt.assertTrue(helper, result != null, "waiting for the masked disk read result");
                     reader.shutdown();
-                    helper.assertTrue(!result.notFound(), "ore chunk must exist on disk after unload");
-                    helper.assertTrue(result.sectionBytes() != null, "ore chunk must have content on disk");
+                    Gt.assertTrue(helper, !result.notFound(), "ore chunk must exist on disk after unload");
+                    Gt.assertTrue(helper, result.sectionBytes() != null, "ore chunk must have content on disk");
                     diskBytes.set(result.sectionBytes());
                     step.set(2);
-                    helper.assertTrue(false, "masked disk bytes captured, reloading chunk");
+                    Gt.assertTrue(helper, false, "masked disk bytes captured, reloading chunk");
                 }
                 case 2 -> {
                     var chunk = level.getChunk(cx, cz);
@@ -264,23 +264,23 @@ public class SerializerParityGameTests {
                         XrayMaskManager.activate(LSSServerConfig.CONFIG);
                     }
                     long counted = manager.maskedSections();
-                    helper.assertTrue(live != null, "reloaded ore chunk must serialize live content");
-                    helper.assertTrue(Arrays.equals(diskBytes.get(), live),
+                    Gt.assertTrue(helper, live != null, "reloaded ore chunk must serialize live content");
+                    Gt.assertTrue(helper, Arrays.equals(diskBytes.get(), live),
                             "masked parity: " + describeMismatch(diskBytes.get(), live));
-                    helper.assertTrue(counted > 0,
+                    Gt.assertTrue(helper, counted > 0,
                             "the live masking hook must count masked sections, saw " + counted);
                     maskedLive.set(live);
                     step.set(3);
-                    helper.assertTrue(false, "masked parity verified, checking engagement");
+                    Gt.assertTrue(helper, false, "masked parity verified, checking engagement");
                 }
                 case 3 -> {
                     var chunk = level.getChunk(cx, cz);
                     var unmasked = SectionSerializer.serializeColumn(level, chunk, cx, cz).serializedSections();
-                    helper.assertTrue(unmasked != null, "unmasked serialize must produce content");
-                    helper.assertTrue(!Arrays.equals(maskedLive.get(), unmasked),
+                    Gt.assertTrue(helper, unmasked != null, "unmasked serialize must produce content");
+                    Gt.assertTrue(helper, !Arrays.equals(maskedLive.get(), unmasked),
                             "masking must actually change the ore chunk's bytes (engagement)");
                 }
-                default -> helper.fail("unexpected masked parity step " + step.get());
+                default -> Gt.fail(helper, "unexpected masked parity step " + step.get());
             }
         });
     }
@@ -320,53 +320,53 @@ public class SerializerParityGameTests {
         var bgResult = new AtomicReference<ChunkReadResult>();
 
         helper.succeedWhen(() -> {
-            helper.assertTrue(helper.getTick() >= 6, "waiting for the ticket release");
+            Gt.assertTrue(helper, helper.getTick() >= 6, "waiting for the ticket release");
             switch (step.get()) {
                 case 0 -> {
-                    helper.assertTrue(chunkSource.getChunkNow(cx, cz) == null,
+                    Gt.assertTrue(helper, chunkSource.getChunkNow(cx, cz) == null,
                             "waiting for the chunk to unload");
                     level.save(null, true, false);
                     foreground.submitReadDirect(fgId, LSSConstants.DIM_STR_OVERWORLD, level, cx, cz, 0, 0L);
                     background.submitReadDirect(bgId, LSSConstants.DIM_STR_OVERWORLD, level, cx, cz, 0, 0L);
                     step.set(1);
-                    helper.assertTrue(false, "foreground + background reads submitted");
+                    Gt.assertTrue(helper, false, "foreground + background reads submitted");
                 }
                 case 1 -> {
                     if (fgResult.get() == null) {
                         fgResult.set(foreground.getPlayerQueue(fgId).poll());
                     }
                     var fg = fgResult.get();
-                    helper.assertTrue(fg != null, "waiting for the foreground read result");
-                    helper.assertTrue(!fg.notFound() && !fg.saturated() && fg.sectionBytes() != null,
+                    Gt.assertTrue(helper, fg != null, "waiting for the foreground read result");
+                    Gt.assertTrue(helper, !fg.notFound() && !fg.saturated() && fg.sectionBytes() != null,
                             "foreground read of the saved superflat chunk must return content");
                     // Shut down only once this reader's result is validated: shutdown() clears the
                     // player-results map, so an earlier call would strand a retried assertion.
                     foreground.shutdown();
                     step.set(2);
-                    helper.assertTrue(false, "foreground bytes captured, awaiting background result");
+                    Gt.assertTrue(helper, false, "foreground bytes captured, awaiting background result");
                 }
                 case 2 -> {
                     if (bgResult.get() == null) {
                         bgResult.set(background.getPlayerQueue(bgId).poll());
                     }
                     var bg = bgResult.get();
-                    helper.assertTrue(bg != null, "waiting for the background read result");
-                    helper.assertTrue(!bg.notFound() && !bg.saturated() && bg.sectionBytes() != null,
+                    Gt.assertTrue(helper, bg != null, "waiting for the background read result");
+                    Gt.assertTrue(helper, !bg.notFound() && !bg.saturated() && bg.sectionBytes() != null,
                             "background-priority read must return content, not not-found/saturated");
                     // B3 liveness receipt (review F2): byte parity alone cannot distinguish
                     // the SPLIT path from a silently-inert dispatcher falling back to the
                     // full-read closure — the identical bytes are the point. The counter
                     // proves the raw fetch actually served this read.
-                    helper.assertTrue(background.rawServesForTest() > 0,
+                    Gt.assertTrue(helper, background.rawServesForTest() > 0,
                             "the split raw path must have served the background read"
                                     + " (raw_serves=0 means the dispatcher went inert)");
-                    helper.assertTrue(background.getDiagnostics().contains("read_path=bg-split"),
+                    Gt.assertTrue(helper, background.getDiagnostics().contains("read_path=bg-split"),
                             "the split's diag receipt must be visible");
                     background.shutdown();
-                    helper.assertTrue(Arrays.equals(fgResult.get().sectionBytes(), bg.sectionBytes()),
+                    Gt.assertTrue(helper, Arrays.equals(fgResult.get().sectionBytes(), bg.sectionBytes()),
                             describeMismatch(fgResult.get().sectionBytes(), bg.sectionBytes()));
                 }
-                default -> helper.fail("unexpected background-read step " + step.get());
+                default -> Gt.fail(helper, "unexpected background-read step " + step.get());
             }
         });
     }
@@ -400,18 +400,18 @@ public class SerializerParityGameTests {
         // Tick 2: generation-time light has settled; take the baseline and pin same-tick quiet.
         helper.runAfterDelay(2, () -> {
             var chunk = level.getChunk(cx, cz);
-            helper.assertTrue(filter.contentChanged(level, chunk, dim),
+            Gt.assertTrue(helper, filter.contentChanged(level, chunk, dim),
                     "first observation of a column is always a change");
-            helper.assertTrue(!filter.contentChanged(level, chunk, dim),
+            Gt.assertTrue(helper, !filter.contentChanged(level, chunk, dim),
                     "identical re-save in the same tick must stay quiet");
-            helper.assertTrue(!filter.contentChanged(level, chunk, dim),
+            Gt.assertTrue(helper, !filter.contentChanged(level, chunk, dim),
                     "suppression must hold across repeated identical saves");
         });
 
         // Tick 4: cross-tick quiet on untouched content, then edit the surface.
         helper.runAfterDelay(4, () -> {
             var chunk = level.getChunk(cx, cz);
-            helper.assertTrue(!filter.contentChanged(level, chunk, dim),
+            Gt.assertTrue(helper, !filter.contentChanged(level, chunk, dim),
                     "identical content two ticks later must still stay quiet (cross-tick determinism)");
             level.setBlock(editPos, Blocks.STONE.defaultBlockState(), 3);
         });
@@ -419,9 +419,9 @@ public class SerializerParityGameTests {
         // Tick 6: the edit must mark dirty exactly once, then suppression resumes.
         helper.runAfterDelay(6, () -> {
             var chunk = level.getChunk(cx, cz);
-            helper.assertTrue(filter.contentChanged(level, chunk, dim),
+            Gt.assertTrue(helper, filter.contentChanged(level, chunk, dim),
                     "a real block edit must re-mark the column dirty");
-            helper.assertTrue(!filter.contentChanged(level, chunk, dim),
+            Gt.assertTrue(helper, !filter.contentChanged(level, chunk, dim),
                     "the save after the edit is absorbed must stay quiet again");
             chunkSource.removeTicketWithRadius(TicketType.PLAYER_LOADING, chunkPos, 0);
             helper.succeed();
@@ -436,7 +436,7 @@ public class SerializerParityGameTests {
     @GameTest(structure = "fabric-gametest-api-v1:empty", maxTicks = 200)
     public void dirtyContentFilterAllAirSentinelInEndVoid(GameTestHelper helper) {
         ServerLevel endLevel = helper.getLevel().getServer().getLevel(Level.END);
-        helper.assertTrue(endLevel != null, "the End dimension must exist on the gametest server");
+        Gt.assertTrue(helper, endLevel != null, "the End dimension must exist on the gametest server");
         var dim = LSSConstants.DIM_STR_THE_END;
 
         // This test builds a block, and the gametest world persists across runs — so derive the
@@ -456,25 +456,25 @@ public class SerializerParityGameTests {
             chunk = endLevel.getChunk(cx, cz);
         }
         var live = SectionSerializer.serializeColumn(endLevel, chunk, cx, cz);
-        helper.assertTrue(live.serializedSections() == null,
+        Gt.assertTrue(helper, live.serializedSections() == null,
                 "premise: no all-air End void column found near chunk (" + cx + ", " + baseCz + ")");
 
         var filter = new DirtyContentFilter();
-        helper.assertTrue(filter.contentChanged(endLevel, chunk, dim),
+        Gt.assertTrue(helper, filter.contentChanged(endLevel, chunk, dim),
                 "first observation of the all-air column is a change");
-        helper.assertTrue(!filter.contentChanged(endLevel, chunk, dim),
+        Gt.assertTrue(helper, !filter.contentChanged(endLevel, chunk, dim),
                 "air-to-air save must stay quiet (ALL_AIR sentinel is stable)");
 
         // A serve of this all-air column seeds null bytes; the next save of the same all-air
         // chunk must hash to the same sentinel, or every void column re-marks after every save.
         var seededFilter = new DirtyContentFilter();
         seededFilter.seed(dim, cx, cz, live.serializedSections());
-        helper.assertTrue(!seededFilter.contentChanged(endLevel, chunk, dim),
+        Gt.assertTrue(helper, !seededFilter.contentChanged(endLevel, chunk, dim),
                 "all-air save after an all-air serve seed must stay quiet");
 
         var built = new BlockPos(cx * 16 + 8, 80, cz * 16 + 8);
         endLevel.setBlock(built, Blocks.END_STONE.defaultBlockState(), 3);
-        helper.assertTrue(filter.contentChanged(endLevel, chunk, dim),
+        Gt.assertTrue(helper, filter.contentChanged(endLevel, chunk, dim),
                 "air-to-built transition must mark dirty (the sentinel must not swallow it)");
         // Revert the built block: the gametest world persists across dev-box runs and the
         // batch grid slot (hence the salt) is DETERMINISTIC, so each run used to leave one
@@ -492,12 +492,12 @@ public class SerializerParityGameTests {
     @GameTest(structure = "fabric-gametest-api-v1:empty", maxTicks = 200)
     public void allAirEndChunkDiskReadResolvesFoundNotMissing(GameTestHelper helper) {
         ServerLevel endLevel = helper.getLevel().getServer().getLevel(Level.END);
-        helper.assertTrue(endLevel != null, "the End dimension must exist on the gametest server");
+        Gt.assertTrue(helper, endLevel != null, "the End dimension must exist on the gametest server");
         int cx = END_VOID_DISK_CX;
         int cz = END_VOID_DISK_CZ;
 
         var chunk = endLevel.getChunk(cx, cz);
-        helper.assertTrue(
+        Gt.assertTrue(helper, 
                 SectionSerializer.serializeColumn(endLevel, chunk, cx, cz).serializedSections() == null,
                 "premise: the End void chunk serializes as all-air");
         // Flush the freshly generated chunk to its region file so the read below hits real disk state.
@@ -512,19 +512,19 @@ public class SerializerParityGameTests {
         helper.succeedWhen(() -> {
             if (result.get() == null) {
                 var polled = reader.getPlayerQueue(readerId).poll();
-                helper.assertTrue(polled != null, "waiting for the async disk read to complete");
+                Gt.assertTrue(helper, polled != null, "waiting for the async disk read to complete");
                 result.set(polled);
                 reader.shutdown();
             }
             var r = result.get();
-            helper.assertTrue(!r.notFound(),
+            Gt.assertTrue(helper, !r.notFound(),
                     "all-air FULL chunk on disk must resolve as found, not not-found (not-found re-triggers generation forever)");
-            helper.assertTrue(!r.saturated(), "single read on a fresh reader must not saturate");
-            helper.assertTrue(r.sectionBytes() == null, "all-air result carries null section bytes (nothing to send)");
-            helper.assertTrue(r.columnTimestamp() > 0,
+            Gt.assertTrue(helper, !r.saturated(), "single read on a fresh reader must not saturate");
+            Gt.assertTrue(helper, r.sectionBytes() == null, "all-air result carries null section bytes (nothing to send)");
+            Gt.assertTrue(helper, r.columnTimestamp() > 0,
                     "all-air result must carry a real timestamp so the client can mark the column up-to-date");
-            helper.assertTrue(reader.getDiag().getAllAirCount() == 1, "diagnostics must triage the read as all-air");
-            helper.assertTrue(reader.getDiag().getNotFoundCount() == 0, "diagnostics must not count the read as not-found");
+            Gt.assertTrue(helper, reader.getDiag().getAllAirCount() == 1, "diagnostics must triage the read as all-air");
+            Gt.assertTrue(helper, reader.getDiag().getNotFoundCount() == 0, "diagnostics must not count the read as not-found");
         });
     }
 
@@ -557,18 +557,18 @@ public class SerializerParityGameTests {
         var baseline = new AtomicReference<byte[]>();
 
         helper.succeedWhen(() -> {
-            helper.assertTrue(helper.getTick() >= 4, "waiting for generation light to settle");
+            Gt.assertTrue(helper, helper.getTick() >= 4, "waiting for generation light to settle");
             switch (step.get()) {
                 case 0 -> {
                     level.save(null, true, false);
                     reader.submitReadDirect(readerId, LSSConstants.DIM_STR_OVERWORLD, level, cx, cz, 0, 0L);
                     step.set(1);
-                    helper.assertTrue(false, "baseline read submitted");
+                    Gt.assertTrue(helper, false, "baseline read submitted");
                 }
                 case 1 -> {
                     var result = reader.getPlayerQueue(readerId).poll();
-                    helper.assertTrue(result != null, "waiting for the baseline read");
-                    helper.assertTrue(!result.notFound() && result.sectionBytes() != null,
+                    Gt.assertTrue(helper, result != null, "waiting for the baseline read");
+                    Gt.assertTrue(helper, !result.notFound() && result.sectionBytes() != null,
                             "premise: the saved superflat chunk must read back with content");
                     baseline.set(result.sectionBytes());
                     // Edit while loaded, force-save, read again — all within one callback so
@@ -579,21 +579,21 @@ public class SerializerParityGameTests {
                     level.save(null, true, false);
                     reader.submitReadDirect(readerId, LSSConstants.DIM_STR_OVERWORLD, level, cx, cz, 1, 0L);
                     step.set(2);
-                    helper.assertTrue(false, "post-edit read submitted");
+                    Gt.assertTrue(helper, false, "post-edit read submitted");
                 }
                 case 2 -> {
                     var result = reader.getPlayerQueue(readerId).poll();
-                    helper.assertTrue(result != null, "waiting for the post-edit read");
+                    Gt.assertTrue(helper, result != null, "waiting for the post-edit read");
                     reader.shutdown();
-                    helper.assertTrue(!result.notFound() && result.sectionBytes() != null,
+                    Gt.assertTrue(helper, !result.notFound() && result.sectionBytes() != null,
                             "the post-edit read must resolve with content");
-                    helper.assertTrue(!Arrays.equals(baseline.get(), result.sectionBytes()),
+                    Gt.assertTrue(helper, !Arrays.equals(baseline.get(), result.sectionBytes()),
                             "a read fired right after a forced save of a still-loaded chunk "
                                     + "must see the edit — byte-identical results mean the "
                                     + "read silently served stale pre-save state");
                     chunkSource.removeTicketWithRadius(TicketType.PLAYER_LOADING, chunkPos, 0);
                 }
-                default -> helper.fail("unexpected read-after-save step " + step.get());
+                default -> Gt.fail(helper, "unexpected read-after-save step " + step.get());
             }
         });
     }
@@ -632,21 +632,21 @@ public class SerializerParityGameTests {
         var settle = new AtomicInteger();
 
         helper.succeedWhen(() -> {
-            helper.assertTrue(helper.getTick() >= 6, "waiting for the ticket release");
+            Gt.assertTrue(helper, helper.getTick() >= 6, "waiting for the ticket release");
             switch (step.get()) {
                 case 0 -> {
-                    helper.assertTrue(chunkSource.getChunkNow(cx, cz) == null,
+                    Gt.assertTrue(helper, chunkSource.getChunkNow(cx, cz) == null,
                             "waiting for the chunk to unload");
                     level.save(null, true, false);
                     GameTestSeeding.seedRequest(state, packed, -1L);
                     step.set(1);
-                    helper.assertTrue(false, "request queued, awaiting the disk serve");
+                    Gt.assertTrue(helper, false, "request queued, awaiting the disk serve");
                 }
                 case 1 -> {
                     service.tick();
-                    helper.assertTrue(state.getTotalSectionsSent() >= 1,
+                    Gt.assertTrue(helper, state.getTotalSectionsSent() >= 1,
                             "waiting for the disk serve to flush");
-                    helper.assertTrue(
+                    Gt.assertTrue(helper, 
                             service.getDiskReader().getDiag().getSuccessfulReadCount() == 1
                                     && service.getOffThreadProcessor().getDiagnostics().getTotalInMemory() == 0,
                             "premise: the serve must come from DISK, not the in-memory probe");
@@ -654,24 +654,24 @@ public class SerializerParityGameTests {
                     chunkSource.addTicketWithRadius(TicketType.PLAYER_LOADING, chunkPos, 0);
                     level.getChunk(cx, cz);
                     step.set(2);
-                    helper.assertTrue(false, "chunk reloading for the filter probe");
+                    Gt.assertTrue(helper, false, "chunk reloading for the filter probe");
                 }
                 case 2 -> {
-                    helper.assertTrue(settle.incrementAndGet() >= 2,
+                    Gt.assertTrue(helper, settle.incrementAndGet() >= 2,
                             "waiting for post-reload light to settle (byte determinism)");
                     var chunk = level.getChunk(cx, cz);
                     var filter = service.getDirtyContentFilter();
-                    helper.assertTrue(filter.contentChanged(level, chunk, dim),
+                    Gt.assertTrue(helper, filter.contentChanged(level, chunk, dim),
                             "PINNED GAP: a disk-read serve must NOT seed the dirty filter "
                                     + "(today's behavior — the warm-rejoin re-send wave source). "
                                     + "If seeding was added intentionally, flip this pin.");
-                    helper.assertTrue(!filter.contentChanged(level, chunk, dim),
+                    Gt.assertTrue(helper, !filter.contentChanged(level, chunk, dim),
                             "control: the check above must have baselined the live filter");
                     chunkSource.removeTicketWithRadius(TicketType.PLAYER_LOADING, chunkPos, 0);
                     service.shutdown();
                     playerList.remove(mock);
                 }
-                default -> helper.fail("unexpected disk-seed step " + step.get());
+                default -> Gt.fail(helper, "unexpected disk-seed step " + step.get());
             }
         });
     }
@@ -714,12 +714,12 @@ public class SerializerParityGameTests {
         var step = new AtomicInteger();
 
         helper.succeedWhen(() -> {
-            helper.assertTrue(helper.getTick() >= 2, "waiting for generation light to settle");
+            Gt.assertTrue(helper, helper.getTick() >= 2, "waiting for generation light to settle");
             switch (step.get()) {
                 case 0 -> {
                     var chunk = level.getChunk(cx, cz);
                     var built = SectionSerializer.serializeColumn(level, chunk, cx, cz);
-                    helper.assertTrue(built.serializedSections() != null,
+                    Gt.assertTrue(helper, built.serializedSections() != null,
                             "premise: the superflat column serves non-air content first");
                     GameTestSeeding.seedRequest(state, packed, -1L);
                     Long2ObjectMap<LoadedColumnData> probes = new Long2ObjectOpenHashMap<>();
@@ -727,11 +727,11 @@ public class SerializerParityGameTests {
                     proc.postSnapshot(new TickSnapshot(Map.of(uuid, dim), Map.of(uuid, probes),
                             LSSServerConfig.CONFIG.sendQueueLimitPerPlayer, false), List.of());
                     step.set(1);
-                    helper.assertTrue(false, "first serve posted, awaiting flush");
+                    Gt.assertTrue(helper, false, "first serve posted, awaiting flush");
                 }
                 case 1 -> {
                     state.flushSendQueue(1_073_741_824L, limiter, flushDiag, p -> {});
-                    helper.assertTrue(state.getTotalSectionsSent() == 1,
+                    Gt.assertTrue(helper, state.getTotalSectionsSent() == 1,
                             "waiting for the built column to serve and flush");
                     // The column becomes all-air: strip every superflat layer.
                     for (int x = 0; x < 16; x++) {
@@ -744,7 +744,7 @@ public class SerializerParityGameTests {
                     }
                     var chunk = level.getChunk(cx, cz);
                     var emptied = SectionSerializer.serializeColumn(level, chunk, cx, cz);
-                    helper.assertTrue(emptied.serializedSections() == null,
+                    Gt.assertTrue(helper, emptied.serializedSections() == null,
                             "premise: the stripped column must serialize as all-air");
                     // Broadcaster-equivalent dirty events, then the client's re-request with
                     // its stored stamp; all posted before one snapshot = one mailbox take.
@@ -756,7 +756,7 @@ public class SerializerParityGameTests {
                     proc.postSnapshot(new TickSnapshot(Map.of(uuid, dim), Map.of(uuid, probes),
                             LSSServerConfig.CONFIG.sendQueueLimitPerPlayer, false), List.of());
                     step.set(2);
-                    helper.assertTrue(false, "all-air re-serve posted, awaiting the answer");
+                    Gt.assertTrue(helper, false, "all-air re-serve posted, awaiting the answer");
                 }
                 case 2 -> {
                     proc.drainSendActions((st, types, positions, count) -> {
@@ -768,23 +768,23 @@ public class SerializerParityGameTests {
                     // WS3: a ts>0 all-air re-serve (the client claims data) now ships a CLEARING
                     // 0-section column so the client drops ghost terrain — NOT an up_to_date
                     // status. Emptiness for a data-claiming client travels as a column payload.
-                    helper.assertTrue(recordedPositions.isEmpty(),
+                    Gt.assertTrue(helper, recordedPositions.isEmpty(),
                             "the clearing re-serve travels as a column payload, not a batch status; "
                                     + "got types=" + recordedTypes + " positions=" + recordedPositions);
-                    helper.assertTrue(state.hasEnqueuedColumn(packed),
+                    Gt.assertTrue(helper, state.hasEnqueuedColumn(packed),
                             "waiting for the all-air re-serve to enqueue its clearing 0-section column");
                     state.flushSendQueue(1_073_741_824L, limiter, flushDiag, p -> {});
-                    helper.assertTrue(state.getTotalSectionsSent() == 2,
+                    Gt.assertTrue(helper, state.getTotalSectionsSent() == 2,
                             "the clearing column flushes as a second payload (present serve + "
                                     + "clearing re-serve), got " + state.getTotalSectionsSent());
-                    helper.assertTrue(proc.getDiagnostics().getTotalInMemory() == 2,
+                    Gt.assertTrue(helper, proc.getDiagnostics().getTotalInMemory() == 2,
                             "premise: both requests must have taken the probe route, got "
                                     + proc.getDiagnostics().getTotalInMemory());
                     chunkSource.removeTicketWithRadius(TicketType.PLAYER_LOADING, chunkPos, 0);
                     service.shutdown();
                     playerList.remove(mock);
                 }
-                default -> helper.fail("unexpected all-air transition step " + step.get());
+                default -> Gt.fail(helper, "unexpected all-air transition step " + step.get());
             }
         });
     }
@@ -844,7 +844,7 @@ public class SerializerParityGameTests {
         var server = level.getServer();
         var worldRoot = server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT)
                 .normalize();
-        String dim = level.dimension().identifier().toString();
+        String dim = level.dimension().location().toString();
         var regionDir = net.minecraft.world.level.dimension.DimensionType
                 .getStorageFolder(level.dimension(), worldRoot).resolve("region").normalize();
         var env = new dev.vox.lss.common.store.SqliteLodStore.Environment(
@@ -854,7 +854,7 @@ public class SerializerParityGameTests {
         var store = dev.vox.lss.common.store.SqliteLodStore.createOrNull(
                 dev.vox.lss.common.store.LodStoreMode.FULL, env,
                 new dev.vox.lss.common.store.LodStoreDiagnostics());
-        helper.assertTrue(store != null, "SQLite store engine must be available in-game");
+        Gt.assertTrue(helper, store != null, "SQLite store engine must be available in-game");
 
         var reader = new ChunkDiskReader(1, false, true);
         reader.attachStore(store);
@@ -864,59 +864,59 @@ public class SerializerParityGameTests {
         var nbtBytes = new AtomicReference<byte[]>();
 
         helper.succeedWhen(() -> {
-            helper.assertTrue(helper.getTick() >= 10, "waiting for the torch dance to finish");
+            Gt.assertTrue(helper, helper.getTick() >= 10, "waiting for the torch dance to finish");
             switch (step.get()) {
                 case 0 -> {
-                    helper.assertTrue(chunkSource.getChunkNow(cx, cz) == null,
+                    Gt.assertTrue(helper, chunkSource.getChunkNow(cx, cz) == null,
                             "waiting for the chunk to unload");
                     level.save(null, true, false);
                     try {
-                        helper.assertTrue(store.awaitSweep(1),
+                        Gt.assertTrue(helper, store.awaitSweep(1),
                                 "waiting for the store's startup sweep");
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
-                        helper.fail("interrupted awaiting the store sweep");
+                        Gt.fail(helper, "interrupted awaiting the store sweep");
                     }
                     // First read: the store is empty, so this is the NBT path (the
                     // deposit source in production rides the delivery path; here the
                     // test deposits the same bytes directly).
                     reader.submitReadDirect(readerId, dim, level, cx, cz, 0, 0L);
                     step.set(1);
-                    helper.assertTrue(false, "NBT read submitted, awaiting result");
+                    Gt.assertTrue(helper, false, "NBT read submitted, awaiting result");
                 }
                 case 1 -> {
                     var result = reader.getPlayerQueue(readerId).poll();
-                    helper.assertTrue(result != null, "waiting for the NBT read result");
-                    helper.assertTrue(!result.notFound() && result.sectionBytes() != null,
+                    Gt.assertTrue(helper, result != null, "waiting for the NBT read result");
+                    Gt.assertTrue(helper, !result.notFound() && result.sectionBytes() != null,
                             "superflat chunk must resolve with content from disk");
-                    helper.assertTrue(!result.fromStore(),
+                    Gt.assertTrue(helper, !result.fromStore(),
                             "an empty store must not answer the first read");
                     nbtBytes.set(result.sectionBytes());
                     store.deposit(dim, packed, result.sectionBytes(), storedTs);
                     step.set(2);
-                    helper.assertTrue(false, "deposited, awaiting batcher visibility");
+                    Gt.assertTrue(helper, false, "deposited, awaiting batcher visibility");
                 }
                 case 2 -> {
-                    helper.assertTrue(store.get(dim, packed) != null,
+                    Gt.assertTrue(helper, store.get(dim, packed) != null,
                             "waiting for the deposit to commit (batcher)");
                     reader.submitReadDirect(readerId, dim, level, cx, cz, 1, 0L);
                     step.set(3);
-                    helper.assertTrue(false, "store-rung read submitted, awaiting result");
+                    Gt.assertTrue(helper, false, "store-rung read submitted, awaiting result");
                 }
                 case 3 -> {
                     var result = reader.getPlayerQueue(readerId).poll();
-                    helper.assertTrue(result != null, "waiting for the store-rung read result");
+                    Gt.assertTrue(helper, result != null, "waiting for the store-rung read result");
                     reader.shutdown();
                     store.shutdown();
-                    helper.assertTrue(result.fromStore(),
+                    Gt.assertTrue(helper, result.fromStore(),
                             "second read must be answered by the store rung");
-                    helper.assertTrue(result.columnTimestamp() == storedTs,
+                    Gt.assertTrue(helper, result.columnTimestamp() == storedTs,
                             "a store hit must serve the STORED timestamp (got "
                                     + result.columnTimestamp() + ")");
-                    helper.assertTrue(Arrays.equals(nbtBytes.get(), result.sectionBytes()),
+                    Gt.assertTrue(helper, Arrays.equals(nbtBytes.get(), result.sectionBytes()),
                             describeMismatch(nbtBytes.get(), result.sectionBytes()));
                 }
-                default -> helper.fail("unexpected store parity step " + step.get());
+                default -> Gt.fail(helper, "unexpected store parity step " + step.get());
             }
         });
     }

@@ -210,7 +210,7 @@ public class LodRequestManager {
             var connection = mc.getConnection();
             if (connection != null) {
                 connection.send(new net.minecraft.network.protocol.ping
-                        .ServerboundPingRequestPacket(net.minecraft.util.Util.getMillis()));
+                        .ServerboundPingRequestPacket(net.minecraft.Util.getMillis()));
             }
         } catch (Exception e) {
             // A congestion probe is never worth a client-side failure.
@@ -814,7 +814,7 @@ public class LodRequestManager {
         if (this.lastDimension == null) return;
         try {
             var summary = dev.vox.lss.common.region.RegionSummaryWire.decodeSummary(body);
-            if (!this.lastDimension.identifier().toString().equals(summary.dimension())) return;
+            if (!this.lastDimension.location().toString().equals(summary.dimension())) return;
             if (this.pendingCacheLoad != null) {
                 this.pendingSummaryFrame = body;
                 return;
@@ -893,7 +893,7 @@ public class LodRequestManager {
         try {
             this.summarySender.send(dev.vox.lss.common.region.RegionSummaryWire.encodeRequest(
                     new dev.vox.lss.common.region.RegionSummaryWire.Request(
-                            dimension.identifier().toString(),
+                            dimension.location().toString(),
                             playerCx >> 5, playerCz >> 5, radius)));
             if (ClientTraceLog.enabled()) {
                 ClientTraceLog.event("summary_req", "\"r\":" + radius);
@@ -930,7 +930,7 @@ public class LodRequestManager {
         try {
             var stamps = dev.vox.lss.common.region.ColumnStampsWire.decode(
                     body, System.currentTimeMillis() / 1000L);
-            if (!this.lastDimension.identifier().toString().equals(stamps.dimension())) return;
+            if (!this.lastDimension.location().toString().equals(stamps.dimension())) return;
             long[] positions = stamps.packedPositions();
             long[] seconds = stamps.stampSeconds();
             for (int i = 0; i < positions.length; i++) {
@@ -1108,7 +1108,7 @@ public class LodRequestManager {
 
     private void onDimensionChange(ResourceKey<Level> newDimension) {
         if (ClientTraceLog.enabled()) {
-            ClientTraceLog.event("dim_change", "\"to\":\"" + newDimension.identifier() + "\"");
+            ClientTraceLog.event("dim_change", "\"to\":\"" + newDimension.location() + "\"");
         }
         // Unstamp columns still queued for decode BEFORE saveCache persists the old
         // dimension's map: their stamps describe data no consumer ever saw (the drain's
@@ -1226,7 +1226,7 @@ public class LodRequestManager {
     /** Dimension id of the level this manager is currently scanning, or "none" before the first tick. */
     public String getCurrentDimensionId() {
         var dim = this.lastDimension;
-        return dim != null ? dim.identifier().toString() : "none";
+        return dim != null ? dim.location().toString() : "none";
     }
 
     /**

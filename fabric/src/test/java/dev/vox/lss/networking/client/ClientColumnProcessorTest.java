@@ -18,7 +18,7 @@ import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.data.registries.VanillaRegistries;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.world.level.Level;
@@ -99,7 +99,7 @@ class ClientColumnProcessorTest {
     }
 
     private static ResourceKey<Level> dimKey(String name) {
-        return ResourceKey.create(Registries.DIMENSION, Identifier.parse("lss_test:" + name));
+        return ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse("lss_test:" + name));
     }
 
     private void offer(int count) {
@@ -454,7 +454,7 @@ class ClientColumnProcessorTest {
 
     @Test
     void resyncColumnAirFillsAbsentSectionsButFirstServeDoesNot() {
-        var dim = ResourceKey.create(Registries.DIMENSION, Identifier.parse("lss_test:processor"));
+        var dim = ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse("lss_test:processor"));
         // sectionWire writes sections at Y=0,1,..., so use minSectionY=0 -> range {0,1,2,3}.
         byte[] wire = sectionWire(1, 1); // one section at Y=0
 
@@ -473,7 +473,7 @@ class ClientColumnProcessorTest {
 
     @Test
     void reportUndispatchedUnstampsQueuedColumnsBeforeTheCacheFlush() {
-        var dim = ResourceKey.create(Registries.DIMENSION, Identifier.parse("lss_test:processor"));
+        var dim = ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse("lss_test:processor"));
         var manager = new LodRequestManager();
         manager.onSessionConfig(new SessionConfigS2CPayload(LSSConstants.PROTOCOL_VERSION, true,
                 64, true), "lss-test");

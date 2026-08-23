@@ -7,7 +7,7 @@ import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket;
 import net.minecraft.network.protocol.common.custom.DiscardedPayload;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.entity.Player;
 
@@ -26,13 +26,13 @@ import java.util.function.Function;
 public final class PaperPayloadHandler {
     private PaperPayloadHandler() {}
 
-    // Cached Identifier instances for constant channel strings
-    private static final Identifier ID_SESSION_CONFIG = Identifier.parse(LSSConstants.CHANNEL_SESSION_CONFIG);
-    private static final Identifier ID_DIRTY_COLUMNS = Identifier.parse(LSSConstants.CHANNEL_DIRTY_COLUMNS);
-    static final Identifier ID_VOXEL_COLUMN = Identifier.parse(LSSConstants.CHANNEL_VOXEL_COLUMN);
-    private static final Identifier ID_BATCH_RESPONSE = Identifier.parse(LSSConstants.CHANNEL_BATCH_RESPONSE);
-    private static final Identifier ID_REGION_SUMMARY = Identifier.parse(LSSConstants.CHANNEL_REGION_SUMMARY);
-    private static final Identifier ID_COL_STAMPS = Identifier.parse(LSSConstants.CHANNEL_COL_STAMPS);
+    // Cached ResourceLocation instances for constant channel strings
+    private static final ResourceLocation ID_SESSION_CONFIG = ResourceLocation.parse(LSSConstants.CHANNEL_SESSION_CONFIG);
+    private static final ResourceLocation ID_DIRTY_COLUMNS = ResourceLocation.parse(LSSConstants.CHANNEL_DIRTY_COLUMNS);
+    static final ResourceLocation ID_VOXEL_COLUMN = ResourceLocation.parse(LSSConstants.CHANNEL_VOXEL_COLUMN);
+    private static final ResourceLocation ID_BATCH_RESPONSE = ResourceLocation.parse(LSSConstants.CHANNEL_BATCH_RESPONSE);
+    private static final ResourceLocation ID_REGION_SUMMARY = ResourceLocation.parse(LSSConstants.CHANNEL_REGION_SUMMARY);
+    private static final ResourceLocation ID_COL_STAMPS = ResourceLocation.parse(LSSConstants.CHANNEL_COL_STAMPS);
 
     // ---- S2C Encoding ----
 
@@ -329,7 +329,7 @@ public final class PaperPayloadHandler {
      * Sends a pre-encoded payload directly via NMS for a given channel.
      * Used by the send queue flush in {@link PaperRequestProcessingService}.
      */
-    public static void sendRawNmsPayload(Player player, Identifier channelId, byte[] data) {
+    public static void sendRawNmsPayload(Player player, ResourceLocation channelId, byte[] data) {
         var nmsPlayer = ((CraftPlayer) player).getHandle();
         if (nmsPlayer.connection == null) return;
         nmsPlayer.connection.send(new ClientboundCustomPayloadPacket(

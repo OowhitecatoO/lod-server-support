@@ -7,7 +7,7 @@ import net.minecraft.SharedConstants;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.world.level.Level;
@@ -293,7 +293,7 @@ class WireParityTest {
     @Test
     void voxelColumnCustomDimension() {
         byte[] sections = {1, 2, 3};
-        var custom = ResourceKey.create(Registries.DIMENSION, Identifier.parse("lsstest:custom"));
+        var custom = ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse("lsstest:custom"));
         byte[] expected = ref(b -> {
             b.writeInt(0);
             b.writeInt(0);
@@ -389,7 +389,7 @@ class WireParityTest {
             b.writeLong(1234L);
             b.writeByteArray(sections);
         });
-        var dim = ResourceKey.create(Registries.DIMENSION, Identifier.parse("minecraft:overworld"));
+        var dim = ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse("minecraft:overworld"));
         byte[] sources = {LSSConstants.COLUMN_SOURCE_IN_MEMORY, LSSConstants.COLUMN_SOURCE_DISK,
                 LSSConstants.COLUMN_SOURCE_GENERATION, (byte) -1};
         for (byte source : sources) {
@@ -414,7 +414,7 @@ class WireParityTest {
             b.writeLong(42L);
             b.writeByteArray(new byte[0]);
         });
-        var dim = ResourceKey.create(Registries.DIMENSION, Identifier.parse(longDim));
+        var dim = ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse(longDim));
         var p = new VoxelColumnS2CPayload(0, 0, dim, 42L,
                 LSSConstants.COLUMN_SOURCE_IN_MEMORY, new byte[0]);
         assertArrayEquals(expected, encode(VoxelColumnS2CPayload.CODEC, p.asV16()));
@@ -450,7 +450,7 @@ class WireParityTest {
         // drop only the codec byte. A leaked codec byte is parsed by the v18 client as
         // the section-array length VarInt and hard-kicks it.
         byte[] sections = {9, 8, 7};
-        var dim = ResourceKey.create(Registries.DIMENSION, Identifier.parse("minecraft:overworld"));
+        var dim = ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse("minecraft:overworld"));
         byte[] sources = {LSSConstants.COLUMN_SOURCE_IN_MEMORY, LSSConstants.COLUMN_SOURCE_DISK,
                 LSSConstants.COLUMN_SOURCE_GENERATION, LSSConstants.COLUMN_SOURCE_STORE, (byte) -1};
         for (byte source : sources) {
@@ -475,7 +475,7 @@ class WireParityTest {
         // The splice-position pin (mirrors Paper's rewriteColumnToV18): removing the ONE
         // byte after the source byte from the CURRENT frame yields the v18 frame.
         byte[] sections = {5, 4, 3, 2};
-        var dim = ResourceKey.create(Registries.DIMENSION, Identifier.parse("minecraft:the_end"));
+        var dim = ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse("minecraft:the_end"));
         var p = new VoxelColumnS2CPayload(7, -9, dim, 99L,
                 LSSConstants.COLUMN_SOURCE_DISK, sections);
         byte[] current = encode(VoxelColumnS2CPayload.CODEC, p);
@@ -503,7 +503,7 @@ class WireParityTest {
             b.writeByte(LSSConstants.COLUMN_SOURCE_IN_MEMORY);
             b.writeByteArray(new byte[0]);
         });
-        var dim = ResourceKey.create(Registries.DIMENSION, Identifier.parse(longDim));
+        var dim = ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse(longDim));
         var p = new VoxelColumnS2CPayload(0, 0, dim, 42L,
                 LSSConstants.COLUMN_SOURCE_IN_MEMORY, new byte[0]);
         assertArrayEquals(expected, encode(VoxelColumnS2CPayload.CODEC, p.asV18()));

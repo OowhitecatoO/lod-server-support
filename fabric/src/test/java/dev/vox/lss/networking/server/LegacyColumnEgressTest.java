@@ -255,7 +255,7 @@ class LegacyColumnEgressTest {
         try {
             assertEquals(7, buf.readInt());
             assertEquals(-3, buf.readInt());
-            assertEquals(Level.OVERWORLD.identifier().toString(),
+            assertEquals(Level.OVERWORLD.location().toString(),
                     buf.readUtf(LSSConstants.MAX_DIMENSION_STRING_LENGTH));
             assertEquals(1234567L, buf.readLong());
             assertEquals(LSSConstants.COLUMN_SOURCE_DISK, buf.readByte(),
@@ -279,7 +279,7 @@ class LegacyColumnEgressTest {
         try {
             assertEquals(7, buf.readInt());
             assertEquals(-3, buf.readInt());
-            assertEquals(Level.OVERWORLD.identifier().toString(),
+            assertEquals(Level.OVERWORLD.location().toString(),
                     buf.readUtf(LSSConstants.MAX_DIMENSION_STRING_LENGTH));
             assertEquals(1234567L, buf.readLong());
             assertArrayEquals(nativeGolden, buf.readByteArray(LSSConstants.MAX_SECTIONS_SIZE),

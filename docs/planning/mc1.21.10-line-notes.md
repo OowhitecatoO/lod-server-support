@@ -48,11 +48,37 @@ config API (`net.caffeinemc.mods.sodium.api.config.*`) the LSS options page
 binds — the same reality that cut the page on the frozen 1.21.8 line. Cut
 surface: `LSSConfigMenu.java` deleted, the `sodium:config_api_user`
 entrypoint removed from fabric.mod.json, the sodium modCompileOnly dropped.
+The ModMenu integration goes WITH the cut (found at first compile: it was
+only a deep-link into Sodium 0.8's VideoSettingsScreen via ConfigManager —
+both 0.8 client classes), so the modmenu entrypoint + dep are dropped too.
 Kept: `RateSliderStops` (Sodium-import-free; ConfigValidationTest classloads
-it), the ModMenu integration (modmenu 16.0.1 exists for 1.21.10), and every
-config KEY — the JSON config files carry the full surface, so nothing
-functional is lost, only the in-game Sodium page. The release notes must name
-this cut. Revisit only if Sodium backports 0.8 to 1.21.10 (they will not).
+it) and every config KEY — the JSON config files carry the full surface, so
+nothing functional is lost, only the in-game pages. The release notes must
+name this cut. Revisit only if Sodium backports 0.8 to 1.21.10 (they will
+not).
+
+## Findings at first compile (the real 1.21.10↔1.21.11 API boundary)
+
+The lateral-port premise "1.21.11's MC surface verbatim" was WRONG in three
+ways — 1.21.10 sits on the OLD side of the 1.21.11 mappings/API wave:
+
+1. **The ResourceLocation-family renames**: 1.21.10 uses
+   `net.minecraft.resources.ResourceLocation` (not `Identifier`),
+   `ResourceKey.location()` (not `.identifier()`), `net.minecraft.Util`
+   (not `net.minecraft.util.Util`), `ResourceLocationException` (not
+   `IdentifierException`) — the exact rename set the 1.21.1 line carries,
+   applied mechanically (45 files + accessor/exception sweeps).
+2. **The permissions rework is 1.21.11+**: no `net.minecraft.server.permissions`
+   package here — `CommandSourceStack.hasPermission(int)` +
+   `Commands.LEVEL_GAMEMASTERS` (LSSServerCommands) and the int-level
+   `CommandSourceStack` ctor (CommandGameTests: NO_PERMISSIONS→0,
+   ALL_PERMISSIONS→4), both the 1.21.1 line's forms.
+3. **GameTestHelper takes Component messages** (`assertTrue(boolean,
+   Component)` / `fail(Component)` — the 1.21.9/10 window; every sibling has
+   String overloads): shimmed via `fabric/src/gametest/.../Gt.java` with a
+   mechanical call-prefix reroute (`helper.assertTrue(` →
+   `Gt.assertTrue(helper, `, 541 sites + 13 fails) so every condition and
+   message expression stays byte-identical to the parent line.
 
 ## Gates run at creation
 

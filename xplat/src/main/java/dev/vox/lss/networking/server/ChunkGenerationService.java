@@ -188,7 +188,7 @@ public class ChunkGenerationService {
                     long columnTimestamp = LSSConstants.epochSeconds();
                     LoadedColumnData columnData = this.columnSerializer.serialize(
                             gen.level, chunk, gen.pos.x, gen.pos.z);
-                    String dimension = gen.level.dimension().identifier().toString();
+                    String dimension = gen.level.dimension().location().toString();
 
                     // Seed the dirty filter with the served bytes: the chunk's imminent
                     // unload-save would otherwise count as "first observed save" and
@@ -233,7 +233,7 @@ public class ChunkGenerationService {
      *  failure). The generation books count the entry the same either way. */
     private void addFailures(List<TickSnapshot.GenerationReadyData> ready, PendingGeneration gen,
                              boolean transientFailure) {
-        String dimension = gen.level.dimension().identifier().toString();
+        String dimension = gen.level.dimension().location().toString();
         for (var cb : gen.callbacks) {
             ready.add(new TickSnapshot.GenerationReadyData(
                     cb.playerUuid, gen.pos.x, gen.pos.z, dimension,

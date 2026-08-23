@@ -17,9 +17,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > run on this line; **the Sodium options page is CUT** (Sodium tops out at 0.7.3
 > on 1.21.10, predating the 0.8 structured config API the page binds — the
 > 1.21.8-line precedent; LSSConfigMenu + the sodium:config_api_user entrypoint
-> are deleted, RateSliderStops and the ModMenu entry stay, config via the JSON
-> files is unaffected); fabric-api floor 0.138.0 (0.138.4+1.21.10, vs the
-> parent's 0.141.x).
+> AND the ModMenu integration (a Sodium-0.8-screen deep-link) are deleted,
+> RateSliderStops stays, config via the JSON files is unaffected); fabric-api
+> floor 0.138.0 (0.138.4+1.21.10, vs the parent's 0.141.x). The line ALSO
+> carries the pre-1.21.11 mappings/API shapes (the 1.21.1 line's forms):
+> ResourceLocation-family renames, int-level permissions
+> (hasPermission/LEVEL_GAMEMASTERS), and Component-message GameTestHelper
+> (the `Gt` shim reroutes all 550+ assert/fail sites) — the full boundary
+> record is in docs/planning/mc1.21.10-line-notes.md.
 > Per-line surfaces live in **docs/planning/per-version-surfaces.md** (canonical —
 > this banner is a POINTER) and the line identity in `.github/line.env` +
 > `gradle.properties` (loom-remap toolchain, intermediary mapping namespace).

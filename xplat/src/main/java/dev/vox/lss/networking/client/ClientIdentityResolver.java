@@ -7,7 +7,7 @@ import dev.vox.lss.config.LSSClientConfig;
 import net.minecraft.core.Holder;
 import net.minecraft.core.IdMap;
 import net.minecraft.core.Registry;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
@@ -131,7 +131,7 @@ final class ClientIdentityResolver {
         } catch (IllegalArgumentException e) {
             return null;  // malformed identity: let the ladder fall through
         }
-        var rl = Identifier.tryParse(parsed.name());
+        var rl = ResourceLocation.tryParse(parsed.name());
         if (rl == null) {
             return null;
         }
@@ -160,7 +160,7 @@ final class ClientIdentityResolver {
     }
 
     private int resolveBiomeId(String identity) {
-        var rl = Identifier.tryParse(identity);
+        var rl = ResourceLocation.tryParse(identity);
         if (rl != null) {
             var holder = this.biomeRegistry.get(rl).orElse(null);
             if (holder != null) {
@@ -188,7 +188,7 @@ final class ClientIdentityResolver {
     }
 
     private int resolveFallbackBiome() {
-        var plains = this.biomeRegistry.get(Identifier.parse("minecraft:plains")).orElse(null);
+        var plains = this.biomeRegistry.get(ResourceLocation.parse("minecraft:plains")).orElse(null);
         int id = plains == null ? -1 : this.biomeIdMap.getId(plains);
         // A modded/test registry without plains: any valid id beats a crash; 0 exists
         // in every non-empty registry.

@@ -94,7 +94,7 @@ public final class ServerReceiverGlue {
         if (skipDirtyHash(service.hasEverRegisteredPlayer(), service.getLodStore() != null,
                 service.timestampCacheBootedEmpty())) return;
         String dimension = DIMENSION_STRINGS.computeIfAbsent(level.dimension(),
-                key -> key.identifier().toString());
+                key -> key.location().toString());
         var obs = service.getDirtyContentFilter().observeSave(level, levelChunk, dimension);
         if (obs.changed()) {
             service.getDirtyTracker().markDirty(dimension, chunk.getPos().x, chunk.getPos().z);

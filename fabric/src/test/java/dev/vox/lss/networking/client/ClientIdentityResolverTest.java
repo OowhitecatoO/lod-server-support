@@ -11,7 +11,7 @@ import net.minecraft.core.RegistrationInfo;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.data.registries.VanillaRegistries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.Biomes;
@@ -115,7 +115,7 @@ class ClientIdentityResolverTest {
         return idOf(Blocks.STONE.defaultBlockState());
     }
 
-    private static int biomeIdOf(Identifier id) {
+    private static int biomeIdOf(ResourceLocation id) {
         return BIOME_ID_MAP.getId(BIOME_REGISTRY.get(id).orElseThrow());
     }
 
@@ -293,11 +293,11 @@ class ClientIdentityResolverTest {
     @Test
     void biomeIdentityResolvesExactlyAndUnknownFallsBackToPlains() {
         var r = newResolver();
-        assertEquals(biomeIdOf(Identifier.parse("minecraft:desert")),
+        assertEquals(biomeIdOf(ResourceLocation.parse("minecraft:desert")),
                 r.biomeIdFor("minecraft:desert"));
         assertEquals(0, r.fallbackCount(), "an exact biome resolve is not a fallback");
 
-        int plains = biomeIdOf(Identifier.parse("minecraft:plains"));
+        int plains = biomeIdOf(ResourceLocation.parse("minecraft:plains"));
         assertEquals(plains, r.biomeIdFor("hills:unknown_biome"));
         assertEquals(1, r.fallbackCount());
         // Memoized like blocks: the repeat costs no second count.

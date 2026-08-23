@@ -250,13 +250,13 @@ public class RequestProcessingService {
             // must degrade that one dimension to UNKNOWN (the table's designed
             // fail-safe), never take down service start.
             try {
-                regionDirs.put(level.dimension().identifier().toString(),
+                regionDirs.put(level.dimension().location().toString(),
                         net.minecraft.world.level.dimension.DimensionType
                                 .getStorageFolder(level.dimension(), worldRoot)
                                 .resolve("region").normalize());
             } catch (Throwable t) {
                 LSSLogger.warn("Could not resolve the region directory for "
-                        + level.dimension().identifier() + " — region freshness there"
+                        + level.dimension().location() + " — region freshness there"
                         + " falls through to full reads", t);
             }
         }
@@ -295,7 +295,7 @@ public class RequestProcessingService {
         if (storeMode != dev.vox.lss.common.store.LodStoreMode.OFF) {
             var maskFingerprints = new HashMap<String, String>();
             for (ServerLevel level : server.getAllLevels()) {
-                String dim = level.dimension().identifier().toString();
+                String dim = level.dimension().location().toString();
                 var maskEntry = XrayMaskManager.entryForActive(level);
                 String maskFp = maskEntry == null ? "off"
                         : maskEntry.sourceLabel() + ":"
@@ -337,7 +337,7 @@ public class RequestProcessingService {
             if (this.lodStore instanceof dev.vox.lss.common.store.SqliteLodStore sqlite) {
                 var levelByDim = new HashMap<String, ServerLevel>();
                 for (ServerLevel level : server.getAllLevels()) {
-                    levelByDim.put(level.dimension().identifier().toString(), level);
+                    levelByDim.put(level.dimension().location().toString(), level);
                 }
                 this.storeBackfill = new dev.vox.lss.common.store.StoreBackfill(
                         sqlite, regionDirs::get,
@@ -414,7 +414,7 @@ public class RequestProcessingService {
                     config.generationConcurrencyLimitPerPlayer);
             // Session identity for the router's stale-snapshot guard (set before the map
             // publish so the processing thread never sees it null on a live state).
-            s.setRegisteredDimension(player.level().dimension().identifier().toString());
+            s.setRegisteredDimension(player.level().dimension().location().toString());
             // Transport-pressure gauge (elytra-wall §8.3). The probe re-reads the player's
             // channel on every call, so a reconnect on the SAME ServerPlayer is picked up;
             // a player-object swap that keeps this state degrades to isActive()==false =>
@@ -832,7 +832,7 @@ public class RequestProcessingService {
             // which wedged the gate — see AbstractPlayerRequestState.updatePlayerChunk).
             state.updatePlayerChunk(player.chunkPosition().x, player.chunkPosition().z);
             String dimension = this.dimensionStringCache.computeIfAbsent(level.dimension(),
-                    k -> k.identifier().toString());
+                    k -> k.location().toString());
 
             this.offThreadProcessor.updateDimensionContext(dimension, level);
 
@@ -1254,7 +1254,7 @@ public class RequestProcessingService {
             var player = state.getPlayer();
             var level = player.level();
             String dimension = this.dimensionStringCache.computeIfAbsent(level.dimension(),
-                    k -> k.identifier().toString());
+                    k -> k.location().toString());
             // Ticket queued before a dimension change targets the old dimension's coordinates.
             // Dropping it leaks nothing: the admitting state was discarded by
             // removePlayer+registerPlayer (its slot dies with it), AND that same removePlayer

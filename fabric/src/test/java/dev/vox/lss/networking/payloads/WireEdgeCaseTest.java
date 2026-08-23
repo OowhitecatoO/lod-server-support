@@ -6,11 +6,11 @@ import dev.vox.lss.common.PositionUtil;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.DecoderException;
 import io.netty.handler.codec.EncoderException;
-import net.minecraft.IdentifierException;
+import net.minecraft.ResourceLocationException;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.world.level.Level;
@@ -301,7 +301,7 @@ class WireEdgeCaseTest {
     void voxelColumnDimensionStringAtMaxLengthRoundTrips() {
         String dimStr = "lss:" + "a".repeat(LSSConstants.MAX_DIMENSION_STRING_LENGTH - 4);
         assertEquals(LSSConstants.MAX_DIMENSION_STRING_LENGTH, dimStr.length());
-        var dim = ResourceKey.create(Registries.DIMENSION, Identifier.parse(dimStr));
+        var dim = ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse(dimStr));
         var original = new VoxelColumnS2CPayload(1, 2, dim, 9L, emptyColumn());
         var b = buf();
         try {
@@ -321,7 +321,7 @@ class WireEdgeCaseTest {
         // reader's cap rejects, disconnecting every client receiving that dimension.
         String dimStr = "lss:" + "a".repeat(LSSConstants.MAX_DIMENSION_STRING_LENGTH - 3);
         assertEquals(LSSConstants.MAX_DIMENSION_STRING_LENGTH + 1, dimStr.length());
-        var dim = ResourceKey.create(Registries.DIMENSION, Identifier.parse(dimStr));
+        var dim = ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse(dimStr));
         var payload = new VoxelColumnS2CPayload(0, 0, dim, 0L, emptyColumn());
         var b = buf();
         try {
@@ -369,8 +369,8 @@ class WireEdgeCaseTest {
 
     @Test
     void voxelColumnInvalidDimensionStringThrowsIdentifierException() {
-        // A buggy/hostile server can ship any UTF string; Identifier.parse rejects illegal
-        // characters with IdentifierException, which at the connection layer kicks the LSS
+        // A buggy/hostile server can ship any UTF string; ResourceLocation.parse rejects illegal
+        // characters with ResourceLocationException, which at the connection layer kicks the LSS
         // client. Pinned as the documented consequence — softening this to a fallback
         // dimension would be a protocol decision, not a refactor.
         var b = buf();
@@ -381,7 +381,7 @@ class WireEdgeCaseTest {
         b.writeByte(LSSConstants.COLUMN_SOURCE_DISK); // v18 serve-source byte
         b.writeByteArray(emptyColumn());
         try {
-            assertThrows(IdentifierException.class, () -> VoxelColumnS2CPayload.CODEC.decode(b));
+            assertThrows(ResourceLocationException.class, () -> VoxelColumnS2CPayload.CODEC.decode(b));
         } finally {
             b.release();
         }
@@ -389,7 +389,7 @@ class WireEdgeCaseTest {
 
     @Test
     void voxelColumnNamespacelessDimensionAliasesToMinecraftNamespace() {
-        // Identifier.parse silently defaults a namespaceless string to minecraft: — a frame
+        // ResourceLocation.parse silently defaults a namespaceless string to minecraft: — a frame
         // carrying "overworld" lands on the vanilla overworld key. Pinned as intent: any
         // stricter parse would reject frames from servers emitting short-form dimensions.
         var b = buf();
@@ -406,7 +406,7 @@ class WireEdgeCaseTest {
         try {
             var decoded = VoxelColumnS2CPayload.CODEC.decode(b);
             assertEquals(Level.OVERWORLD, decoded.dimension());
-            assertEquals("minecraft:overworld", decoded.dimension().identifier().toString());
+            assertEquals("minecraft:overworld", decoded.dimension().location().toString());
             assertEquals((byte) 77, decoded.source(),
                     "unknown serve-source values must pass through untouched");
             assertArrayEquals(emptyColumn(), decoded.shippedSections(),

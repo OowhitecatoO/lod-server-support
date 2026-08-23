@@ -95,16 +95,16 @@ public class ServiceLifecycleGameTests {
         var service = new RequestProcessingService(server);
         try {
             var state = service.registerPlayer(mock, LSSConstants.CAPABILITY_VOXEL_COLUMNS);
-            helper.assertTrue(state.getOutboundPendingBytes() == -1,
+            Gt.assertTrue(helper, state.getOutboundPendingBytes() == -1,
                     "premise: nothing sampled before the first flush");
 
             service.tick(); // flushSendQueues samples the probe once per player per tick
 
             long pending = state.getOutboundPendingBytes();
-            helper.assertTrue(pending >= 0,
+            Gt.assertTrue(helper, pending >= 0,
                     "the gauge must resolve through the real mixins + channel; -1 means the"
                             + " accessors did not apply and the instrument is dead, got " + pending);
-            helper.assertTrue(state.getOutboundPendingHighWater() >= pending,
+            Gt.assertTrue(helper, state.getOutboundPendingHighWater() >= pending,
                     "high-water must track the sampled value");
         } finally {
             service.shutdown();
@@ -124,7 +124,7 @@ public class ServiceLifecycleGameTests {
             int pcx = mock.getBlockX() >> 4;
             int pcz = mock.getBlockZ() >> 4;
             int maxDist = LSSServerConfig.CONFIG.lodDistanceChunks + LSSConstants.LOD_DISTANCE_BUFFER;
-            helper.assertTrue(pcx - maxDist < 0 && pcz - maxDist < 0,
+            Gt.assertTrue(helper, pcx - maxDist < 0 && pcz - maxDist < 0,
                     "premise: spawn-relative far positions must reach the negative quadrant");
 
             long boundary = PositionUtil.packPosition(pcx + maxDist, pcz);
@@ -139,36 +139,36 @@ public class ServiceLifecycleGameTests {
 
             // The service is never ticked, so the declared want-set in the mailbox is exactly
             // what the guard let through.
-            helper.assertTrue(state.getTotalRequestsReceived() == 2,
+            Gt.assertTrue(helper, state.getTotalRequestsReceived() == 2,
                     "only the two boundary positions must pass the distance guard, got "
                             + state.getTotalRequestsReceived());
             var batch = state.peekIncomingBatch();
-            helper.assertTrue(batch != null && batch.size() == 2,
+            Gt.assertTrue(helper, batch != null && batch.size() == 2,
                     "the declared want-set must hold exactly the two boundary positions, got "
                             + (batch == null ? "no batch" : batch.size() + " entries"));
             var first = batch.requests()[0];
-            helper.assertTrue(first.cx() == pcx + maxDist && first.cz() == pcz,
+            Gt.assertTrue(helper, first.cx() == pcx + maxDist && first.cz() == pcz,
                     "request at exactly lodDistance+buffer must be accepted, got ["
                             + first.cx() + ", " + first.cz() + "]");
-            helper.assertTrue(first.clientTimestamp() == -1L,
+            Gt.assertTrue(helper, first.clientTimestamp() == -1L,
                     "client timestamp must survive intact, got " + first.clientTimestamp());
             var second = batch.requests()[1];
-            helper.assertTrue(second.cx() == pcx - maxDist && second.cz() == pcz - maxDist,
+            Gt.assertTrue(helper, second.cx() == pcx - maxDist && second.cz() == pcz - maxDist,
                     "negative-quadrant boundary coords must round-trip exactly (sign bug in "
                             + "packing or distance), got [" + second.cx() + ", " + second.cz() + "]");
-            helper.assertTrue(second.clientTimestamp() == 12345L,
+            Gt.assertTrue(helper, second.clientTimestamp() == 12345L,
                     "negative-quadrant timestamp must survive intact, got " + second.clientTimestamp());
             // v17: the three beyond-distance entries are dropped AT INGRESS and counted, not
             // silently vanished — the range_filtered counter is the only record they existed.
-            helper.assertTrue(state.drainPendingRangeFiltered() == 3,
+            Gt.assertTrue(helper, state.drainPendingRangeFiltered() == 3,
                     "the three beyond-distance entries must be counted range_filtered at ingress");
 
             // Unregistered player: silent no-op — no state created, nothing queued anywhere.
             service.handleBatchRequest(stranger, new BatchChunkRequestC2SPayload(
                     new long[]{boundary}, new long[]{-1L}, 1));
-            helper.assertTrue(!service.getPlayers().containsKey(stranger.getUUID()),
+            Gt.assertTrue(helper, !service.getPlayers().containsKey(stranger.getUUID()),
                     "a batch request from an unregistered player must not create state");
-            helper.assertTrue(state.getTotalRequestsReceived() == 2,
+            Gt.assertTrue(helper, state.getTotalRequestsReceived() == 2,
                     "an unregistered player's request must not leak into another player's queue");
         } finally {
             service.shutdown();
@@ -205,26 +205,26 @@ public class ServiceLifecycleGameTests {
             service.handleBatchRequest(mock, new BatchChunkRequestC2SPayload(
                     positions, new long[]{-1L, -1L, -1L, -1L, 42L}, 5));
 
-            helper.assertTrue(state.getTotalRequestsReceived() == 1,
+            Gt.assertTrue(helper, state.getTotalRequestsReceived() == 1,
                     "only the in-range position passes; the four extremes are gated without "
                             + "overflow, got " + state.getTotalRequestsReceived());
             var batch = state.peekIncomingBatch();
-            helper.assertTrue(batch != null && batch.size() == 1,
+            Gt.assertTrue(helper, batch != null && batch.size() == 1,
                     "the declared want-set must hold only the in-range request, got "
                             + (batch == null ? "no batch" : batch.size() + " entries"));
             var req = batch.requests()[0];
-            helper.assertTrue(req.cx() == pcx && req.cz() == pcz,
+            Gt.assertTrue(helper, req.cx() == pcx && req.cz() == pcz,
                     "the surviving request must be the player's own chunk, got ["
                             + req.cx() + ", " + req.cz() + "]");
-            helper.assertTrue(state.drainPendingRangeFiltered() == 4,
+            Gt.assertTrue(helper, state.drainPendingRangeFiltered() == 4,
                     "the four extreme coords must be counted range_filtered at ingress, not "
                             + "slip under the gate");
 
             // No tick has run, so the gate alone must not have submitted any disk/gen work.
-            helper.assertTrue(service.getDiskReader().getPendingResultCount() == 0,
+            Gt.assertTrue(helper, service.getDiskReader().getPendingResultCount() == 0,
                     "a gated batch must not submit a disk read for an extreme coord");
             var gen = service.getGenerationService();
-            helper.assertTrue(gen == null || gen.getActiveCount() == 0,
+            Gt.assertTrue(helper, gen == null || gen.getActiveCount() == 0,
                     "a gated batch must not submit generation for an extreme coord");
         } finally {
             service.shutdown();
@@ -247,21 +247,21 @@ public class ServiceLifecycleGameTests {
         var service = new RequestProcessingService(server);
         try {
             service.registerPlayer(mock, LSSConstants.CAPABILITY_VOXEL_COLUMNS);
-            helper.assertTrue(service.getPlayers().containsKey(uuid), "premise: a player is registered");
-            helper.assertTrue(service.getDiskReader().getPlayerQueue(uuid) != null,
+            Gt.assertTrue(helper, service.getPlayers().containsKey(uuid), "premise: a player is registered");
+            Gt.assertTrue(helper, service.getDiskReader().getPlayerQueue(uuid) != null,
                     "premise: the disk-reader queue exists");
 
             service.shutdown();
-            helper.assertTrue(service.getPlayers().isEmpty(), "shutdown clears the players map");
-            helper.assertTrue(service.getDiskReader().getPlayerQueue(uuid) == null,
+            Gt.assertTrue(helper, service.getPlayers().isEmpty(), "shutdown clears the players map");
+            Gt.assertTrue(helper, service.getDiskReader().getPlayerQueue(uuid) == null,
                     "shutdown tears down the disk-reader result queue");
             var gen = service.getGenerationService();
-            helper.assertTrue(gen == null || gen.getActiveCount() == 0,
+            Gt.assertTrue(helper, gen == null || gen.getActiveCount() == 0,
                     "shutdown clears any active generation");
 
             // The second call (server-stop after a manual shutdown) must not throw or re-break.
             service.shutdown();
-            helper.assertTrue(service.getPlayers().isEmpty(), "a second shutdown stays clean");
+            Gt.assertTrue(helper, service.getPlayers().isEmpty(), "a second shutdown stays clean");
         } finally {
             playerList.remove(mock);
         }
@@ -279,73 +279,73 @@ public class ServiceLifecycleGameTests {
         try {
             // Registration creates every per-player structure.
             var state = service.registerPlayer(mock, LSSConstants.CAPABILITY_VOXEL_COLUMNS);
-            helper.assertTrue(service.getPlayers().containsKey(uuid),
+            Gt.assertTrue(helper, service.getPlayers().containsKey(uuid),
                     "registered player must appear in the players map");
-            helper.assertTrue(state.hasCompletedHandshake(),
+            Gt.assertTrue(helper, state.hasCompletedHandshake(),
                     "registerPlayer must complete the handshake");
-            helper.assertTrue(state.getCapabilities() == LSSConstants.CAPABILITY_VOXEL_COLUMNS,
+            Gt.assertTrue(helper, state.getCapabilities() == LSSConstants.CAPABILITY_VOXEL_COLUMNS,
                     "capabilities from the handshake must be stored");
-            helper.assertTrue(service.getDiskReader().getPlayerQueue(uuid) != null,
+            Gt.assertTrue(helper, service.getDiskReader().getPlayerQueue(uuid) != null,
                     "registration must create the disk-reader result queue");
 
             // computeIfAbsent contract: re-registering an online UUID updates the existing
             // state in place (capability change on re-handshake) and never replaces it.
             var reRegistered = service.registerPlayer(mock, 0);
-            helper.assertTrue(reRegistered == state,
+            Gt.assertTrue(helper, reRegistered == state,
                     "re-registering an online player must return the SAME state, not wipe it");
-            helper.assertTrue(state.getCapabilities() == 0,
+            Gt.assertTrue(helper, state.getCapabilities() == 0,
                     "re-registration must apply the new capabilities to the existing state");
-            helper.assertTrue(state.hasCompletedHandshake(),
+            Gt.assertTrue(helper, state.hasCompletedHandshake(),
                     "re-registration must keep the handshake complete");
 
             // Seed an in-flight generation, then removePlayer must clean every structure.
             // No tick() runs between submit and remove, so the entry cannot complete first.
             var gen = service.getGenerationService();
-            helper.assertTrue(gen != null,
+            Gt.assertTrue(helper, gen != null,
                     "generation service expected (gametest config has enableChunkGeneration=true)");
             int pcx = mock.getBlockX() >> 4;
             int pcz = mock.getBlockZ() >> 4;
-            helper.assertTrue(gen.submitGeneration(uuid, level, pcx - GEN_CHUNK_OFFSET, pcz + GEN_CHUNK_OFFSET, 1L),
+            Gt.assertTrue(helper, gen.submitGeneration(uuid, level, pcx - GEN_CHUNK_OFFSET, pcz + GEN_CHUNK_OFFSET, 1L),
                     "a fresh generation service must accept a submission");
-            helper.assertTrue(gen.getActiveCount() == 1, "submission must be tracked as active");
+            Gt.assertTrue(helper, gen.getActiveCount() == 1, "submission must be tracked as active");
 
             service.removePlayer(uuid);
-            helper.assertTrue(!service.getPlayers().containsKey(uuid),
+            Gt.assertTrue(helper, !service.getPlayers().containsKey(uuid),
                     "removePlayer must drop the players-map entry");
-            helper.assertTrue(service.getDiskReader().getPlayerQueue(uuid) == null,
+            Gt.assertTrue(helper, service.getDiskReader().getPlayerQueue(uuid) == null,
                     "removePlayer must remove the disk-reader result queue");
-            helper.assertTrue(gen.getActiveCount() == 0,
+            Gt.assertTrue(helper, gen.getActiveCount() == 0,
                     "removePlayer must release the player's in-flight generation entry");
-            helper.assertTrue(gen.getTotalRemovedInFlight() == 1,
+            Gt.assertTrue(helper, gen.getTotalRemovedInFlight() == 1,
                     "the released in-flight generation must be booked as removed (or the "
                             + "submitted/completed accounting never re-balances after a kick)");
 
             // After removal the same UUID re-registers with a FRESH state.
             var fresh = service.registerPlayer(mock, LSSConstants.CAPABILITY_VOXEL_COLUMNS);
-            helper.assertTrue(fresh != state,
+            Gt.assertTrue(helper, fresh != state,
                     "a removed UUID must re-register with a fresh state object");
 
             // Lifecycle polarity: discarded but still in the player list is the death/respawn
             // shape — the session must survive. Removing on isRemoved() alone would wipe every
             // player's LOD session on every death.
             mock.discard();
-            helper.assertTrue(mock.isRemoved(), "premise: discard marks the entity removed");
-            helper.assertTrue(playerList.getPlayer(uuid) != null,
+            Gt.assertTrue(helper, mock.isRemoved(), "premise: discard marks the entity removed");
+            Gt.assertTrue(helper, playerList.getPlayer(uuid) != null,
                     "premise: discard must not delist the player");
             service.tick();
             service.tick();
-            helper.assertTrue(service.getPlayers().containsKey(uuid),
+            Gt.assertTrue(helper, service.getPlayers().containsKey(uuid),
                     "a discarded-but-listed player must keep its session (death/respawn must not "
                             + "wipe LOD state)");
 
             // Only a delisted player auto-removes — and without any disconnect event, since a
             // direct player-list removal never fires one.
             playerList.remove(mock);
-            helper.assertTrue(playerList.getPlayer(uuid) == null, "premise: player delisted");
+            Gt.assertTrue(helper, playerList.getPlayer(uuid) == null, "premise: player delisted");
             service.tick();
-            helper.assertTrue(!service.getPlayers().containsKey(uuid),
+            Gt.assertTrue(helper, !service.getPlayers().containsKey(uuid),
                     "one tick must auto-remove a delisted player (disconnect-event-less cleanup)");
-            helper.assertTrue(service.getDiskReader().getPlayerQueue(uuid) == null,
+            Gt.assertTrue(helper, service.getDiskReader().getPlayerQueue(uuid) == null,
                     "lifecycle auto-remove must run the same per-player cleanup as removePlayer");
         } finally {
             service.shutdown();
@@ -369,7 +369,7 @@ public class ServiceLifecycleGameTests {
         ServerLevel level = helper.getLevel();
         var server = level.getServer();
         var liveService = LSSServerNetworking.getRequestService();
-        helper.assertTrue(liveService != null,
+        Gt.assertTrue(helper, liveService != null,
                 "live RequestProcessingService must be active (save-hook leg depends on it)");
         // The save-hook leg asserts through the LIVE service, but this test's player
         // registers on its own service — arm the P3 never-registered skip gate (one-way;
@@ -382,7 +382,7 @@ public class ServiceLifecycleGameTests {
         int cx = pcx - PROBE_CHUNK_OFFSET;
         int cz = pcz - PROBE_CHUNK_OFFSET;
         int maxDist = LSSServerConfig.CONFIG.lodDistanceChunks + LSSConstants.LOD_DISTANCE_BUFFER;
-        helper.assertTrue(PositionUtil.chebyshevDistance(cx, cz, pcx, pcz) <= maxDist,
+        Gt.assertTrue(helper, PositionUtil.chebyshevDistance(cx, cz, pcx, pcz) <= maxDist,
                 "premise: the probe chunk must be inside the request distance guard");
         var chunkPos = new ChunkPos(cx, cz);
         var chunkSource = level.getChunkSource();
@@ -399,18 +399,18 @@ public class ServiceLifecycleGameTests {
         var filter = service.getDirtyContentFilter();
         // Review-P3 latch wiring pin (three-lens round): registerPlayer must arm the
         // save-hook gate — the Tier 2 arming seams cannot notice a wiring regression.
-        helper.assertTrue(!service.hasEverRegisteredPlayer(), "premise: fresh service, latch unarmed");
+        Gt.assertTrue(helper, !service.hasEverRegisteredPlayer(), "premise: fresh service, latch unarmed");
         var state = service.registerPlayer(mock, LSSConstants.CAPABILITY_VOXEL_COLUMNS);
-        helper.assertTrue(service.hasEverRegisteredPlayer(),
+        Gt.assertTrue(helper, service.hasEverRegisteredPlayer(),
                 "registerPlayer must flip the save-hook latch");
 
         // Tick 2 (generation light settled): baseline the filter like an earlier save would,
         // then edit, then request — the probe will serve the post-edit bytes.
         helper.runAfterDelay(2, () -> {
             var chunk = level.getChunk(cx, cz);
-            helper.assertTrue(filter.contentChanged(level, chunk, dim),
+            Gt.assertTrue(helper, filter.contentChanged(level, chunk, dim),
                     "first observation must baseline the virgin filter");
-            helper.assertTrue(!filter.contentChanged(level, chunk, dim),
+            Gt.assertTrue(helper, !filter.contentChanged(level, chunk, dim),
                     "identical content must stay quiet once baselined");
             // Toggle so the edit is a real content change even if a previous run (the gametest
             // world persists) already left stone at this position.
@@ -418,32 +418,32 @@ public class ServiceLifecycleGameTests {
             level.setBlock(editPos, edit.defaultBlockState(), 3);
             service.handleBatchRequest(mock, new BatchChunkRequestC2SPayload(
                     new long[]{packed}, new long[]{-1L}, 1));
-            helper.assertTrue(state.getTotalRequestsReceived() == 1,
+            Gt.assertTrue(helper, state.getTotalRequestsReceived() == 1,
                     "the in-range request must be accepted");
         });
 
         var step = new AtomicInteger();
         helper.succeedWhen(() -> {
-            helper.assertTrue(helper.getTick() >= 4, "waiting for the baseline+edit setup");
+            Gt.assertTrue(helper, helper.getTick() >= 4, "waiting for the baseline+edit setup");
             switch (step.get()) {
                 case 0 -> {
                     // Manual tick: main thread probes the loaded chunk, processing thread
                     // serves it, the next manual tick's flush sends it to the mock player.
                     service.tick();
-                    helper.assertTrue(state.getTotalSectionsSent() >= 1,
+                    Gt.assertTrue(helper, state.getTotalSectionsSent() >= 1,
                             "waiting for the probe serve to flush");
-                    helper.assertTrue(
+                    Gt.assertTrue(helper, 
                             service.getOffThreadProcessor().getDiagnostics().getTotalInMemory() == 1,
                             "the serve must come from the in-memory probe, not disk");
                     var chunk = level.getChunk(cx, cz);
-                    helper.assertTrue(filter.contentChanged(level, chunk, dim),
+                    Gt.assertTrue(helper, filter.contentChanged(level, chunk, dim),
                             "a probe serve must NOT seed the dirty filter: the save after the "
                                     + "edit no longer sees a change, swallowing the dirty "
                                     + "broadcast other clients need");
-                    helper.assertTrue(!filter.contentChanged(level, chunk, dim),
+                    Gt.assertTrue(helper, !filter.contentChanged(level, chunk, dim),
                             "the check above must have stored the new hash (filter is live)");
                     step.set(1);
-                    helper.assertTrue(false, "no-seed verified, running the live save-hook leg");
+                    Gt.assertTrue(helper, false, "no-seed verified, running the live save-hook leg");
                 }
                 case 1 -> {
                     // Live end-to-end: edit → real save → the position must surface in the live
@@ -456,14 +456,14 @@ public class ServiceLifecycleGameTests {
                     liveService.getDirtyTracker().drainDirty(dim);
                     level.save(null, true, false);
                     long[] dirty = liveService.getDirtyTracker().drainDirty(dim);
-                    helper.assertTrue(containsPosition(dirty, packed),
+                    Gt.assertTrue(helper, containsPosition(dirty, packed),
                             "a save after a real edit must mark the column dirty end-to-end "
                                     + "(save hook -> content filter -> dirty tracker)");
                     chunkSource.removeTicketWithRadius(TicketType.PLAYER_LOADING, chunkPos, 0);
                     service.shutdown();
                     server.getPlayerList().remove(mock);
                 }
-                default -> helper.fail("unexpected probe test step " + step.get());
+                default -> Gt.fail(helper, "unexpected probe test step " + step.get());
             }
         });
     }
@@ -497,18 +497,18 @@ public class ServiceLifecycleGameTests {
             service.handleBatchRequest(mock, new BatchChunkRequestC2SPayload(
                     extremes, new long[]{-1L, 0L, 12345L, -1L, 0L, 12345L}, extremes.length));
 
-            helper.assertTrue(state.getTotalRequestsReceived() == 0,
+            Gt.assertTrue(helper, state.getTotalRequestsReceived() == 0,
                     "extreme coordinates must be dropped by the distance guard (an overflowed "
                             + "Chebyshev distance admits them), got "
                             + state.getTotalRequestsReceived() + " accepted");
             service.tick();
             service.tick();
-            helper.assertTrue(state.getHeldSyncSlots() == 0 && state.getHeldGenSlots() == 0,
+            Gt.assertTrue(helper, state.getHeldSyncSlots() == 0 && state.getHeldGenSlots() == 0,
                     "gated extremes must never hold a slot");
-            helper.assertTrue(service.getDiskReader().getDiag().getSubmittedCount() == 0,
+            Gt.assertTrue(helper, service.getDiskReader().getDiag().getSubmittedCount() == 0,
                     "gated extremes must never reach the disk reader, got "
                             + service.getDiskReader().getDiag().getSubmittedCount() + " submits");
-            helper.assertTrue(service.getGenerationService() != null
+            Gt.assertTrue(helper, service.getGenerationService() != null
                             && service.getGenerationService().getTotalSubmitted() == 0,
                     "gated extremes must never reach the generation service");
         } finally {
@@ -529,12 +529,12 @@ public class ServiceLifecycleGameTests {
     public void startServiceForLanIsIdempotentOnRunningService(GameTestHelper helper) {
         var server = helper.getLevel().getServer();
         var live = LSSServerNetworking.getRequestService();
-        helper.assertTrue(live != null, "premise: the dedicated gametest server runs the live service");
+        Gt.assertTrue(helper, live != null, "premise: the dedicated gametest server runs the live service");
 
         LSSServerNetworking.startServiceForLan(server);
         LSSServerNetworking.startServiceForLan(server);
 
-        helper.assertTrue(LSSServerNetworking.getRequestService() == live,
+        Gt.assertTrue(helper, LSSServerNetworking.getRequestService() == live,
                 "startServiceForLan must keep the already-running service instance — a "
                         + "replacement would orphan the live service's processing thread and "
                         + "disk pool and wipe every registered player");
@@ -558,33 +558,33 @@ public class ServiceLifecycleGameTests {
         // Same-tick (synchronous body, nothing can interleave on the server thread): the
         // ctor must publish the x-ray mask manager BEFORE any serve can run — the one
         // production wiring the masked parity gametest's self-activation does not cover.
-        helper.assertTrue(dev.vox.lss.networking.server.XrayMaskManager.current() != null,
+        Gt.assertTrue(helper, dev.vox.lss.networking.server.XrayMaskManager.current() != null,
                 "service construction must publish the x-ray mask manager");
         try {
             service.registerPlayer(mock, LSSConstants.CAPABILITY_VOXEL_COLUMNS);
             var gen = service.getGenerationService();
-            helper.assertTrue(gen != null, "generation service expected (gametest config)");
+            Gt.assertTrue(helper, gen != null, "generation service expected (gametest config)");
             int pcx = mock.getBlockX() >> 4;
             int pcz = mock.getBlockZ() >> 4;
-            helper.assertTrue(gen.submitGeneration(uuid, level, pcx - 132, pcz + 132, 1L),
+            Gt.assertTrue(helper, gen.submitGeneration(uuid, level, pcx - 132, pcz + 132, 1L),
                     "premise: an in-flight generation entry must exist at shutdown");
-            helper.assertTrue(gen.getActiveCount() == 1, "premise: entry tracked as active");
+            Gt.assertTrue(helper, gen.getActiveCount() == 1, "premise: entry tracked as active");
 
             service.shutdown();
-            helper.assertTrue(dev.vox.lss.networking.server.XrayMaskManager.current() == null,
+            Gt.assertTrue(helper, dev.vox.lss.networking.server.XrayMaskManager.current() == null,
                     "shutdown must retract the x-ray mask manager");
-            helper.assertTrue(service.getPlayers().isEmpty(),
+            Gt.assertTrue(helper, service.getPlayers().isEmpty(),
                     "the first shutdown must clear the players map");
-            helper.assertTrue(gen.getActiveCount() == 0,
+            Gt.assertTrue(helper, gen.getActiveCount() == 0,
                     "the first shutdown must release every in-flight generation entry "
                             + "(a held entry keeps its chunk force-loaded forever)");
-            helper.assertTrue(service.getDiskReader().getPlayerQueue(uuid) == null,
+            Gt.assertTrue(helper, service.getDiskReader().getPlayerQueue(uuid) == null,
                     "the first shutdown must drop the per-player disk-reader result queue");
 
             try {
                 service.shutdown();
             } catch (Throwable t) {
-                helper.fail("a second shutdown must be a quiet no-op, threw: " + t);
+                Gt.fail(helper, "a second shutdown must be a quiet no-op, threw: " + t);
             }
         } finally {
             playerList.remove(mock);
@@ -621,27 +621,27 @@ public class ServiceLifecycleGameTests {
                 new HandshakeC2SPayload(LSSConstants.PROTOCOL_VERSION, LSSConstants.CAPABILITY_VOXEL_COLUMNS),
                 mockA, service, recorder);
         var state = service.getPlayers().get(uuidA);
-        helper.assertTrue(state != null && replies.size() == 1,
+        Gt.assertTrue(helper, state != null && replies.size() == 1,
                 "premise: first handshake must register and reply");
 
         // Seed live work: a held pending slot, a done-bit, and a declared want-set.
-        helper.assertTrue(state.tryAdmit(new PendingRequest(pcx - 148, pcz - 12,
+        Gt.assertTrue(helper, state.tryAdmit(new PendingRequest(pcx - 148, pcz - 12,
                         SlotType.SYNC_ON_LOAD, 0L)),
                 "premise: pending seeded");
         state.markDiskReadDone(pcx - 148, pcz - 13);
         GameTestSeeding.seedRequest(state, PositionUtil.packPosition(pcx - 149, pcz - 12), -1L);
-        helper.assertTrue(state.getTotalRequestsReceived() == 1 && state.peekIncomingBatch() != null,
+        Gt.assertTrue(helper, state.getTotalRequestsReceived() == 1 && state.peekIncomingBatch() != null,
                 "premise: want-set declared");
 
         // Duplicate handshake: same instance, work survives, config re-sent.
         LSSServerNetworking.handleHandshake(
                 new HandshakeC2SPayload(LSSConstants.PROTOCOL_VERSION, LSSConstants.CAPABILITY_VOXEL_COLUMNS),
                 mockA, service, recorder);
-        helper.assertTrue(service.getPlayers().get(uuidA) == state,
+        Gt.assertTrue(helper, service.getPlayers().get(uuidA) == state,
                 "a duplicate handshake must reuse the SAME state (a replacement wipes pendings)");
-        helper.assertTrue(replies.size() == 2,
+        Gt.assertTrue(helper, replies.size() == 2,
                 "a duplicate handshake must re-send the session config, got " + replies.size());
-        helper.assertTrue(state.getHeldSyncSlots() == 1
+        Gt.assertTrue(helper, state.getHeldSyncSlots() == 1
                         && state.hasPendingRequest(pcx - 148, pcz - 12)
                         && state.hasDiskReadDone(pcx - 148, pcz - 13)
                         && state.peekIncomingBatch() != null
@@ -653,16 +653,16 @@ public class ServiceLifecycleGameTests {
         // caps=0 through the receiver: reply-no-register leaves the registration untouched.
         LSSServerNetworking.handleHandshake(
                 new HandshakeC2SPayload(LSSConstants.PROTOCOL_VERSION, 0), mockA, service, recorder);
-        helper.assertTrue(replies.size() == 3,
+        Gt.assertTrue(helper, replies.size() == 3,
                 "a caps=0 re-handshake must still be answered with the session config");
-        helper.assertTrue(service.getPlayers().get(uuidA) == state
+        Gt.assertTrue(helper, service.getPlayers().get(uuidA) == state
                         && state.getCapabilities() == LSSConstants.CAPABILITY_VOXEL_COLUMNS,
                 "the NO_CONSUMER arm must return before registerPlayer: the existing "
                         + "registration (and its capabilities) stays untouched");
 
         // Service-level capability update (re-register path): now the router must skip A.
         service.registerPlayer(mockA, 0);
-        helper.assertTrue(state.getCapabilities() == 0, "premise: capabilities updated in place");
+        Gt.assertTrue(helper, state.getCapabilities() == 0, "premise: capabilities updated in place");
 
         // Control player proves a routing cycle ran end-to-end while A was skipped.
         var chunkPos = new ChunkPos(pcx - 152, pcz - 16);
@@ -673,14 +673,14 @@ public class ServiceLifecycleGameTests {
 
         helper.succeedWhen(() -> {
             service.tick();
-            helper.assertTrue(
+            Gt.assertTrue(helper, 
                     service.getOffThreadProcessor().getDiagnostics().getTotalInMemory() >= 1,
                     "waiting for the control player's probe serve (proves routing cycles ran)");
-            helper.assertTrue(state.peekIncomingBatch() != null && state.getBacklogSize() == 0,
+            Gt.assertTrue(helper, state.peekIncomingBatch() != null && state.getBacklogSize() == 0,
                     "a caps=0 player's declared want-set must stay unconsumed — the router "
                             + "skips the player wholesale, so the batch is never even taken "
                             + "from the mailbox into the backlog");
-            helper.assertTrue(state.getHeldSyncSlots() == 1
+            Gt.assertTrue(helper, state.getHeldSyncSlots() == 1
                             && state.hasPendingRequest(pcx - 148, pcz - 12),
                     "a caps=0 player's pending slot must be neither leaked nor torn down "
                             + "until disconnect");
@@ -688,7 +688,7 @@ public class ServiceLifecycleGameTests {
             // Disconnect is the cleanup boundary: a fresh registration starts clean.
             service.removePlayer(uuidA);
             var fresh = service.registerPlayer(mockA, LSSConstants.CAPABILITY_VOXEL_COLUMNS);
-            helper.assertTrue(fresh != state && fresh.getHeldSyncSlots() == 0
+            Gt.assertTrue(helper, fresh != state && fresh.getHeldSyncSlots() == 0
                             && !fresh.hasPendingRequest(pcx - 148, pcz - 12),
                     "disconnect must be the boundary that releases the skipped player's pendings");
 
@@ -717,13 +717,13 @@ public class ServiceLifecycleGameTests {
             LSSServerNetworking.handleHandshake(
                     new HandshakeC2SPayload(LSSConstants.PROTOCOL_VERSION, 0),
                     mock, service, replies::add);
-            helper.assertTrue(replies.size() == 1,
+            Gt.assertTrue(helper, replies.size() == 1,
                     "a caps=0 handshake must be answered with exactly one session config, got "
                             + replies.size());
-            helper.assertTrue(replies.get(0).protocolVersion() == LSSConstants.PROTOCOL_VERSION
+            Gt.assertTrue(helper, replies.get(0).protocolVersion() == LSSConstants.PROTOCOL_VERSION
                             && replies.get(0).enabled(),
                     "the reply must advertise the server's protocol version and effective enabled");
-            helper.assertTrue(!service.getPlayers().containsKey(mock.getUUID()),
+            Gt.assertTrue(helper, !service.getPlayers().containsKey(mock.getUUID()),
                     "a caps=0 client must NOT be registered (zombie state the router skips forever)");
         } finally {
             service.shutdown();
@@ -754,13 +754,13 @@ public class ServiceLifecycleGameTests {
             LSSServerNetworking.handleHandshake(
                     new HandshakeC2SPayload(17, LSSConstants.CAPABILITY_VOXEL_COLUMNS),
                     mock, service, replies::add);
-            helper.assertTrue(replies.isEmpty(),
+            Gt.assertTrue(helper, replies.isEmpty(),
                     "a version-mismatched handshake must produce zero reply frames (any reply "
                             + "decodes as a DecoderException on the old client and kicks it), got "
                             + replies.size());
-            helper.assertTrue(!service.getPlayers().containsKey(uuid),
+            Gt.assertTrue(helper, !service.getPlayers().containsKey(uuid),
                     "a version-mismatched client must not be registered");
-            helper.assertTrue(playerList.getPlayer(uuid) == mock && !mock.isRemoved()
+            Gt.assertTrue(helper, playerList.getPlayer(uuid) == mock && !mock.isRemoved()
                             && mock.connection != null,
                     "the mismatch path must leave the player connected and its connection untouched");
         } finally {
@@ -818,32 +818,32 @@ public class ServiceLifecycleGameTests {
                         LSSConstants.CAPABILITY_VOXEL_COLUMNS
                                 | LSSConstants.CAPABILITY_ZSTD_COLUMNS),
                 mock, service, replies::add);
-        helper.assertTrue(replies.size() == 1,
+        Gt.assertTrue(helper, replies.size() == 1,
                 "a v" + announcedVersion + " handshake on default config must be answered, got "
                         + replies.size());
-        helper.assertTrue(replies.get(0).protocolVersion() == announcedVersion,
+        Gt.assertTrue(helper, replies.get(0).protocolVersion() == announcedVersion,
                 "the reply must echo protocol " + announcedVersion + " — the legacy client "
                         + "disables itself on any other version, got "
                         + replies.get(0).protocolVersion());
         // The echo must carry the REAL config, not zeroes (the dialect-19 soak lever
         // caught a decode-side flavor of this — pin the encode side too).
-        helper.assertTrue(replies.get(0).enabled(),
+        Gt.assertTrue(helper, replies.get(0).enabled(),
                 "the legacy echo must carry the real enabled flag");
-        helper.assertTrue(replies.get(0).lodDistanceChunks() == LSSServerConfig.CONFIG.lodDistanceChunks,
+        Gt.assertTrue(helper, replies.get(0).lodDistanceChunks() == LSSServerConfig.CONFIG.lodDistanceChunks,
                 "the legacy echo must carry the real LOD distance, got "
                         + replies.get(0).lodDistanceChunks());
         var state = service.getPlayers().get(uuid);
-        helper.assertTrue(state != null,
+        Gt.assertTrue(helper, state != null,
                 "a v" + announcedVersion + " handshake must register natively (not fall to "
                         + "the v16 shim)");
         boolean v18 = announcedVersion == LSSConstants.V18_COMPAT_PROTOCOL_VERSION;
-        helper.assertTrue(v18 ? service.getDialectTracker().isV18(uuid)
+        Gt.assertTrue(helper, v18 ? service.getDialectTracker().isV18(uuid)
                         : service.getDialectTracker().isV19(uuid),
                 "the session must carry its dialect membership (the egress gates on it)");
-        helper.assertTrue(!service.getV16CompatManager().isV16(uuid),
+        Gt.assertTrue(helper, !service.getV16CompatManager().isV16(uuid),
                 "a v" + announcedVersion + " session is NOT a v16 compat session");
         if (v18) {
-            helper.assertTrue(!state.wantsCompressedColumns(),
+            Gt.assertTrue(helper, !state.wantsCompressedColumns(),
                     "a v18 session must be forced codec-RAW even when the handshake "
                             + "(hostilely) declares the zstd capability bit");
         }
@@ -860,16 +860,16 @@ public class ServiceLifecycleGameTests {
         level.getChunk(cx, cz);
         service.handleBatchRequest(mock, new BatchChunkRequestC2SPayload(
                 new long[]{PositionUtil.packPosition(cx, cz)}, new long[]{-1L}, 1));
-        helper.assertTrue(state.getTotalRequestsReceived() == 1,
+        Gt.assertTrue(helper, state.getTotalRequestsReceived() == 1,
                 "premise: the delivery-leg request must pass the distance guard");
 
         helper.succeedWhen(() -> {
             service.tick();
-            helper.assertTrue(state.getTotalSectionsSent() >= 1,
+            Gt.assertTrue(helper, state.getTotalSectionsSent() >= 1,
                     "waiting for the probe serve to flush through the legacy egress — a "
                             + "translation failure at enqueue answers up_to_date and never "
                             + "sends a section, so this wait times out on one");
-            helper.assertTrue(state.hasDiskReadDone(cx, cz),
+            Gt.assertTrue(helper, state.hasDiskReadDone(cx, cz),
                     "the done-bit must SURVIVE the flush (no drop path fired)");
             chunkSource.removeTicketWithRadius(TicketType.PLAYER_LOADING, chunkPos, 0);
             service.shutdown();
@@ -891,7 +891,7 @@ public class ServiceLifecycleGameTests {
         var mock = placeMockServerPlayer(helper);
         var service = new RequestProcessingService(server);
         var config = LSSServerConfig.CONFIG;
-        helper.assertTrue(config.enabled, "premise: gametest config runs enabled");
+        Gt.assertTrue(helper, config.enabled, "premise: gametest config runs enabled");
 
         int prevLod = config.lodDistanceChunks;
         boolean prevGenEnabled = config.enableChunkGeneration;
@@ -909,14 +909,14 @@ public class ServiceLifecycleGameTests {
             config.enableChunkGeneration = prevGenEnabled;
         }
         try {
-            helper.assertTrue(replies.size() == 1, "premise: REGISTER handshake must reply once");
+            Gt.assertTrue(helper, replies.size() == 1, "premise: REGISTER handshake must reply once");
             var reply = replies.get(0);
-            helper.assertTrue(reply.enabled(),
+            Gt.assertTrue(helper, reply.enabled(),
                     "effectiveEnabled must be true (config enabled + service present)");
-            helper.assertTrue(reply.lodDistanceChunks() == 251,
+            Gt.assertTrue(helper, reply.lodDistanceChunks() == 251,
                     "lodDistanceChunks must wire from CONFIG.lodDistanceChunks, got "
                             + reply.lodDistanceChunks());
-            helper.assertTrue(!reply.generationEnabled(),
+            Gt.assertTrue(helper, !reply.generationEnabled(),
                     "generationEnabled must wire from CONFIG.enableChunkGeneration"
                             + " (the concurrency caps left the 4-field wire payload)");
         } finally {
@@ -947,10 +947,10 @@ public class ServiceLifecycleGameTests {
             LSSServerNetworking.handleHandshake(
                     new HandshakeC2SPayload(19, LSSConstants.CAPABILITY_VOXEL_COLUMNS),
                     mock, service, replies::add, 763, 774);
-            helper.assertTrue(replies.isEmpty(),
+            Gt.assertTrue(helper, replies.isEmpty(),
                     "a Via-mismatched v19 handshake must stay SILENT, got "
                             + replies.size() + " reply frame(s)");
-            helper.assertTrue(!service.getPlayers().containsKey(mock.getUUID()),
+            Gt.assertTrue(helper, !service.getPlayers().containsKey(mock.getUUID()),
                     "a Via-mismatched legacy client must never register");
 
             // Fail-open twin: the same frame with no Via signal registers normally.
@@ -958,9 +958,9 @@ public class ServiceLifecycleGameTests {
                     new HandshakeC2SPayload(19, LSSConstants.CAPABILITY_VOXEL_COLUMNS),
                     mock, service, replies::add,
                     dev.vox.lss.common.compat.ViaProbe.NO_SIGNAL, 774);
-            helper.assertTrue(!replies.isEmpty(),
+            Gt.assertTrue(helper, !replies.isEmpty(),
                     "no Via signal must leave the v19 rung untouched (fail-open)");
-            helper.assertTrue(service.getPlayers().containsKey(mock.getUUID()),
+            Gt.assertTrue(helper, service.getPlayers().containsKey(mock.getUUID()),
                     "the no-signal handshake must register");
         } finally {
             service.shutdown();
@@ -1007,9 +1007,9 @@ public class ServiceLifecycleGameTests {
             for (int i = 0; i < 3; i++) {
                 service.tick();
             }
-            helper.assertTrue(diag.getTotalRequestsRouted() == 0,
+            Gt.assertTrue(helper, diag.getTotalRequestsRouted() == 0,
                     "a disabled tick must post no snapshot — nothing can route while frozen");
-            helper.assertTrue(state.peekIncomingBatch() != null && state.getBacklogSize() == 0,
+            Gt.assertTrue(helper, state.peekIncomingBatch() != null && state.getBacklogSize() == 0,
                     "the declared want-set must sit un-taken in the mailbox while frozen — a "
                             + "frozen tick posts no snapshot, so the processing thread never "
                             + "reaches takeIncomingBatch()");
@@ -1021,9 +1021,9 @@ public class ServiceLifecycleGameTests {
         service.tick(); // exactly one resumed tick — the wait below never ticks again
 
         helper.succeedWhen(() -> {
-            helper.assertTrue(diag.getTotalRequestsRouted() == 1,
+            Gt.assertTrue(helper, diag.getTotalRequestsRouted() == 1,
                     "the first resumed tick must post the snapshot that routes the frozen request");
-            helper.assertTrue(diag.getTotalInMemory() == 1,
+            Gt.assertTrue(helper, diag.getTotalInMemory() == 1,
                     "the frozen done-bit clear must apply BEFORE routing: the ts>0 re-request "
                             + "must probe-serve (a stale done-bit answers it up-to-date instead)");
             chunkSource.removeTicketWithRadius(TicketType.PLAYER_LOADING, chunkPos, 0);
@@ -1051,25 +1051,25 @@ public class ServiceLifecycleGameTests {
         var service = new RequestProcessingService(server);
 
         var state = service.registerPlayer(mock, LSSConstants.CAPABILITY_VOXEL_COLUMNS);
-        helper.assertTrue(state.tryAdmit(new PendingRequest(pcx - 144, pcz - 8,
+        Gt.assertTrue(helper, state.tryAdmit(new PendingRequest(pcx - 144, pcz - 8,
                         SlotType.SYNC_ON_LOAD, 0L)),
                 "premise: pending seeded before the respawn");
         state.markDiskReadDone(pcx - 144, pcz - 9);
 
         var fresh = playerList.respawn(mock, true, Entity.RemovalReason.DISCARDED);
-        helper.assertTrue(fresh != mock, "premise: respawn must produce a NEW ServerPlayer instance");
-        helper.assertTrue(playerList.getPlayer(uuid) == fresh,
+        Gt.assertTrue(helper, fresh != mock, "premise: respawn must produce a NEW ServerPlayer instance");
+        Gt.assertTrue(helper, playerList.getPlayer(uuid) == fresh,
                 "premise: the player list must hold the respawned instance");
-        helper.assertTrue(mock.isRemoved(), "premise: the old instance is removed");
+        Gt.assertTrue(helper, mock.isRemoved(), "premise: the old instance is removed");
 
         service.tick();
-        helper.assertTrue(service.getPlayers().get(uuid) == state,
+        Gt.assertTrue(helper, service.getPlayers().get(uuid) == state,
                 "the respawn swap must keep the SAME state object (a teardown would wipe the "
                         + "session on every death)");
-        helper.assertTrue(state.getPlayer() == fresh,
+        Gt.assertTrue(helper, state.getPlayer() == fresh,
                 "the lifecycle pass must swap the state's player reference to the respawned "
                         + "instance");
-        helper.assertTrue(state.getHeldSyncSlots() == 1
+        Gt.assertTrue(helper, state.getHeldSyncSlots() == 1
                         && state.hasPendingRequest(pcx - 144, pcz - 8)
                         && state.hasDiskReadDone(pcx - 144, pcz - 9),
                 "pendings and done-bits must survive the reference swap");
@@ -1083,7 +1083,7 @@ public class ServiceLifecycleGameTests {
 
         helper.succeedWhen(() -> {
             service.tick();
-            helper.assertTrue(state.getTotalSectionsSent() >= 1,
+            Gt.assertTrue(helper, state.getTotalSectionsSent() >= 1,
                     "waiting for the post-respawn request to serve through the new player "
                             + "reference (probe + flush both read state.getPlayer())");
             chunkSource.removeTicketWithRadius(TicketType.PLAYER_LOADING, chunkPos, 0);
@@ -1146,17 +1146,17 @@ public class ServiceLifecycleGameTests {
         var diskDiag = service.getDiskReader().getDiag();
         helper.succeedWhen(() -> {
             service.tick();
-            helper.assertTrue(diskDiag.getSuccessfulReadCount() >= 2 && state.getTotalSectionsSent() >= 2,
+            Gt.assertTrue(helper, diskDiag.getSuccessfulReadCount() >= 2 && state.getTotalSectionsSent() >= 2,
                     "waiting for the disk-served pair to flush (budget remainder must still serve)");
-            helper.assertTrue(diag.getTotalInMemory() == 0,
+            Gt.assertTrue(helper, diag.getTotalInMemory() == 0,
                     "the trailing loaded pair must NOT be probe-served: 512 queue entries ahead "
                             + "of it must exhaust the per-tick probe budget (misses count too)");
-            helper.assertTrue(diskDiag.getSubmittedCount() == 2,
+            Gt.assertTrue(helper, diskDiag.getSubmittedCount() == 2,
                     "exactly the budget-excluded pair must reach the disk reader, got "
                             + diskDiag.getSubmittedCount());
-            helper.assertTrue(diag.getTotalRequestsRouted() == 514,
+            Gt.assertTrue(helper, diag.getTotalRequestsRouted() == 514,
                     "every request must be routed exactly once, got " + diag.getTotalRequestsRouted());
-            helper.assertTrue(state.getHeldSyncSlots() == 0 && state.getHeldGenSlots() == 0,
+            Gt.assertTrue(helper, state.getHeldSyncSlots() == 0 && state.getHeldGenSlots() == 0,
                     "all slots must be free at rest");
             chunkSource.removeTicketWithRadius(TicketType.PLAYER_LOADING, posK1, 0);
             chunkSource.removeTicketWithRadius(TicketType.PLAYER_LOADING, posK2, 0);
@@ -1218,12 +1218,12 @@ public class ServiceLifecycleGameTests {
         var diskDiag = service.getDiskReader().getDiag();
         helper.succeedWhen(() -> {
             service.tick();
-            helper.assertTrue(diag.getTotalRequestsRouted() == 516 && state.getTotalSectionsSent() >= 2,
+            Gt.assertTrue(helper, diag.getTotalRequestsRouted() == 516 && state.getTotalSectionsSent() >= 2,
                     "waiting for all 516 requests to route and both columns to flush");
-            helper.assertTrue(diag.getTotalInMemory() == 2,
+            Gt.assertTrue(helper, diag.getTotalInMemory() == 2,
                     "C and D must BOTH probe-serve: duplicate positions must not consume probe "
                             + "budget (a guard regression pushes D past the 512 cap to disk)");
-            helper.assertTrue(diskDiag.getSubmittedCount() == 0,
+            Gt.assertTrue(helper, diskDiag.getSubmittedCount() == 0,
                     "nothing may reach the disk reader when the dedup guard holds, got "
                             + diskDiag.getSubmittedCount());
             chunkSource.removeTicketWithRadius(TicketType.PLAYER_LOADING, posC, 0);
@@ -1245,7 +1245,7 @@ public class ServiceLifecycleGameTests {
     public void protoChunkSavesAreExcludedFromDirtyMarking(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         var liveService = LSSServerNetworking.getRequestService();
-        helper.assertTrue(liveService != null, "live service required (the save hook feeds it)");
+        Gt.assertTrue(helper, liveService != null, "live service required (the save hook feeds it)");
         // Arm the P3 never-registered skip gate — the control assertion below needs the
         // live hook to hash (one-way latch; no Tier 2 test pins the skip).
         liveService.armSaveHookForTest();
@@ -1267,7 +1267,7 @@ public class ServiceLifecycleGameTests {
         int protoCx = origin.x - 168;
         int protoCz = origin.z + (int) Math.floorMod(System.nanoTime(), 64L);
         var proto = chunkSource.getChunk(protoCx, protoCz, ChunkStatus.STRUCTURE_STARTS, true);
-        helper.assertTrue(proto != null && !(proto instanceof LevelChunk),
+        Gt.assertTrue(helper, proto != null && !(proto instanceof LevelChunk),
                 "premise: a STRUCTURE_STARTS chunk must still be a ProtoChunk");
         proto.markUnsaved();
         long protoPacked = PositionUtil.packPosition(protoCx, protoCz);
@@ -1276,10 +1276,10 @@ public class ServiceLifecycleGameTests {
         tracker.drainDirty(dim);
         level.save(null, true, false);
         long[] dirty = tracker.drainDirty(dim);
-        helper.assertTrue(containsPosition(dirty, controlPacked),
+        Gt.assertTrue(helper, containsPosition(dirty, controlPacked),
                 "premise/control: the edited LevelChunk must mark dirty in this save pass "
                         + "(proves the save ran and the hook is live)");
-        helper.assertTrue(!containsPosition(dirty, protoPacked),
+        Gt.assertTrue(helper, !containsPosition(dirty, protoPacked),
                 "a ProtoChunk save must NOT mark dirty (ChunkSaveDataHook must exclude "
                         + "generation-stage saves — they have no LOD-servable content)");
         chunkSource.removeTicketWithRadius(TicketType.PLAYER_LOADING, controlPos, 0);
@@ -1317,7 +1317,7 @@ public class ServiceLifecycleGameTests {
         try {
             VoxelColumnS2CPayload.CODEC.encode(buf, payload);
             int encoded = buf.readableBytes();
-            helper.assertTrue(encoded > LSSConstants.MAX_SECTIONS_SIZE
+            Gt.assertTrue(helper, encoded > LSSConstants.MAX_SECTIONS_SIZE
                             && encoded - LSSConstants.MAX_SECTIONS_SIZE
                                     <= LSSConstants.ESTIMATED_COLUMN_OVERHEAD_BYTES,
                     "the largest admissible column must encode to MAX_SECTIONS_SIZE plus at most "
@@ -1341,12 +1341,12 @@ public class ServiceLifecycleGameTests {
                     p -> ServerPlayNetworking.send(mock, p));
             if (dropped.length > 0) {
                 // Terminal: retrying would wait on an emptied queue with a misleading message.
-                helper.fail("the largest admissible column was exception-dropped by the real "
+                Gt.fail(helper, "the largest admissible column was exception-dropped by the real "
                         + "send path — the wire envelope rejects what the size guard admits");
             }
-            helper.assertTrue(state.getTotalSectionsSent() == 1,
+            Gt.assertTrue(helper, state.getTotalSectionsSent() == 1,
                     "waiting for the bandwidth window to admit the 2 MiB payload");
-            helper.assertTrue(state.getSendQueueSize() == 0 && !state.hasEnqueuedColumn(packed),
+            Gt.assertTrue(helper, state.getSendQueueSize() == 0 && !state.hasEnqueuedColumn(packed),
                     "the flushed column must fully leave the send pipeline");
             playerList.remove(mock);
         });
@@ -1390,14 +1390,14 @@ public class ServiceLifecycleGameTests {
                             LSSConstants.CAPABILITY_VOXEL_COLUMNS
                                     | LSSConstants.CAPABILITY_FAR_PLAYERS),
                     viewer, service, reply -> { });
-            helper.assertTrue(service.getFarPlayerService().isSubscribed(viewer.getUUID()),
+            Gt.assertTrue(helper, service.getFarPlayerService().isSubscribed(viewer.getUUID()),
                     "the capability bit on a CURRENT-dialect handshake subscribes");
 
             LSSServerNetworking.handleHandshake(
                     new HandshakeC2SPayload(LSSConstants.PROTOCOL_VERSION,
                             LSSConstants.CAPABILITY_VOXEL_COLUMNS),
                     farTarget, service, reply -> { });
-            helper.assertTrue(!service.getFarPlayerService().isSubscribed(farTarget.getUUID()),
+            Gt.assertTrue(helper, !service.getFarPlayerService().isSubscribed(farTarget.getUUID()),
                     "no bit -> no subscription");
 
             service.getFarPlayerService().onPrefs(viewer.getUUID(),
@@ -1408,17 +1408,17 @@ public class ServiceLifecycleGameTests {
             service.tick();
 
             var fp = service.getFarPlayerService();
-            helper.assertTrue(fp.rosterFramesSent() >= 1,
+            Gt.assertTrue(helper, fp.rosterFramesSent() >= 1,
                     "a full roster must have gone out, sent=" + fp.rosterFramesSent());
-            helper.assertTrue(fp.updateFramesSent() >= 1,
+            Gt.assertTrue(helper, fp.updateFramesSent() >= 1,
                     "an updates frame must have gone out, sent=" + fp.updateFramesSent());
             // Entry-count isolation is impossible on the shared gametest server (other
             // tests' mock players are online concurrently and may fall in range) — the
             // exact ring/filter arithmetic is Tier 1's job
             // (FarPlayerBroadcastServiceTest); this tier pins the real egress.
-            helper.assertTrue(fp.entriesSent() >= 1,
+            Gt.assertTrue(helper, fp.entriesSent() >= 1,
                     "at least the in-range target is served, entries=" + fp.entriesSent());
-            helper.assertTrue(fp.bytesSent() > 0, "the dedicated lane counted its bytes");
+            Gt.assertTrue(helper, fp.bytesSent() > 0, "the dedicated lane counted its bytes");
         } finally {
             config.farPlayers = savedMode;
             config.farPlayersUpdateIntervalTicks = savedInterval;
@@ -1443,7 +1443,7 @@ public class ServiceLifecycleGameTests {
         var server = level.getServer();
         var mock = placeMockServerPlayer(helper);
         var service = new RequestProcessingService(server);
-        String dim = level.dimension().identifier().toString();
+        String dim = level.dimension().location().toString();
         int pcx = mock.getBlockX() >> 4;
         int pcz = mock.getBlockZ() >> 4;
         int cx = pcx - 250;
@@ -1453,20 +1453,20 @@ public class ServiceLifecycleGameTests {
 
         long stamp = service.getRegionStamps().chunkStampSecondsOrUnknown(dim, cx, cz);
         long nowSec = System.currentTimeMillis() / 1000L;
-        helper.assertTrue(stamp > 0
+        Gt.assertTrue(helper, stamp > 0
                         && stamp != dev.vox.lss.common.region.RegionStampTable.NEVER_CLEAN
                         && stamp <= nowSec + 3600,
                 "a REAL region header must yield a plausible save second (the z-major"
                         + " layout against the game's own writer), got " + stamp);
         long tile = service.getRegionStamps().tileStampSeconds(dim, cx >> 5, cz >> 5);
-        helper.assertTrue(tile >= stamp
+        Gt.assertTrue(helper, tile >= stamp
                         && tile != dev.vox.lss.common.region.RegionStampTable.NEVER_CLEAN,
                 "the tile stamp must cover the chunk's save second, got " + tile);
 
         var state = service.registerPlayer(mock, LSSConstants.CAPABILITY_VOXEL_COLUMNS);
         long clientTs = stamp
                 + dev.vox.lss.common.region.RegionStampTable.FRESH_CLAIM_MARGIN_SECONDS + 10;
-        helper.assertTrue(state.tryAdmit(new PendingRequest(cx, cz,
+        Gt.assertTrue(helper, state.tryAdmit(new PendingRequest(cx, cz,
                         SlotType.SYNC_ON_LOAD, clientTs)),
                 "premise: pending admitted (the router's admission shape)");
         service.getDiskReader().submitReadDirect(mock.getUUID(), dim, level, cx, cz,
@@ -1496,29 +1496,29 @@ public class ServiceLifecycleGameTests {
                     Thread.currentThread().interrupt();
                 }
             }
-            helper.assertTrue(service.getDiskReader().getDiag().getHeaderHitsCount() >= 1,
+            Gt.assertTrue(helper, service.getDiskReader().getDiag().getHeaderHitsCount() >= 1,
                     "the header rung must intercept the margined-fresh read against the"
                             + " real region file");
-            helper.assertTrue(state.hasDiskReadDone(cx, cz),
+            Gt.assertTrue(helper, state.hasDiskReadDone(cx, cz),
                     "the intercepted ask resolves up_to_date (done-bit)");
             var summary = service.getRegionSummaries().diagnostics();
-            helper.assertTrue(summary.getFrames() >= 1,
+            Gt.assertTrue(helper, summary.getFrames() >= 1,
                     "one summary frame must assemble and send, reqs=" + summary.getRequests()
                             + " frames=" + summary.getFrames());
-            helper.assertTrue(summary.getBytes() > 0,
+            Gt.assertTrue(helper, summary.getBytes() > 0,
                     "the frame's bytes count on the dedicated lane");
-            helper.assertTrue(summary.getTilesKnown() + summary.getTilesNeverClean()
+            Gt.assertTrue(helper, summary.getTilesKnown() + summary.getTilesNeverClean()
                             + summary.getTilesNoRegion() == 9,
                     "a radius-1 window reports exactly 9 tiles, known="
                             + summary.getTilesKnown() + " never=" + summary.getTilesNeverClean()
                             + " no_region=" + summary.getTilesNoRegion());
-            helper.assertTrue(summary.getTilesKnown() >= 1,
+            Gt.assertTrue(helper, summary.getTilesKnown() >= 1,
                     "the saved chunk's own tile must report a real stamp");
             // Stamped up_to_date (the whole server lane's ONE real-server pin, per the
             // 3-Opus fold): the summary request armed eligibility, the header rung's
             // margined-fresh interception is a compare-backed disposition, so its
             // up_to_date must ship a verification-stamp frame on lss:col_stamps.
-            helper.assertTrue(summary.getStampsFrames() >= 1
+            Gt.assertTrue(helper, summary.getStampsFrames() >= 1
                             && summary.getStampsEntries() >= 1,
                     "the compare-backed up_to_date must stamp (frames="
                             + summary.getStampsFrames() + " entries="

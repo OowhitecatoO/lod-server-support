@@ -3,7 +3,7 @@ package dev.vox.lss.networking.client;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EntityType;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -31,7 +31,7 @@ class FarPlayerMountLadderTest {
 
     @Test
     void rung1RealRegistryPinGetOptionalNotTheDefaultedGetValue() {
-        var unknown = Identifier.parse("modx:definitely_not_an_entity");
+        var unknown = ResourceLocation.parse("modx:definitely_not_an_entity");
         assertEquals(EntityType.PIG, BuiltInRegistries.ENTITY_TYPE.getValue(unknown),
                 "the trap this pin exists for: the DefaultedRegistry's plain lookup"
                         + " returns PIG for unknown ids — if this ever fails, MC"

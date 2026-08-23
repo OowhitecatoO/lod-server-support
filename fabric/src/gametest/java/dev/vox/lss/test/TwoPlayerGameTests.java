@@ -87,10 +87,10 @@ public class TwoPlayerGameTests {
         var step = new AtomicInteger();
 
         helper.succeedWhen(() -> {
-            helper.assertTrue(helper.getTick() >= 6, "waiting for the ticket release");
+            Gt.assertTrue(helper, helper.getTick() >= 6, "waiting for the ticket release");
             if (step.get() == 0) {
                 for (var pos : chunkPositions) {
-                    helper.assertTrue(chunkSource.getChunkNow(pos.x, pos.z) == null,
+                    Gt.assertTrue(helper, chunkSource.getChunkNow(pos.x, pos.z) == null,
                             "waiting for the dedup chunks to unload");
                 }
                 level.save(null, true, false);
@@ -99,11 +99,11 @@ public class TwoPlayerGameTests {
                         positions, new long[]{-1L, -1L, -1L}, 3));
                 service.handleBatchRequest(mockB, new BatchChunkRequestC2SPayload(
                         positions, new long[]{-1L, -1L, -1L}, 3));
-                helper.assertTrue(stateA.getTotalRequestsReceived() == 3
+                Gt.assertTrue(helper, stateA.getTotalRequestsReceived() == 3
                                 && stateB.getTotalRequestsReceived() == 3,
                         "premise: all six requests must pass the distance guard");
                 step.set(1);
-                helper.assertTrue(false, "requests queued, awaiting dedup convergence");
+                Gt.assertTrue(helper, false, "requests queued, awaiting dedup convergence");
             }
             service.tick();
             var diskDiag = service.getDiskReader().getDiag();
@@ -121,16 +121,16 @@ public class TwoPlayerGameTests {
                     Thread.currentThread().interrupt();
                 }
             }
-            helper.assertTrue(stateA.getTotalSectionsSent() == 3 && stateB.getTotalSectionsSent() == 3,
+            Gt.assertTrue(helper, stateA.getTotalSectionsSent() == 3 && stateB.getTotalSectionsSent() == 3,
                     "waiting for BOTH players to receive all three columns (fan-out delivery), A="
                             + stateA.getTotalSectionsSent() + " B=" + stateB.getTotalSectionsSent());
-            helper.assertTrue(diskDiag.getSubmittedCount() == 3,
+            Gt.assertTrue(helper, diskDiag.getSubmittedCount() == 3,
                     "six overlapping requests must submit exactly THREE disk reads (the second "
                             + "player attaches to the in-flight dedup groups), got "
                             + diskDiag.getSubmittedCount());
-            helper.assertTrue(diskDiag.getSuccessfulReadCount() == 3,
+            Gt.assertTrue(helper, diskDiag.getSuccessfulReadCount() == 3,
                     "all three deduped reads must resolve with content");
-            helper.assertTrue(stateA.getHeldSyncSlots() == 0 && stateA.getHeldGenSlots() == 0
+            Gt.assertTrue(helper, stateA.getHeldSyncSlots() == 0 && stateA.getHeldGenSlots() == 0
                             && stateB.getHeldSyncSlots() == 0 && stateB.getHeldGenSlots() == 0,
                     "every slot must be free once both players converged");
             service.shutdown();
@@ -190,7 +190,7 @@ public class TwoPlayerGameTests {
         var debtInjected = new AtomicLong();
         helper.succeedWhen(() -> {
             clock[0] += 50_000_000L; // one nominal tick of fake time per pass
-            helper.assertTrue(helper.getTick() >= 2,
+            Gt.assertTrue(helper, helper.getTick() >= 2,
                     "waiting one tick so token buckets have elapsed time to refill from");
             if (step.get() == 0) {
                 windowStartNanos.compareAndSet(-1, clock[0]);
@@ -200,14 +200,14 @@ public class TwoPlayerGameTests {
                 busy.flushSendQueue(alloc, limiter, diag, p -> {});
                 idle.flushSendQueue(alloc, limiter, diag, p -> {});
                 long busyDelta = busy.getTotalBytesSent() - busyBefore;
-                helper.assertTrue(idle.getTotalBytesSent() == idleBefore,
+                Gt.assertTrue(helper, idle.getTotalBytesSent() == idleBefore,
                         "an idle player must never spend tokens");
-                helper.assertTrue(busyDelta <= alloc / 4 + payloadBytes,
+                Gt.assertTrue(helper, busyDelta <= alloc / 4 + payloadBytes,
                         "per-round busy spend must stay within the burst window of its fair "
                                 + "share (alloc/4 + one payload overshoot): alloc=" + alloc
                                 + " spent=" + busyDelta);
                 if (rounds.incrementAndGet() < fairnessRounds) {
-                    helper.assertTrue(false, "round " + rounds.get() + " running");
+                    Gt.assertTrue(helper, false, "round " + rounds.get() + " running");
                 }
                 // The enforcement pin (R2-2): cumulative busy spend over the sampled window
                 // stays within the GLOBAL cap (x1.3 wall-time slack + one payload). The old
@@ -216,7 +216,7 @@ public class TwoPlayerGameTests {
                 // bound reds.
                 long elapsedNanos = Math.max(1, clock[0] - windowStartNanos.get());
                 long capBudget = globalCap * elapsedNanos / 1_000_000_000L;
-                helper.assertTrue(busy.getTotalBytesSent() <= capBudget * 13 / 10 + payloadBytes,
+                Gt.assertTrue(helper, busy.getTotalBytesSent() <= capBudget * 13 / 10 + payloadBytes,
                         "cumulative busy spend must respect the global cap: spent="
                                 + busy.getTotalBytesSent() + " capBudget=" + capBudget);
                 // Debt-driven zero-allocation state (the unit-pinned shared-bucket fairness
@@ -235,13 +235,13 @@ public class TwoPlayerGameTests {
                 // identity must include every one, or the original failure gets masked by
                 // a permanently-unsatisfiable identity.
                 debtInjected.addAndGet(inject);
-                helper.assertTrue(limiter.getPerPlayerAllocation(2) == 0,
+                Gt.assertTrue(helper, limiter.getPerPlayerAllocation(2) == 0,
                         "shared-bucket debt must zero every player's allocation");
                 long beforeZeroRound = busy.getTotalBytesSent();
                 busy.flushSendQueue(0, limiter, diag, p -> {});
-                helper.assertTrue(busy.getTotalBytesSent() == beforeZeroRound,
+                Gt.assertTrue(helper, busy.getTotalBytesSent() == beforeZeroRound,
                         "a zero-token round must flush nothing");
-                helper.assertTrue(busy.getSendQueueSize() > 0,
+                Gt.assertTrue(helper, busy.getSendQueueSize() > 0,
                         "premise: payloads must remain queued for the recovery phase");
                 busyAtZero.set(busy.getTotalBytesSent());
                 step.set(1);
@@ -250,11 +250,11 @@ public class TwoPlayerGameTests {
             long alloc = limiter.getPerPlayerAllocation(2);
             busy.flushSendQueue(alloc, limiter, diag, p -> {});
 
-            helper.assertTrue(busy.getTotalBytesSent() > busyAtZero.get(),
+            Gt.assertTrue(helper, busy.getTotalBytesSent() > busyAtZero.get(),
                     "waiting for the debt-paid bucket to admit a post-exhaustion send");
-            helper.assertTrue(idle.getTotalBytesSent() == 0,
+            Gt.assertTrue(helper, idle.getTotalBytesSent() == 0,
                     "the idle player must end the test having spent nothing");
-            helper.assertTrue(limiter.getTotalBytesSent()
+            Gt.assertTrue(helper, limiter.getTotalBytesSent()
                             == busy.getTotalBytesSent() + debtInjected.get(),
                     "global accounting identity: every counted byte is the busy player's "
                             + "plus the injected debt");
@@ -293,23 +293,23 @@ public class TwoPlayerGameTests {
         // The vanilla player's frames are silent no-ops: no state created, nothing queued.
         service.handleBatchRequest(vanilla, new BatchChunkRequestC2SPayload(
                 new long[]{packed}, new long[]{-1L}, 1));
-        helper.assertTrue(!service.getPlayers().containsKey(vanilla.getUUID()),
+        Gt.assertTrue(helper, !service.getPlayers().containsKey(vanilla.getUUID()),
                 "a never-handshaked player's batch request must not create state");
-        helper.assertTrue(service.getDiskReader().getPlayerQueue(vanilla.getUUID()) == null,
+        Gt.assertTrue(helper, service.getDiskReader().getPlayerQueue(vanilla.getUUID()) == null,
                 "a never-handshaked player must have no disk-reader queue");
-        helper.assertTrue(state.getTotalRequestsReceived() == 0,
+        Gt.assertTrue(helper, state.getTotalRequestsReceived() == 0,
                 "the vanilla player's request must not leak into the registered player's queue");
 
         GameTestSeeding.seedRequest(state, packed, -1L);
         helper.succeedWhen(() -> {
             service.tick();
-            helper.assertTrue(state.getTotalSectionsSent() == 1,
+            Gt.assertTrue(helper, state.getTotalSectionsSent() == 1,
                     "waiting for the registered player's serve (pipeline must flow beside the "
                             + "vanilla player)");
-            helper.assertTrue(!service.getPlayers().containsKey(vanilla.getUUID())
+            Gt.assertTrue(helper, !service.getPlayers().containsKey(vanilla.getUUID())
                             && service.getDiskReader().getPlayerQueue(vanilla.getUUID()) == null,
                     "the vanilla player must remain invisible after pipeline activity");
-            helper.assertTrue(service.getBandwidthLimiter().getTotalBytesSent()
+            Gt.assertTrue(helper, service.getBandwidthLimiter().getTotalBytesSent()
                             == state.getTotalBytesSent(),
                     "every LSS byte must be attributed to the registered player — there is no "
                             + "state through which the vanilla player could be sent anything");
@@ -337,7 +337,7 @@ public class TwoPlayerGameTests {
         var server = level.getServer();
         var playerList = server.getPlayerList();
         var liveService = LSSServerNetworking.getRequestService();
-        helper.assertTrue(liveService != null, "live service required (the save hook feeds it)");
+        Gt.assertTrue(helper, liveService != null, "live service required (the save hook feeds it)");
         // The mock players below register on this test's OWN service, but the save-hook
         // assertion at the end goes through the LIVE service's filter/tracker — arm its
         // never-registered skip gate (review P3) or the hook would skip the hash and the
@@ -348,7 +348,7 @@ public class TwoPlayerGameTests {
         int pcx = mockA.getBlockX() >> 4;
         int pcz = mockA.getBlockZ() >> 4;
         var chunkPos = new ChunkPos(pcx - FANOUT_CHUNK_OFFSET, pcz + 4);
-        helper.assertTrue(FANOUT_CHUNK_OFFSET <= LSSServerConfig.CONFIG.lodDistanceChunks,
+        Gt.assertTrue(helper, FANOUT_CHUNK_OFFSET <= LSSServerConfig.CONFIG.lodDistanceChunks,
                 "premise: the column must be inside the broadcaster's RAW lodDistance range");
         long packed = PositionUtil.packPosition(chunkPos.x, chunkPos.z);
         var dim = LSSConstants.DIM_STR_OVERWORLD;
@@ -373,7 +373,7 @@ public class TwoPlayerGameTests {
         var reaskWallDeadline = new AtomicLong();
 
         helper.succeedWhen(() -> {
-            helper.assertTrue(helper.getTick() >= 2, "waiting for generation light to settle");
+            Gt.assertTrue(helper, helper.getTick() >= 2, "waiting for generation light to settle");
             switch (step.get()) {
                 case 0 -> {
                     if (stateA.getTotalRequestsReceived() == 0) {
@@ -381,14 +381,14 @@ public class TwoPlayerGameTests {
                         GameTestSeeding.seedRequest(stateB, packed, -1L);
                     }
                     service.tick();
-                    helper.assertTrue(stateA.getTotalSectionsSent() == 1
+                    Gt.assertTrue(helper, stateA.getTotalSectionsSent() == 1
                                     && stateB.getTotalSectionsSent() == 1,
                             "waiting for both holders' initial probe serves to flush");
                     // Baseline the LIVE filter pre-edit (an earlier save's state).
                     var chunk = level.getChunk(chunkPos.x, chunkPos.z);
                     var liveFilter = liveService.getDirtyContentFilter();
                     liveFilter.contentChanged(level, chunk, dim);
-                    helper.assertTrue(!liveFilter.contentChanged(level, chunk, dim),
+                    Gt.assertTrue(helper, !liveFilter.contentChanged(level, chunk, dim),
                             "premise: live filter baselined pre-edit");
                     // B's edit; A's re-ask is issued (and retried) in step 1 — the probe re-serve
                     // must land between edit and save.
@@ -398,7 +398,7 @@ public class TwoPlayerGameTests {
                     reaskWallDeadline.set(System.currentTimeMillis()
                             + LSSConstants.SEND_DEPARTURE_GRACE_MILLIS + 1_500L + 200L);
                     step.set(1);
-                    helper.assertTrue(false, "edit placed, awaiting A's post-edit probe re-serve");
+                    Gt.assertTrue(helper, false, "edit placed, awaiting A's post-edit probe re-serve");
                 }
                 case 1 -> {
                     // A's ts<=0 re-ask re-resolves the flushed position via the loaded-chunk
@@ -419,7 +419,7 @@ public class TwoPlayerGameTests {
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
                         }
-                        helper.assertTrue(false, "waiting out the departure-grace + "
+                        Gt.assertTrue(helper, false, "waiting out the departure-grace + "
                                 + "probe-suppress wall-clock windows");
                     }
                     if (stateA.getTotalSectionsSent() < 2
@@ -429,7 +429,7 @@ public class TwoPlayerGameTests {
                         GameTestSeeding.seedRequest(stateA, packed, -1L);
                     }
                     service.tick();
-                    helper.assertTrue(stateA.getTotalSectionsSent() == 2,
+                    Gt.assertTrue(helper, stateA.getTotalSectionsSent() == 2,
                             "waiting for A's post-edit re-serve (a ts<=0 re-ask of a flushed "
                                     + "position re-resolves) [DIAG sent=" + stateA.getTotalSectionsSent()
                                     + " reqs=" + stateA.getTotalRequestsReceived()
@@ -449,7 +449,7 @@ public class TwoPlayerGameTests {
                     liveTracker.drainDirty(dim);
                     level.save(null, true, false);
                     long[] dirty = liveTracker.drainDirty(dim);
-                    helper.assertTrue(containsPosition(dirty, packed),
+                    Gt.assertTrue(helper, containsPosition(dirty, packed),
                             "the save after A's mid-window probe re-serve must mark the edited "
                                     + "column dirty (save hook -> live filter -> live tracker)");
                     // Forward the mark to this test's own service and fire ITS broadcaster:
@@ -461,7 +461,7 @@ public class TwoPlayerGameTests {
                         service.tick();
                     }
                     step.set(2);
-                    helper.assertTrue(false, "broadcast fired, awaiting both re-serves");
+                    Gt.assertTrue(helper, false, "broadcast fired, awaiting both re-serves");
                 }
                 case 2 -> {
                     // Both holders re-request with their stored stamps: only a delivered
@@ -495,7 +495,7 @@ public class TwoPlayerGameTests {
                         GameTestSeeding.seedRequest(stateB, packed, 1L);
                     }
                     service.tick();
-                    helper.assertTrue(stateA.getTotalSectionsSent() == 3
+                    Gt.assertTrue(helper, stateA.getTotalSectionsSent() == 3
                                     && stateB.getTotalSectionsSent() == 2,
                             "BOTH holders must be re-served after the broadcast fan-out "
                                     + "(an undelivered clear resolves the re-request up-to-date "
@@ -506,7 +506,7 @@ public class TwoPlayerGameTests {
                     playerList.remove(mockA);
                     playerList.remove(mockB);
                 }
-                default -> helper.fail("unexpected fan-out step " + step.get());
+                default -> Gt.fail(helper, "unexpected fan-out step " + step.get());
             }
         });
     }
