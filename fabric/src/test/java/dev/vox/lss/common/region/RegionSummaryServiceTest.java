@@ -19,7 +19,12 @@ class RegionSummaryServiceTest {
 
     private static final String DIM = "minecraft:overworld";
     private static final long NOW = System.currentTimeMillis() / 1000L;
-    private static final long POLL_DEADLINE_NANOS = 30_000_000_000L;
+    // 60 s (flake-catalog escalation, 2026-08-22): the MIN_PRIORITY sweeper daemon is
+    // the starvation-prone shape and this suite's awaitAssembly timed out at the
+    // already-hardened 30 s on shared CI runners TWICE (2026-08-21 on the 1.21.11 port
+    // CI; 2026-08-22 on this line's creation CI) — the catalog's second-sighting rule
+    // raises the deadline instead of re-running. Costs nothing on the passing path.
+    private static final long POLL_DEADLINE_NANOS = 60_000_000_000L;
 
     private record Sent(UUID player, byte[] frame) {}
 
