@@ -194,7 +194,8 @@ public class MoveTraceGameTests {
      *  ({@code hasClientLoaded()} at the very top of handleMovePlayer — a mock never
      *  acks) lives on {@code Player} on this MC with a PUBLIC setter (javap-verified:
      *  {@code clientLoaded}/{@code clientLoadedTimeoutTimer} move to the LISTENER at
-     *  1.21.11, where priming needs reflection; the 1.21.1 line predates the gate
+     *  1.21.11 — as does {@code waitingForRespawn}, which does not exist in any form
+     *  here — where priming needs reflection; the 1.21.1 line predates the gate
      *  entirely), so priming is the setter plus the one reflective field. Test-only
      *  reflection, dev runtime = named mappings; a vanilla rename reds this loudly. */
     private static void primeListenerForMoves(ServerGamePacketListenerImpl connection) {

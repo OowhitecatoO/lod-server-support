@@ -128,16 +128,16 @@ public final class LSSNeoGameTests {
     // ---- bodies ----
 
     private static void serviceActivates(GameTestHelper helper) {
-        helper.succeedWhen(() -> helper.assertTrue(
+        helper.succeedWhen(() -> Gt.assertTrue(helper, 
                 LSSServerNetworking.getRequestService() != null,
                 "RequestProcessingService should be active on the gametest (dedicated) server"));
     }
 
     private static void configLoadsFreshDefaults(GameTestHelper helper) {
         var config = LSSServerConfig.CONFIG;
-        helper.assertTrue(config != null, "server config must load");
-        helper.assertTrue(config.enabled, "fresh config must default enabled");
-        helper.assertTrue(config.lodDistanceChunks == 512,
+        Gt.assertTrue(helper, config != null, "server config must load");
+        Gt.assertTrue(helper, config.enabled, "fresh config must default enabled");
+        Gt.assertTrue(helper, config.lodDistanceChunks == 512,
                 "fresh config must carry the shipped 512 distance, got " + config.lodDistanceChunks);
         helper.succeed();
     }
@@ -145,49 +145,49 @@ public final class LSSNeoGameTests {
     private static void storeActiveOnFreshWorld(GameTestHelper helper) {
         helper.succeedWhen(() -> {
             var service = LSSServerNetworking.getRequestService();
-            helper.assertTrue(service != null, "service must be up first");
+            Gt.assertTrue(helper, service != null, "service must be up first");
             // Fresh install (no config file existed) generates lodStore "on" via the
             // fresh-create hook; the SQLite engine must come up through the SHADED
             // natives — a degrade would leave this null (store=off honesty).
-            helper.assertTrue(service.getLodStore() != null,
+            Gt.assertTrue(helper, service.getLodStore() != null,
                     "the fresh-create store must arm through the shaded sqlite natives");
         });
     }
 
     private static void handshakeCapsZeroRepliesWithoutRegistering(GameTestHelper helper) {
         var service = LSSServerNetworking.getRequestService();
-        helper.assertTrue(service != null, "service must be up");
+        Gt.assertTrue(helper, service != null, "service must be up");
         var player = helper.makeMockServerPlayerInLevel();
         List<SessionConfigS2CPayload> replies = new ArrayList<>();
         ServerReceiverGlue.handleHandshake(
                 new HandshakeC2SPayload(LSSConstants.PROTOCOL_VERSION, 0),
                 player, service, replies::add);
-        helper.assertTrue(replies.size() == 1,
+        Gt.assertTrue(helper, replies.size() == 1,
                 "caps=0 must reply (the NO_CONSUMER advertisement), got " + replies.size());
-        helper.assertTrue(!service.getPlayers().containsKey(player.getUUID()),
+        Gt.assertTrue(helper, !service.getPlayers().containsKey(player.getUUID()),
                 "caps=0 must NOT register the player");
         helper.succeed();
     }
 
     private static void handshakeForeignVersionIsSilent(GameTestHelper helper) {
         var service = LSSServerNetworking.getRequestService();
-        helper.assertTrue(service != null, "service must be up");
+        Gt.assertTrue(helper, service != null, "service must be up");
         var player = helper.makeMockServerPlayerInLevel();
         List<SessionConfigS2CPayload> replies = new ArrayList<>();
         ServerReceiverGlue.handleHandshake(
                 new HandshakeC2SPayload(9999, LSSConstants.CAPABILITY_VOXEL_COLUMNS),
                 player, service, replies::add);
-        helper.assertTrue(replies.isEmpty(),
+        Gt.assertTrue(helper, replies.isEmpty(),
                 "a foreign-version handshake must produce ZERO reply frames (replying"
                         + " would kick the client), got " + replies.size());
-        helper.assertTrue(!service.getPlayers().containsKey(player.getUUID()),
+        Gt.assertTrue(helper, !service.getPlayers().containsKey(player.getUUID()),
                 "a foreign-version handshake must not register");
         helper.succeed();
     }
 
     private static void handshakeV20RegistersAndRemoves(GameTestHelper helper) {
         var service = LSSServerNetworking.getRequestService();
-        helper.assertTrue(service != null, "service must be up");
+        Gt.assertTrue(helper, service != null, "service must be up");
         var player = helper.makeMockServerPlayerInLevel();
         List<SessionConfigS2CPayload> replies = new ArrayList<>();
         try {
@@ -195,24 +195,24 @@ public final class LSSNeoGameTests {
                     new HandshakeC2SPayload(LSSConstants.PROTOCOL_VERSION,
                             LSSConstants.CAPABILITY_VOXEL_COLUMNS),
                     player, service, replies::add);
-            helper.assertTrue(replies.size() == 1, "a v20 handshake must reply the SessionConfig");
-            helper.assertTrue(replies.get(0).protocolVersion() == LSSConstants.PROTOCOL_VERSION,
+            Gt.assertTrue(helper, replies.size() == 1, "a v20 handshake must reply the SessionConfig");
+            Gt.assertTrue(helper, replies.get(0).protocolVersion() == LSSConstants.PROTOCOL_VERSION,
                     "the reply must echo the native protocol");
-            helper.assertTrue(service.getPlayers().containsKey(player.getUUID()),
+            Gt.assertTrue(helper, service.getPlayers().containsKey(player.getUUID()),
                     "a v20 consumer handshake must register the player");
         } finally {
             // Failure-path ghost guard (N-2 review NIT): the mock must never stay
             // registered in the LIVE service past this test.
             service.removePlayer(player.getUUID());
         }
-        helper.assertTrue(!service.getPlayers().containsKey(player.getUUID()),
+        Gt.assertTrue(helper, !service.getPlayers().containsKey(player.getUUID()),
                 "removePlayer must clean the registration up");
         helper.succeed();
     }
 
     private static void dirtySaveHookMarksOnContentChange(GameTestHelper helper) {
         var service = LSSServerNetworking.getRequestService();
-        helper.assertTrue(service != null, "service must be up");
+        Gt.assertTrue(helper, service != null, "service must be up");
         ServerLevel level = helper.getLevel();
         // Drive the FILTER directly (the hook pipeline's decision core): observe the
         // chunk containing the edit, seed its hash, edit, observe again — the second
@@ -227,7 +227,7 @@ public final class LSSNeoGameTests {
         var second = filter.observeSave(level, chunk, dim);
         var probe = SectionSerializer.serializeColumn(level, chunk,
                 chunk.getPos().x, chunk.getPos().z);
-        helper.assertTrue(second.changed(),
+        Gt.assertTrue(helper, second.changed(),
                 "a content edit must hash as changed: first.changed=" + first.changed()
                         + " placed=" + placed
                         + " liveLen=" + (probe == null || probe.serializedSections() == null
@@ -246,7 +246,7 @@ public final class LSSNeoGameTests {
         long before = service.getDirtyTracker().getTotalMarked();
         level.setBlock(editPos.above(), Blocks.EMERALD_BLOCK.defaultBlockState(), 3);
         LSSServerNetworking.onChunkSaveData(level, chunk);
-        helper.assertTrue(service.getDirtyTracker().getTotalMarked() > before,
+        Gt.assertTrue(helper, service.getDirtyTracker().getTotalMarked() > before,
                 "the hook body must mark the changed column (totalMarked stuck at " + before + ")");
         helper.succeed();
     }
@@ -283,20 +283,20 @@ public final class LSSNeoGameTests {
         var diskBytes = new AtomicReference<byte[]>();
 
         helper.succeedWhen(() -> {
-            helper.assertTrue(helper.getTick() >= 10, "waiting for the torch dance to finish");
+            Gt.assertTrue(helper, helper.getTick() >= 10, "waiting for the torch dance to finish");
             switch (step.get()) {
                 case 0 -> {
-                    helper.assertTrue(chunkSource.getChunkNow(cx, cz) == null,
+                    Gt.assertTrue(helper, chunkSource.getChunkNow(cx, cz) == null,
                             "waiting for the chunk to unload");
                     level.save(null, true, false);
                     reader.submitReadDirect(readerId, LSSConstants.DIM_STR_OVERWORLD,
                             level, cx, cz, 0, 0L);
                     step.set(1);
-                    helper.assertTrue(false, "disk read submitted, awaiting result");
+                    Gt.assertTrue(helper, false, "disk read submitted, awaiting result");
                 }
                 case 1 -> {
                     var result = reader.getPlayerQueue(readerId).poll();
-                    helper.assertTrue(result != null, "waiting for the disk read result");
+                    Gt.assertTrue(helper, result != null, "waiting for the disk read result");
                     // Assert BEFORE shutdown so a real read failure names itself instead
                     // of surfacing as a poll-timeout (N-2 review NIT; also restores the
                     // fabric original's saturation assert).
@@ -304,28 +304,28 @@ public final class LSSNeoGameTests {
                     boolean saturated = result.saturated();
                     byte[] bytes = result.sectionBytes();
                     reader.shutdown();
-                    helper.assertTrue(!notFound,
+                    Gt.assertTrue(helper, !notFound,
                             "generated chunk must exist on disk after unload");
-                    helper.assertTrue(!saturated,
+                    Gt.assertTrue(helper, !saturated,
                             "single read on a fresh reader must not saturate");
-                    helper.assertTrue(bytes != null,
+                    Gt.assertTrue(helper, bytes != null,
                             "superflat chunk must have non-air content on disk");
                     diskBytes.set(bytes);
                     step.set(2);
-                    helper.assertTrue(false, "disk bytes captured, reloading chunk");
+                    Gt.assertTrue(helper, false, "disk bytes captured, reloading chunk");
                 }
                 case 2 -> {
                     var chunk = level.getChunk(cx, cz);
                     var live = SectionSerializer.serializeColumn(level, chunk, cx, cz)
                             .serializedSections();
-                    helper.assertTrue(live != null,
+                    Gt.assertTrue(helper, live != null,
                             "reloaded superflat chunk must serialize live content");
-                    helper.assertTrue(Arrays.equals(diskBytes.get(), live),
+                    Gt.assertTrue(helper, Arrays.equals(diskBytes.get(), live),
                             "disk and live bytes must be identical (disk="
                                     + (diskBytes.get() == null ? -1 : diskBytes.get().length)
                                     + " live=" + live.length + ")");
                 }
-                default -> helper.fail("unexpected parity test step " + step.get());
+                default -> Gt.fail(helper, "unexpected parity test step " + step.get());
             }
         });
     }

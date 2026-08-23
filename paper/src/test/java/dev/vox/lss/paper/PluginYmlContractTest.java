@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * is invisible until a real Paper server refuses to load — or silently mis-loads — the
  * plugin: an unresolvable {@code main} or wrong {@code api-version} aborts plugin load, a
  * renamed plugin moves the {@code plugins/LodServerSupport/} data folder the config and
- * soak staging rely on, and {@code folia-supported} must stay DECLARED on the 1.21.11
+ * soak staging rely on, and {@code folia-supported} must stay FALSE on the 1.21.10
  * line — Folia publishes real MC 1.21.11 builds (this line always had them; the frozen
  * v0.8.0-era support branch carried the same presence pin), so the guarded failure is a
  * jar that silently STOPS loading on Folia. (R-7 direction-flip note for future re-ports:

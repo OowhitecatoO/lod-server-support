@@ -31,12 +31,28 @@ verification recorded in the port PR (no automatable pin exists).
 
 ## 1.21.10 line status (lateral cut from the 1.21.11 line, 2026-08-22)
 
-Every row above resolves IDENTICALLY to the 1.21.11 parent (adjacent MC
-patches — same mappings surface, same count-short shape, same split world
-dirs, same render-phase event) EXCEPT: **row 7 flips to the ABSENT/false pin**
-(Folia publishes no 1.21.10 build — folia-supported: false, loaders
-paper+purpur, all three guards inverted), and this line adds one non-MC
-ecosystem cut with no row: the Sodium options page (Sodium 0.7.3 predates the
-0.8 structured config API — LSSConfigMenu + the sodium:config_api_user
-entrypoint deleted; docs/planning/mc1.21.10-line-notes.md is the dated
-record). fabric-api floor drops to 0.138.0.
+The cut's initial premise ("adjacent patches, same surface") was FALSIFIED at
+the port — 1.21.10 sits on the OLD side of the 1.21.11 mappings/API wave, and
+this table exists precisely to stop that assumption transfer. As-verified row
+status (docs/planning/mc1.21.10-line-notes.md is the dated record):
+
+- **Mappings/API are NOT the parent's**: ResourceLocation-family names (the
+  1.21.1 forms), int-level permissions, Component-message GameTestHelper (the
+  Gt shims, fabric + neoforge), the Player-side clientLoaded gate.
+- **Row 1 (IOWorker reach) FLIPPED**: ChunkMap extends ChunkStorage here (the
+  SimpleRegionStorage superclass move is 1.21.11+) — the accessor retargets
+  @Mixin(ChunkStorage.class); the parent's shape CCE'd and SILENTLY latched
+  the background-read fallback (caught by the Tier-2 raw_serves receipt).
+- **Row 7 flips to the FALSE pin** (Folia publishes no 1.21.10 build —
+  folia-supported: false, loaders paper+purpur, four guards: plugin.yml test,
+  workflow loaders pin, release_check grep + selftest arm, release.yml Paper
+  step name).
+- **Rows 9/14 (native shapes)**: hold the parent's values as verified by the
+  passing line goldens/T2 byte pins (goldens inherited unchanged, 73/73).
+- **Rows 6/15/17**: copyOf exists (T2 green through the save hook); the
+  render-phase event and split world dirs carry the parent's values — row 15
+  remains a HAND row not re-bytecode-verified on 1.21.10 (flagged at the
+  line's creation review; carried open).
+- **Ecosystem cut with no row**: the Sodium options page + ModMenu
+  integration (Sodium 0.7.3 predates the 0.8 structured config API).
+  fabric-api floor drops to 0.138.0.

@@ -14,16 +14,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 1.21.11-LINE contract for {@code fabric.mod.json} + {@code gradle.properties}, read from
+ * 1.21.10-LINE contract for {@code fabric.mod.json} + {@code gradle.properties}, read from
  * the SOURCE tree (the fabric mirror of paper's
  * {@code PluginYmlContractTest.apiVersionMatchesTheDevBundleMinecraftVersion} lockstep pin).
  * The regression vector: the LOWER Minecraft bound is enforced by fabric-loader in every
  * gametest launch, but the UPPER bound is caught by nothing at build time — and the mixins
  * here are required:true over MC internals, so an unbounded pin turns a foreign line into
  * a hard mixin-apply crash instead of Loader's clean refusal (the v0.8.0 compat review's
- * MAJOR). On THIS line the pin is the EXACT version "1.21.11" (the old support branch's
+ * MAJOR). On THIS line the pin is the EXACT version "1.21.10" (the old support branch's
  * per-line choice, kept): the LAN-hook descriptor, the save-hook target, and the
- * one-count-short section layout are all 1.21.11-specific, so neither a newer nor an
+ * one-count-short section layout are all 1.21.10-specific, so neither a newer nor an
  * older 1.21.x is safe. Main and each support branch carry their own flavors of this test.
  */
 class FabricModJsonContractTest {

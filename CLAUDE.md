@@ -3,8 +3,10 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 > **Support branch: `support/mc1.21.10`** — the v0.12.0 LATERAL port of
-> `support/mc1.21.11-v0.12` (cut @ b21a67fc, 2026-08-22 — one MC patch DOWN, so
-> the MC surface is the 1.21.11 line's verbatim), targeting **Minecraft 1.21.10**
+> `support/mc1.21.11-v0.12` (cut @ b21a67fc, 2026-08-22 — one MC patch DOWN;
+> NOTE the surface is NOT the parent's verbatim: 1.21.10 sits on the OLD side
+> of the 1.21.11 mappings/API wave — see the deltas below), targeting
+> **Minecraft 1.21.10**
 > on Fabric + Paper (the NeoForge module BUILDS at 21.10.64 but does NOT SHIP —
 > LINE_SHIP_NEOFORGE=false), **Java 21** (build with a Java 21 JDK —
 > paperweight's codebook cannot parse Java 25 class files). Do NOT merge to
@@ -35,8 +37,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > renames per the recipe (ClientCommandManager, ChunkPos fields, EntityType
 > constants); goldens line-regenerated per the two-stage T1 rule.
 > **1.21.10 lateral port (2026-08-22):** full v0.12.0 stack inherited from the
-> 1.21.11 line tip (incl. the ramp window-limited fix + panel folds); the only
-> non-mechanical deltas are the two cuts above.
+> 1.21.11 line tip (incl. the ramp window-limited fix + panel folds); deltas =
+> the two cuts above + the mappings/API boundary set (renames, permissions,
+> Gt shims ×2, clientLoaded prime, the ChunkStorage accessor retarget) + the
+> Folia four-guard inversion — mc1.21.10-line-notes.md items 1-9.
 > **v0.12.0 port (2026-08-21):** the region-summary/stamped-up_to_date/quadtree stack (main 79e49951..e0cdf6f2, 20 picks + the #215 checker floor) — adaptations: playC2S/playS2C registration idiom, the split-dir resolver re-root + CraftWorld mock, panel-fold pin hardening (69e7ef75); full smoke set green.
 > **v0.11.1 port (2026-08-18):** the stutter-fix pair (scan prefix retention +
 > acquisition frontier, main PRs #203/#204 + folds) cherry-picked from main —

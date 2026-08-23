@@ -480,7 +480,6 @@ def check_neoforge_jar(jar, problems):
 # NOT listed — their absence from the neoforge jar would be real drift).
 FABRIC_ONLY_CLASS_PREFIXES = (
     "dev/vox/lss/LSSMod", "dev/vox/lss/LSSClient",
-    "dev/vox/lss/config/LSSConfigMenu", "dev/vox/lss/config/LSSModMenuIntegration",
     # Sodium slider-curve policy for the config menu above — same Sodium-only surface,
     # split into its own class only so Tier 1 can classload it (2026-08-14).
     "dev/vox/lss/config/RateSliderStops",

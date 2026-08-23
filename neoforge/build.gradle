@@ -11,7 +11,7 @@ base {
     archivesName = 'lod-server-support-neoforge'
 }
 
-// 1.21.11 line: Java 21 toolchain (NeoForge 21.11.x is a Java 21 platform).
+// 1.21.10 line: Java 21 toolchain (NeoForge 21.10.x is a Java 21 platform).
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
 // CI naming parity with the fabric module (release.yml feeds mod_version from the tag).

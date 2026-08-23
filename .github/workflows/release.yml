@@ -232,7 +232,7 @@ jobs:
           modrinth-id: lKiXKLvv
           modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
           files: paper/build/libs/lod-server-support-paper-*.jar
-          name: v${{ env.MOD_VERSION }} - Paper/Purpur/Folia (MC ${{ env.LINE_MC_PAPER }})
+          name: v${{ env.MOD_VERSION }} - Paper/Purpur (MC ${{ env.LINE_MC_PAPER }})
           version: v${{ env.MOD_VERSION }}+paper+mc${{ env.LINE_MC_PAPER }}
           version-type: release
           # The loader list is per-line data (Folia's presence has flipped per line —

@@ -78,7 +78,48 @@ ways — 1.21.10 sits on the OLD side of the 1.21.11 mappings/API wave:
    String overloads): shimmed via `fabric/src/gametest/.../Gt.java` with a
    mechanical call-prefix reroute (`helper.assertTrue(` →
    `Gt.assertTrue(helper, `, 541 sites + 13 fails) so every condition and
-   message expression stays byte-identical to the parent line.
+   message expression stays byte-identical to the parent line. The NeoForge
+   smoke needed the same twin shim (`neoforge/src/gametest/.../Gt.java`, 31
+   sites — its compile only runs on CI's runGameTestServer step, which is how
+   it was found).
+
+## Findings at first RUN (Tier-2 receipts — the build cannot see these)
+
+4. **`ChunkMap extends ChunkStorage` here** (the SimpleRegionStorage
+   superclass move is 1.21.11+): the parent's
+   `(AccessorSimpleRegionStorage) chunkMap` cast CCE'd at runtime, was
+   swallowed by the resolver's catch-all, and SILENTLY latched
+   `backgroundIncompatible` (throttle fallback) — caught only by the
+   serializer-parity gametest's `raw_serves` receipt. Fix: retarget
+   `@Mixin(ChunkStorage.class)`, class name kept (the 1.21.1 line's exact
+   adaptation).
+5. **The client-loaded gate lives on `Player` here with a public setter**
+   (`clientLoaded`/`clientLoadedTimeoutTimer` move to the LISTENER at
+   1.21.11, as does `waitingForRespawn`): `handleMovePlayer` opens with
+   `hasClientLoaded()`, a mock never acks, every move early-returned — zero
+   tracer rows AND zero vanilla warns. Fix: `primeListenerForMoves` calls
+   `connection.player.setClientLoaded(true)` + the one reflective field.
+
+## Findings at the creation review (2-Opus pair — the packaging layer)
+
+6. `neoforge.mods.toml` loader floor was the parent's `[21.11,)` —
+   UNSATISFIABLE on a 21.10.64 line (nothing pins the range; the NeoForge
+   smoke's CI compile is the only consumer that noticed anything nearby).
+   Now `[21.10,)`.
+7. `release.yml`'s Paper Modrinth step NAME advertised Folia — the fourth
+   guard Decision 1 needed (now "Paper/Purpur (MC 1.21.10)", matching the
+   1.21.1 precedent).
+8. `test-server.sh` was fully un-retargeted (a 1.21.11 rig for a 1.21.10
+   branch): MC versions, fabric-api/c2me/antixray URLs, the legacy
+   protocol-16 rig (no +mc1.21.10 legacy build ever shipped —
+   LEGACY_LSS_MC=""), the Folia probe comment, the Java-check message.
+9. Assorted label/staleness fixes: contract-test javadocs, the fabric.mod.json
+   `suggests` block (sodium unsatisfiable here, modmenu integration cut),
+   release_check's dead class prefixes, per-version-surfaces' wrong identity
+   paragraph. Carried open: the tree-wide "verified against 1.21.11" prose
+   labels on golden/pin-covered surfaces (row 15's hand row is the one
+   flagged risk), and the RegionSummaryServiceTest 60 s deadline (the
+   flake catalog's second-sighting escalation, applied here first).
 
 ## Gates run at creation
 
