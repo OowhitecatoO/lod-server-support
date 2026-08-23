@@ -2,11 +2,14 @@ name: LodServerSupport
 version: '${version}'
 main: dev.vox.lss.paper.LSSPaperPlugin
 api-version: '${api_version}'
-# 1.21.11 support line: Folia publishes real 1.21.11 builds, so the flag is correct HERE —
-# the guarded failure is a jar that silently stops loading on Folia (PluginYmlContractTest +
-# release_check.py pin its PRESENCE). Folia support remains EXPERIMENTAL on every line —
-# single-player soak validated; concurrent multi-region ingress untested.
-folia-supported: true
+# 1.21.10 support line: Folia publishes NO MC 1.21.10 build (its versions jump
+# 1.21.8 -> 1.21.11), so the flag is FALSE here — the R-7 direction-flip doctrine:
+# presence would advertise a platform nobody can run this MC version on, and the
+# frozen 1.21.8-era precedent carried the same absence shape. PluginYmlContractTest
+# + release_check.py pin the FALSE form (a true flag reappearing on this line is
+# the guarded regression). The Folia code paths still ship in the jar (single
+# plugin jar across lines); they simply have no loadable host at 1.21.10.
+folia-supported: false
 # C5 (XVER §7): the Via mismatch guard reflectively reads ViaVersion's API when the
 # plugin is present. softdepend keeps Spigot's classloader from logging the one-time
 # "loaded class ... which is not a depend/softdepend" warning on the first handshake —

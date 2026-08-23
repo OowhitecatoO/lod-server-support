@@ -334,6 +334,13 @@ class ReleaseWorkflowContractTest {
                     "the 26.2 Paper step advertises folia (jar declares folia-supported; "
                             + "all four SOAK_PLATFORM=folia scenarios pass)");
         }
+        // 1.21.10-LINE FLAVOR (R-7 direction flip, 2026-08-22): Folia publishes no
+        // MC 1.21.10 build, so the Modrinth Paper step must NOT advertise the folia
+        // loader — the guarded regression is a forward merge resurrecting a sibling
+        // line's loader list (PluginYmlContractTest pins the jar-side false flag).
+        assertFalse(env("LINE_PAPER_LOADERS").contains("folia"),
+                "Folia publishes no 1.21.10 build — the Paper Modrinth step must not"
+                        + " advertise the folia loader on this line");
     }
 
     @Test

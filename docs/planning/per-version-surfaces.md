@@ -28,3 +28,15 @@ verification recorded in the port PR (no automatable pin exists).
 | 15 | Far-player render phase | The registered event must fire BEFORE the line's submit-storage drain — verify against LevelRenderer BYTECODE, never transfer the event NAME (26.2 `COLLECT_SUBMITS` ↔ 1.21.11 `BEFORE_ENTITIES`, while `AFTER_ENTITIES` is CORRECT on 1.21.1's immediate-mode renderer; the same name flips meaning per line — shipped wrong once, 6-Opus review 2026-08-15) | hand row — the R2-4 comment at the registration site names this row |
 | 16 | Moonrise IO entry class | Per-PLATFORM, never transferred: verify Fabric against the moonrise-opt jar and Paper against the dev bundle (Moonrise-Fabric 1.21.1 = `MoonriseRegionFileIO`; Paper 1.21.1 = `RegionFileIOThread` — a cross-platform 'fix' was refuted only by downloading the real jar) | hand row — the R2-4 comment at the resolution ladder names this row |
 | 17 | Bukkit world layout | UNIFIED (26.x: one world dir, `dimensions/minecraft/<dim>`; sweep roots at server worldRoot; `getWorldFolder()` returns the per-dim SUBFOLDER — R2-9 live probe 2026-08-15) vs SPLIT (1.21.x: `world_nether`/`world_the_end`; sweep re-roots per level via `getWorldFolder()`). The two sweep forms are NOT interchangeable in either direction. Consumers: store sweep + soak world staging (staging is line-invariant since R2-3; the sweep form is per-line forever) | hand row — the row-17 comment at the sweep site; the sweep's own drop counters red a wrong form |
+
+## 1.21.10 line status (lateral cut from the 1.21.11 line, 2026-08-22)
+
+Every row above resolves IDENTICALLY to the 1.21.11 parent (adjacent MC
+patches — same mappings surface, same count-short shape, same split world
+dirs, same render-phase event) EXCEPT: **row 7 flips to the ABSENT/false pin**
+(Folia publishes no 1.21.10 build — folia-supported: false, loaders
+paper+purpur, all three guards inverted), and this line adds one non-MC
+ecosystem cut with no row: the Sodium options page (Sodium 0.7.3 predates the
+0.8 structured config API — LSSConfigMenu + the sodium:config_api_user
+entrypoint deleted; docs/planning/mc1.21.10-line-notes.md is the dated
+record). fabric-api floor drops to 0.138.0.

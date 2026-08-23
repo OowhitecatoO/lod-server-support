@@ -132,20 +132,21 @@ class PluginYmlContractTest {
     }
 
     @Test
-    void foliaSupportedIsDeclaredBecauseFoliaPublishes12111() {
-        // 1.21.11-LINE FLAVOR (D3 fresh re-port, R-7 direction-flip check applied): Folia
-        // publishes real MC 1.21.11 builds, so declaring the flag is correct on THIS line —
-        // the guarded failure is a jar that silently stops loading on Folia (the frozen
-        // v0.8.0-era support/mc1.21.11 branch carried the same presence pin). The pin was
-        // inherited from main (26.2) and re-derived rather than assumed: presence would be
-        // WRONG on a line Folia does not publish for. FoliaWiringContractTest still pins
-        // the wiring (no legacy scheduler, lifecycle through the mailbox).
+    void foliaSupportedIsFalseBecauseFoliaSkips12110() {
+        // 1.21.10-LINE FLAVOR (R-7 direction-flip check applied at line creation,
+        // 2026-08-22): Folia publishes NO MC 1.21.10 build (its versions jump
+        // 1.21.8 -> 1.21.11), so the flag must be FALSE on THIS line — presence
+        // would advertise a platform with no loadable host, and the guarded
+        // regression is a forward-merge resurrecting a sibling line's true flag.
+        // The Folia code paths still ship (single plugin jar across lines);
+        // FoliaWiringContractTest still pins the wiring so the paths stay healthy
+        // for the lines that DO serve Folia.
         assertTrue(yml.contains("folia-supported"),
-                "folia-supported must be declared — Folia ships 1.21.11 builds and the"
-                        + " single jar serves Paper and Folia");
-        assertTrue(yml.getBoolean("folia-supported"),
-                "...and it must be true; a false/absent flag makes Folia refuse the jar");
-        assertTrue(rawText.contains("folia-supported: true"),
+                "folia-supported must be declared explicitly (false) — an absent key"
+                        + " reads as an accidental drop rather than a decision");
+        assertFalse(yml.getBoolean("folia-supported"),
+                "...and it must be false; Folia publishes no 1.21.10 build to load onto");
+        assertTrue(rawText.contains("folia-supported: false"),
                 "release_check.py greps the RAW line, so the source must carry that exact form");
     }
 

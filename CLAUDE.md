@@ -2,14 +2,24 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **Support branch: `support/mc1.21.11-v0.12`** (v0.12.0 port of the branch below)
-> **Previous: `support/mc1.21.11-v0.11`** — the v0.11.0 delta-port of main
-> (@ 9cb32ade, the last pre-G merge) onto the v0.10.0 1.21.11 line, targeting
-> **Minecraft 1.21.11** on Fabric + Paper + NeoForge (the NeoForge module BUILDS
-> but does NOT SHIP at v0.11.0 — LINE_SHIP_NEOFORGE=false, user decision
-> 2026-08-15), **Java 21** (build with a
-> Java 21 JDK — paperweight's codebook cannot parse Java 25 class files). Do NOT
-> merge to `main`; releases tag `v<x.y.z>+mc1.21.11` (make_latest false).
+> **Support branch: `support/mc1.21.10`** — the v0.12.0 LATERAL port of
+> `support/mc1.21.11-v0.12` (cut @ b21a67fc, 2026-08-22 — one MC patch DOWN, so
+> the MC surface is the 1.21.11 line's verbatim), targeting **Minecraft 1.21.10**
+> on Fabric + Paper (the NeoForge module BUILDS at 21.10.64 but does NOT SHIP —
+> LINE_SHIP_NEOFORGE=false), **Java 21** (build with a Java 21 JDK —
+> paperweight's codebook cannot parse Java 25 class files). Do NOT merge to
+> `main`; releases tag `v<x.y.z>+mc1.21.10` (make_latest false).
+> **1.21.10 line deltas** (docs/planning/mc1.21.10-line-notes.md is the dated
+> decisions log): **NO FOLIA** — Folia publishes no 1.21.10 build (1.21.8 →
+> 1.21.11), so `folia-supported: false` (PluginYmlContractTest + release_check
+> pin the FALSE form), LINE_PAPER_LOADERS=paper purpur, and the
+> SOAK_PLATFORM=folia lane + `test-server.sh run-folia` have no upstream jar to
+> run on this line; **the Sodium options page is CUT** (Sodium tops out at 0.7.3
+> on 1.21.10, predating the 0.8 structured config API the page binds — the
+> 1.21.8-line precedent; LSSConfigMenu + the sodium:config_api_user entrypoint
+> are deleted, RateSliderStops and the ModMenu entry stay, config via the JSON
+> files is unaffected); fabric-api floor 0.138.0 (0.138.4+1.21.10, vs the
+> parent's 0.141.x).
 > Per-line surfaces live in **docs/planning/per-version-surfaces.md** (canonical —
 > this banner is a POINTER) and the line identity in `.github/line.env` +
 > `gradle.properties` (loom-remap toolchain, intermediary mapping namespace).
@@ -19,6 +29,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > variant (Java 21 has no ScopedValue — the S5 whole-file swap); mechanical
 > renames per the recipe (ClientCommandManager, ChunkPos fields, EntityType
 > constants); goldens line-regenerated per the two-stage T1 rule.
+> **1.21.10 lateral port (2026-08-22):** full v0.12.0 stack inherited from the
+> 1.21.11 line tip (incl. the ramp window-limited fix + panel folds); the only
+> non-mechanical deltas are the two cuts above.
 > **v0.12.0 port (2026-08-21):** the region-summary/stamped-up_to_date/quadtree stack (main 79e49951..e0cdf6f2, 20 picks + the #215 checker floor) — adaptations: playC2S/playS2C registration idiom, the split-dir resolver re-root + CraftWorld mock, panel-fold pin hardening (69e7ef75); full smoke set green.
 > **v0.11.1 port (2026-08-18):** the stutter-fix pair (scan prefix retention +
 > acquisition frontier, main PRs #203/#204 + folds) cherry-picked from main —
@@ -27,13 +40,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-LOD Server Support (LSS) — distributes LOD chunk data from servers to clients over a custom networking protocol. Clients request distant chunks individually; the server reads them from disk or memory and streams serialized sections back, enabling LOD rendering mods (Voxy) to display terrain beyond vanilla render distance. Supports Fabric (client + server), Paper (server only), and NeoForge (see tiers below). The one plugin jar also serves Folia (regionized probing + lifecycle mailbox code paths; `folia-supported` is declared on lines where a Folia build exists upstream — on THIS branch a hand-maintained plugin.yml value hard-asserted by PluginYmlContractTest (the R2-5 line.env derivation is main-only)). **Folia support is experimental on every line**: all four Folia soak scenarios pass single-player, but the stated exit criterion — concurrent MULTI-REGION ingress — has never been produced by the harness. Do not retire the experimental label on soak greens alone.
+LOD Server Support (LSS) — distributes LOD chunk data from servers to clients over a custom networking protocol. Clients request distant chunks individually; the server reads them from disk or memory and streams serialized sections back, enabling LOD rendering mods (Voxy) to display terrain beyond vanilla render distance. Supports Fabric (client + server), Paper (server only), and NeoForge (see tiers below). The one plugin jar also serves Folia (regionized probing + lifecycle mailbox code paths; `folia-supported` is declared on lines where a Folia build exists upstream — Folia publishes NO 1.21.10 build, so THIS branch declares `folia-supported: false` (hand-maintained, hard-asserted by PluginYmlContractTest + release_check; the R2-5 line.env derivation is main-only) and the Folia code paths ship dormant). **Folia support is experimental on every line**: all four Folia soak scenarios pass single-player, but the stated exit criterion — concurrent MULTI-REGION ingress — has never been produced by the harness. Do not retire the experimental label on soak greens alone.
 
 ## Support tiers (v0.11.0+; docs/planning/neoforge-support-plan.md is normative)
 
 **Full** — Fabric + Paper on main (26.2): complete gauntlets (T1/T2/T3), 22-scenario
 soaks ×3 platforms, live-rig burn-in, first-priority triage. **Correct, not
-perfect** — the 26.1/1.21.11 lines: full builds + T1/T2 and representative smoke
+perfect** — the 26.1/1.21.11/1.21.10 lines: full builds + T1/T2 and representative smoke
 soaks, no live rig, no exhaustive gauntlets. **Best-effort** — NeoForge and the
 whole MC 1.21.1 line: they track the mainline feature set, but feature cuts are
 acceptable where the platform/version fights (cuts beyond the plan's

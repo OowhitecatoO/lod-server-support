@@ -21,9 +21,6 @@
     "client": [
       "dev.vox.lss.LSSClient"
     ],
-    "sodium:config_api_user": [
-      "dev.vox.lss.config.LSSConfigMenu"
-    ],
     "modmenu": [
       "dev.vox.lss.config.LSSModMenuIntegration"
     ]
@@ -43,7 +40,7 @@
   "depends": {
     "minecraft": "${minecraft_dependency}",
     "fabricloader": ">=0.18.4",
-    "fabric-api": ">=0.141.0"
+    "fabric-api": ">=0.138.0"
   },
   "suggests": {
     "sodium": ">=0.8.12",

@@ -66,8 +66,13 @@ dependencies {
     storeDeps "com.github.luben:zstd-jni:1.5.7-3"
     localRuntime "org.xerial:sqlite-jdbc:3.49.1.0"
     localRuntime "com.github.luben:zstd-jni:1.5.7-3"
-    modCompileOnly "maven.modrinth:sodium:mc1.21.11-0.8.12-fabric"
-    modCompileOnly "maven.modrinth:modmenu:17.0.0"
+    // 1.21.10 line CUT (the 1.21.8 precedent): Sodium for MC 1.21.10 tops out at
+    // 0.7.3, which predates the structured config API (net.caffeinemc.mods.sodium
+    // .api.config) the LSS options page binds — the sodium:config_api_user
+    // entrypoint and LSSConfigMenu are dropped on this line (decisions log in
+    // docs/planning/mc1.21.10-line-notes.md). RateSliderStops stays (Sodium-free,
+    // ConfigValidationTest classloads it); the ModMenu integration stays.
+    modCompileOnly "maven.modrinth:modmenu:16.0.1"
     // Compat validation arm: -Pbenchmark.moonrise=true puts Moonrise on the dev runtime
     // (the same Modrinth version issue #69 was reported against), so the soak harness can
     // drive the full dirty pipeline — the SerializableChunkData.copyOf hook, broadcast,
@@ -75,8 +80,8 @@ dependencies {
     // (SOAK_EXTRA_GRADLE_ARGS="-Pbenchmark.moonrise=true" ./scripts/soak.sh dirty-broadcast).
     // Runtime-only: release jars and normal builds are unaffected.
     if ((findProperty('benchmark.moonrise') ?: 'false').toString() == 'true') {
-        // 1.21.11 line: ksbx9Ph5 = moonrise-opt 0.9.0-beta.4 (the 1.21.11 build)
-        localRuntime "maven.modrinth:moonrise-opt:ksbx9Ph5"
+        // 1.21.10 line: moonrise-opt 0.8.0-beta.4 (the 1.21.10 build)
+        localRuntime "maven.modrinth:moonrise-opt:0.8.0-beta.4+c0e63e9"
     }
     // Same arm for C2ME (the Modrinth version test-server.sh installs), doing double duty:
     // the disk-read profile measures the chunk-IO-overhaul fallback path (adaptive read
@@ -84,8 +89,8 @@ dependencies {
     // hook is validated through C2ME's rewritten save paths — the old ChunkMap.save hook
     // silently never fired there. Runtime-only: release jars and normal builds are unaffected.
     if ((findProperty('benchmark.c2me') ?: 'false').toString() == 'true') {
-        // 1.21.11 line: 879vA5z6 = c2me-fabric 0.4.0-alpha.0.26+1.21.11
-        localRuntime "maven.modrinth:c2me-fabric:879vA5z6"
+        // 1.21.10 line: c2me-fabric 0.3.6+alpha.0.11+1.21.10
+        localRuntime "maven.modrinth:c2me-fabric:0.3.6+alpha.0.11+1.21.10"
     }
 }
 
