@@ -248,8 +248,12 @@ final class XaeroTileExtractor {
                 if (extendThisStep) {
                     // Deep-run remainder, accounted onto the CURRENT run in one step —
                     // native uses the RUN state's dampening, not the current block's.
+                    // 1.21.1 line: the 2-arg getLightBlock is this line's only overload;
+                    // EmptyBlockGetter/ZERO are the exact arguments vanilla's own state
+                    // cache uses, so this equals 26.2's cached getLightDampening().
                     if (this.runState != null) {
-                        this.runOpacity += this.runState.getLightBlock(net.minecraft.world.level.EmptyBlockGetter.INSTANCE, net.minecraft.core.BlockPos.ZERO) * (h - skipY); // 1.21.1: getLightBlock(getter,pos); EmptyBlockGetter = the constant-opacity approximation
+                        this.runOpacity += this.runState.getLightBlock(
+                                EmptyBlockGetter.INSTANCE, BlockPos.ZERO) * (h - skipY);
                     }
                     return false;
                 }
@@ -265,7 +269,7 @@ final class XaeroTileExtractor {
                     }
                 }
                 if (this.runState != null) {
-                    this.runOpacity += state.getLightBlock(net.minecraft.world.level.EmptyBlockGetter.INSTANCE, net.minecraft.core.BlockPos.ZERO);
+                    this.runOpacity += state.getLightBlock(EmptyBlockGetter.INSTANCE, BlockPos.ZERO);
                 }
                 return false;
             }
