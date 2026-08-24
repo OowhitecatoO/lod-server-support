@@ -45,10 +45,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > #229/#230/#231 + the #232 default-OFF flip) — line adaptations:
 > `Identifier` → `ResourceLocation` (tests; this line predates the 1.21.11
 > rename), `getLightDampening()` → NO-ARG `getLightBlock()`
-> (mappings-verified), `BLUE_/RED_STAINED_GLASS`; the Sodium-menu hunk is
-> DROPPED (this line's ModMenu cut) — `enableXaeroMapBridge` in
-> lss-client-config.json + the `/lss diag` line are the FULL control surface
-> here, and the default is OFF, so enabling means hand-editing the config.
+> (mappings-verified), `BLUE_/RED_STAINED_GLASS`; the Sodium-menu hunk was
+> DROPPED at the port (this line's ModMenu cut) — SUPERSEDED 2026-08-23 by the
+> options-page-generations port (below): the toggle now renders on the legacy
+> Sodium 0.7 screen, beside `enableXaeroMapBridge` in lss-client-config.json.
+> **Options-page-generations port (2026-08-23, main PR #236 per
+> sodium-options-page-generations-plan.md §12):** this is the 0.7-ONLY proof
+> line — the page renders through `LegacySodiumPage` + the `@Pseudo`
+> `SodiumLegacyOptionsHook` (JAVA_21 mixin configs, both trees); the 0.8 walker
+> `LSSConfigMenu` + `sodium:config_api_user` stay CUT (entrypoint ⇔ file pin);
+> the ModMenu integration is RESTORED (16.0.1 + entrypoint + suggests);
+> `sodium_legacy_golden=mc1.21.10-0.7.3-neoforge` (its own generation); no
+> `sodium_version` — the modern golden arm is unresolvable by design
+> (`fabric/build.gradle` guards). Decision 2 in mc1.21.10-line-notes.md is amended.
 > 2-Opus port review: no MAJORs. Still owed: one live check of the 1.21.10
 > Xaero 1.45.0 jar in the test instance (surface member-verified against
 > 26.2/1.21.1 jars only; resolve failure fails soft to `state=unavailable`).
