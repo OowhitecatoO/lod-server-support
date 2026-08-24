@@ -73,7 +73,7 @@ class XaeroWiringContractTest {
     void theConsumerPassesThisLinesWorldHeightExpression() throws IOException {
         String compat = Files.readString(SourcePaths.mainSource(
                 "dev/vox/lss/compat/XaeroMapCompat.java"));
-        assertTrue(compat.contains("level.getMinY(), level.getMaxY() + 1, columnData"),
+        assertTrue(compat.contains("level.getMinBuildHeight(), level.getMaxBuildHeight(), columnData"),
                 "the consumer's world-height arguments moved — a lost +1 silently drops the top section");
     }
 }
