@@ -47,7 +47,7 @@
     "fabric-api": "${fabric_api_dependency}"
   },
   "suggests": {
-    "sodium": ">=0.8.13-beta.2",
+    "sodium": "*",
     "modmenu": "*",
     "xaeroworldmap": "*"
   }

@@ -15,7 +15,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > is LIVE (reworked to immediate-mode `dispatcher.render` on
 > `WorldRenderEvents.AFTER_ENTITIES` — only the NeoForge renderer is the no-op
 > stub, which is main's pre-existing state, not a line cut) and the Sodium config
-> screen is LIVE (ported, registered under `sodium:config_api_user`). Release
+> screen is LIVE (ported, registered under `sodium:config_api_user`; since the
+> options-page-generations port below it renders on BOTH Sodium generations). Release
 > notes must describe the shipped set, not the pre-authorization. **Folia does
 > NOT exist on this line** (no 1.21.1 build — the 1.21 family starts at 1.21.4):
 > `folia-supported` is ABSENT from plugin.yml with the pins INVERTED to absence
@@ -42,6 +43,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > and the gametest `TestPositions` (T2 — ctor/field/asLong/addRegionTicket
 > flavors concentrated in one file).
 > **v0.12.0 port (2026-08-21):** the region-summary/stamped-up_to_date/quadtree stack (main 79e49951..e0cdf6f2, 20 picks + the #215 checker floor) — adaptations: ResourceLocation/location(), template=/timeoutTicks= gametest annotation, split-dir resolver re-root, panel folds (c2f4374b); wrs green both platforms; NeoForge gametest smoke repaired (was a silent no-op since the v0.11.0 cut — see neoforge/build.gradle).
+> **Options-page-generations port (2026-08-23, main PR #236 per sodium-options-page-generations-plan.md §12):** this is the DUAL line — Sodium 0.8.13-beta.2 (the m3t4f1v3/Create+ path, `LSSConfigMenu` + `sodium:config_api_user`, ModMenu 11.0.3) AND 0.6.13 (the NeoForge Voxy-fork pairing — `LegacySodiumPage` + the `@Pseudo` `SodiumLegacyOptionsHook`, both loaders) light up. Line adaptations: `Identifier` → `ResourceLocation` in `LSSConfigMenu`, `LSSConfigMenuTest` and the api/config recording stubs (the stubs must carry the REAL 0.8.13 descriptors, which use ResourceLocation here); JAVA_21 legacy mixin configs (both trees, twin-pinned); `suggests.sodium` `>=0.8.13-beta.2` → `*` (0.6.13 is a supported client now); surfaces row 15 (= main's row 18); `sodium_version=mc1.21.1-0.8.13-beta.2-fabric` feeds the modern golden arm only. The live gates matter most here (both generations × both loaders).
 > **Xaero map bridge port (2026-08-23):** the issue #223 stack (main PRs #229/#230/#231 + the #232 default-OFF flip) — line adaptations: `Identifier` → `ResourceLocation` (tests + menu id), `getMinY()/getMaxY()+1` → `getMinBuildHeight()/getMaxBuildHeight()` (max already EXCLUSIVE — the +1 drops), `getLightDampening()` → 2-arg `getLightBlock(EmptyBlockGetter.INSTANCE, BlockPos.ZERO)` (this line's only overload; constant-opacity approximation), the `Registry<Biome>` section family via the line's SectionConstruction seam, `BLUE_/RED_STAINED_GLASS`. 2-Opus port review: no MAJORs. The bridge is live on the NeoForge client too (the shared ClientNetGlue pump) — where the config key is the whole control surface (no Sodium page there). Still owed: one live check per LOADER of the 1.21.1 Xaero 1.45.0 jars in the test instances — the FABRIC jar was one of the two member-verified ones (lowest risk of the four), but the NEOFORGE Xaero build was never inspected.
 > **v0.11.1 port (2026-08-18):** the stutter-fix pair (scan prefix retention +
 > acquisition frontier, main PRs #203/#204 + folds) cherry-picked from main —
